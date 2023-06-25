@@ -22,6 +22,7 @@
 #include "mptcp_bpf_red.skel.h"
 #include "mptcp_bpf_burst.skel.h"
 #include "mptcp_bpf_iters.skel.h"
+#include "mptcp_bpf_stale.skel.h"
 
 #define NS_TEST "mptcp_ns"
 #define ADDR_1	"10.0.1.1"
@@ -1791,6 +1792,18 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+static void test_stale(void)
+{
+	struct mptcp_bpf_stale *skel;
+
+	skel = mptcp_bpf_stale__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "open_and_load: stale"))
+		return;
+
+	test_bpf_sched(skel->maps.stale, "stale", WITH_DATA, WITHOUT_DATA);
+	mptcp_bpf_stale__destroy(skel);
+}
+
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -1829,4 +1842,6 @@ void test_mptcp(void)
 		test_iters_netlink_address();
 	if (test__start_subtest("iters_userspace_address"))
 		test_iters_userspace_address();
+	if (test__start_subtest("stale"))
+		test_stale();
 }
