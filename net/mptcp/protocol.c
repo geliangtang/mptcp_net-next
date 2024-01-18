@@ -2078,6 +2078,7 @@ static int __mptcp_recvmsg_mskq(struct sock *sk,
 /* receive buffer autotuning.  See tcp_rcv_space_adjust for more information.
  *
  * Only difference: Use highest rtt estimate of the subflows in use.
+ * mptcp_rcv_buf_optimization
  */
 static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 {
