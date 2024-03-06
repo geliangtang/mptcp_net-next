@@ -489,6 +489,26 @@ static long mptcp_timeout_from_subflow(const struct mptcp_subflow_context *subfl
 	       inet_csk(ssk)->icsk_timeout - jiffies : 0;
 }
 
+static void __mptcp_subflow_timeout(struct sock *sk, struct sock *ssk, long tout)
+{
+	unsigned int boundary = READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_retries1) + 1;
+
+	if (retransmits_timed_out(ssk, boundary, tout))
+		__mptcp_check_push(sk, ssk);
+}
+
+static void mptcp_subflow_timeout(struct sock *sk)
+{
+	struct mptcp_subflow_context *subflow;
+
+	mptcp_for_each_subflow(mptcp_sk(sk), subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+		long tout = mptcp_timeout_from_subflow(subflow);
+
+		__mptcp_subflow_timeout(sk, ssk, tout);
+	}
+}
+
 void mptcp_set_timeout(struct sock *sk)
 {
 	struct mptcp_subflow_context *subflow;
@@ -2777,6 +2797,7 @@ static void mptcp_worker(struct work_struct *work)
 	mptcp_check_fastclose(msk);
 
 	mptcp_pm_nl_work(msk);
+	mptcp_subflow_timeout(sk);
 
 	mptcp_check_send_data_fin(sk);
 	mptcp_check_data_fin_ack(sk);
