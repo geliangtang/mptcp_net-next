@@ -1671,7 +1671,7 @@ void __mptcp_push_pending(struct sock *sk, unsigned int flags)
 		mptcp_check_send_data_fin(sk);
 }
 
-static void __mptcp_subflow_push_pending(struct sock *sk, struct sock *ssk)
+static void __mptcp_subflow_push_pending(struct sock *sk, struct sock *ssk, bool first)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct mptcp_sendmsg_info info = {
@@ -1685,6 +1685,19 @@ static void __mptcp_subflow_push_pending(struct sock *sk, struct sock *ssk)
 	while (mptcp_send_head(sk) && keep_pushing) {
 		struct mptcp_subflow_context *subflow = mptcp_subflow_ctx(ssk);
 		int ret = 0;
+
+		/* check for a different subflow usage only after
+		 * spooling the first chunk of data
+		 */
+		if (first) {
+			mptcp_subflow_set_scheduled(subflow, false);
+			ret = __subflow_push_pending(sk, ssk, &info);
+			first = false;
+			if (ret <= 0)
+				break;
+			copied += ret;
+			continue;
+		}
 
 		if (mptcp_sched_get_send(msk))
 			goto out;
@@ -3449,7 +3462,7 @@ void __mptcp_check_push(struct sock *sk, struct sock *ssk)
 		return;
 
 	if (!sock_owned_by_user(sk))
-		__mptcp_subflow_push_pending(sk, ssk);
+		__mptcp_subflow_push_pending(sk, ssk, false);
 	else
 		__set_bit(MPTCP_PUSH_PENDING, &mptcp_sk(sk)->cb_flags);
 }
@@ -3548,7 +3561,7 @@ void mptcp_subflow_process_delegated(struct sock *ssk, long status)
 	if (status & BIT(MPTCP_DELEGATE_SEND)) {
 		mptcp_data_lock(sk);
 		if (!sock_owned_by_user(sk))
-			__mptcp_subflow_push_pending(sk, ssk);
+			__mptcp_subflow_push_pending(sk, ssk, true);
 		else
 			__set_bit(MPTCP_PUSH_PENDING, &mptcp_sk(sk)->cb_flags);
 		mptcp_data_unlock(sk);
