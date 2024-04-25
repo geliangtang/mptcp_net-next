@@ -1281,19 +1281,10 @@ static int __test_exec(int cgrp, int test, struct sockmap_options *opt)
 static void test_exec(int cgrp, struct sockmap_options *opt)
 {
 	int type = strcmp(opt->map, BPF_SOCKMAP_FILENAME);
-	int err;
 
-	if (type == 0) {
-		test_start();
-		err = __test_exec(cgrp, SENDMSG, opt);
-		if (err)
-			test_fail();
-	} else {
-		test_start();
-		err = __test_exec(cgrp, SENDPAGE, opt);
-		if (err)
-			test_fail();
-	}
+	test_start();
+	if (__test_exec(cgrp, type ? SENDPAGE : SENDMSG, opt))
+		test_fail();
 }
 
 static void test_send_one(struct sockmap_options *opt, int cgrp)
