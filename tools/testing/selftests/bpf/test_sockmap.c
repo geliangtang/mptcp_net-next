@@ -676,6 +676,8 @@ static int msg_loop(int fd, int iov_count, int iov_length, int cnt,
 			}
 
 			recv = recvmsg(fd, &msg, flags);
+			if (txmsg_ktls_skb_redir)
+				fprintf(stderr, "recv=%d errno=%d\n", recv, errno);
 			if (recv < 0) {
 				if (errno != EWOULDBLOCK) {
 					clock_gettime(CLOCK_MONOTONIC, &s->end);
@@ -699,12 +701,14 @@ static int msg_loop(int fd, int iov_count, int iov_length, int cnt,
 						iov_length * cnt :
 						iov_length * iov_count;
 
-				errno = msg_verify_data(&msg, recv, chunk_sz);
-				if (errno) {
-					perror("data verify msg failed");
-					goto out_errno;
+				if (recv > 0) {
+					errno = msg_verify_data(&msg, recv, chunk_sz);
+					if (errno) {
+						perror("data verify msg failed");
+						goto out_errno;
+					}
 				}
-				if (recvp) {
+				if (recvp > 0) {
 					errno = msg_verify_data(&msg_peek,
 								recvp,
 								chunk_sz);
