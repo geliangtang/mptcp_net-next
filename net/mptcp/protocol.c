@@ -1917,11 +1917,14 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 		continue;
 
 wait_for_memory:
+		pr_info("%s wait_for_memory", __func__);
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		__mptcp_push_pending(sk, msg->msg_flags);
 		ret = sk_stream_wait_memory(sk, &timeo);
-		if (ret)
+		if (ret) {
+			pr_info("%s goto do_error ret=%d\n", __func__, ret);
 			goto do_error;
+		}
 	}
 
 	if (copied)
@@ -2002,9 +2005,9 @@ static int __mptcp_recvmsg_mskq(struct mptcp_sock *msk,
  */
 static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 {
-	u8 scaling_ratio = TCP_DEFAULT_SCALING_RATIO;
 	struct mptcp_subflow_context *subflow;
 	struct sock *sk = (struct sock *)msk;
+	u8 scaling_ratio = U8_MAX;
 	u32 time, advmss = 1;
 	u64 rtt_us, mstamp;
 
@@ -2028,9 +2031,11 @@ static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 	rtt_us = 0;
 	mptcp_for_each_subflow(msk, subflow) {
 		const struct tcp_sock *tp;
+		struct sock *ssk;
 		u64 sf_rtt_us;
 		u32 sf_advmss;
 
+		ssk = mptcp_subflow_tcp_sock(subflow);
 		tp = tcp_sk(mptcp_subflow_tcp_sock(subflow));
 
 		sf_rtt_us = READ_ONCE(tp->rcv_rtt_est.rtt_us);
@@ -2039,10 +2044,12 @@ static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 		rtt_us = max(sf_rtt_us, rtt_us);
 		advmss = max(sf_advmss, advmss);
 		scaling_ratio = min(tp->scaling_ratio, scaling_ratio);
+		pr_info("ssk=%p scaling_ratio=%u, tp->scaling_ratio=%u state=%u\n", ssk, scaling_ratio, tp->scaling_ratio, inet_sk_state_load(ssk));
 	}
 
 	msk->rcvq_space.rtt_us = rtt_us;
 	msk->scaling_ratio = scaling_ratio;
+	pr_info("msk->scaling_ratio=%u\n", msk->scaling_ratio);
 	if (time < (rtt_us >> 3) || rtt_us == 0)
 		return;
 
@@ -2257,6 +2264,7 @@ static int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 			}
 
 			if (!timeo) {
+				pr_info("%s EAGAIN", __func__);
 				copied = -EAGAIN;
 				break;
 			}
@@ -2290,6 +2298,8 @@ out_err:
 		mptcp_rcv_space_adjust(msk, copied);
 
 	release_sock(sk);
+	if (copied == -EAGAIN)
+		pr_info("%s return EAGAIN", __func__);
 	return copied;
 }
 
