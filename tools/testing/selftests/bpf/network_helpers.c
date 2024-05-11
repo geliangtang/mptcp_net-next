@@ -548,6 +548,25 @@ void close_netns(struct nstoken *token)
 	free(token);
 }
 
+int create_netns_unshare(void)
+{
+	int err;
+
+	err = unshare(CLONE_NEWNET);
+	if (err) {
+		log_err("unshare netns failed");
+		return err;
+	}
+
+	err = SYS_NOFAIL("ip link set dev lo up");
+	if (err) {
+		log_err("set dev lo up failed");
+		return err;
+	}
+
+	return 0;
+}
+
 int get_socket_local_port(int sock_fd)
 {
 	struct sockaddr_storage addr;

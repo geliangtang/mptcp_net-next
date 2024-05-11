@@ -1318,17 +1318,14 @@ static int switch_netns(void)
 	static const char * const setup_script[] = {
 		"ip -6 addr add dev lo " EXT_IP6 "/128",
 		"ip -6 addr add dev lo " INT_IP6 "/128",
-		"ip link set dev lo up",
 		NULL,
 	};
 	const char * const *cmd;
 	int err;
 
-	err = unshare(CLONE_NEWNET);
-	if (CHECK(err, "unshare", "failed\n")) {
-		log_err("unshare(CLONE_NEWNET)");
+	err = create_netns_unshare();
+	if (CHECK(err, "unshare", "failed\n"))
 		return -1;
-	}
 
 	for (cmd = setup_script; *cmd; cmd++) {
 		err = system(*cmd);
