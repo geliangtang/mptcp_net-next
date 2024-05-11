@@ -494,6 +494,7 @@ int make_netns(const char *name)
 
 struct nstoken {
 	int orig_netns_fd;
+	char *name;
 };
 
 struct nstoken *open_netns(const char *name)
@@ -506,6 +507,13 @@ struct nstoken *open_netns(const char *name)
 	token = calloc(1, sizeof(struct nstoken));
 	if (!token) {
 		log_err("Failed to malloc token");
+		return NULL;
+	}
+
+	token->name = strdup(name);
+	if (!token->name) {
+		log_err("Failed to dup name");
+		free(token);
 		return NULL;
 	}
 
@@ -533,6 +541,7 @@ struct nstoken *open_netns(const char *name)
 fail:
 	if (token->orig_netns_fd != -1)
 		close(token->orig_netns_fd);
+	free(token->name);
 	free(token);
 	return NULL;
 }
@@ -544,6 +553,8 @@ void close_netns(struct nstoken *token)
 
 	if (setns(token->orig_netns_fd, CLONE_NEWNET))
 		log_err("Failed to setns(orig_netns_fd)");
+	if (token->name)
+		free(token->name);
 	close(token->orig_netns_fd);
 	free(token);
 }
@@ -582,6 +593,15 @@ struct nstoken *create_netns(const char *name)
 
 fail:
 	return nstoken;
+}
+
+void cleanup_netns(struct nstoken *token)
+{
+	if (!token)
+		return;
+
+	remove_netns(token->name);
+	close_netns(token);
 }
 
 int get_socket_local_port(int sock_fd)
