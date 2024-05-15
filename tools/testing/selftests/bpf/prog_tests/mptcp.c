@@ -102,23 +102,6 @@ struct mptcp_storage {
 	char ca_name[TCP_CA_NAME_MAX];
 };
 
-static struct nstoken *create_netns(void)
-{
-	struct nstoken *nstoken = NULL;
-
-	if (make_netns(NS_TEST))
-		goto fail;
-
-	nstoken = open_netns(NS_TEST);
-	if (!nstoken) {
-		log_err("open netns %s failed", NS_TEST);
-		remove_netns(NS_TEST);
-	}
-
-fail:
-	return nstoken;
-}
-
 static void cleanup_netns(struct nstoken *nstoken)
 {
 	if (nstoken)
@@ -253,7 +236,7 @@ static void test_base(void)
 	if (!ASSERT_GE(cgroup_fd, 0, "test__join_cgroup"))
 		return;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		goto fail;
 
@@ -382,7 +365,7 @@ static void test_mptcpify(void)
 	if (!ASSERT_GE(cgroup_fd, 0, "test__join_cgroup"))
 		return;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		goto fail;
 
@@ -532,7 +515,7 @@ static void test_subflow(void)
 	if (!ASSERT_OK_PTR(skel->links._getsockopt_subflow, "attach _getsockopt_subflow"))
 		goto skel_destroy;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns: mptcp_subflow"))
 		goto skel_destroy;
 
@@ -597,7 +580,7 @@ static void test_iters_subflow(void)
 	if (!ASSERT_OK_PTR(skel->links.iters_subflow, "attach getsockopt"))
 		goto skel_destroy;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns: iters_subflow"))
 		goto skel_destroy;
 
@@ -749,7 +732,7 @@ static void test_iters_address(void)
 	if (!ASSERT_OK_PTR(skel->links.iters_address, "attach getsockopt"))
 		goto skel_destroy;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		goto skel_destroy;
 
@@ -1038,7 +1021,7 @@ static void test_userspace_pm(void)
 	struct nstoken *nstoken;
 	int err;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		return;
 
@@ -1065,7 +1048,7 @@ static void test_bpf_pm(struct bpf_object *obj, char *pm, bool ipv6)
 	if (CHECK(!link, pm, "attach_struct_ops: %d\n", errno))
 		return;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		goto link_destroy;
 
@@ -1189,7 +1172,7 @@ static void test_sockopt(void)
 	if (!ASSERT_OK_PTR(skel->links.mptcp_getsockopt, "attach getsockopt"))
 		goto skel_destroy;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		goto skel_destroy;
 
@@ -1210,7 +1193,7 @@ static struct nstoken *sched_init(char *flags, char *sched)
 {
 	struct nstoken *nstoken;
 
-	nstoken = create_netns();
+	nstoken = create_netns(NS_TEST);
 	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
 		return NULL;
 

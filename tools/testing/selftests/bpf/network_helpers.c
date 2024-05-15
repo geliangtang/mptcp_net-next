@@ -567,6 +567,23 @@ int create_netns_unshare(void)
 	return 0;
 }
 
+struct nstoken *create_netns(const char *name)
+{
+	struct nstoken *nstoken = NULL;
+
+	if (make_netns(name))
+		goto fail;
+
+	nstoken = open_netns(name);
+	if (!nstoken) {
+		log_err("open netns %s failed", name);
+		remove_netns(name);
+	}
+
+fail:
+	return nstoken;
+}
+
 int get_socket_local_port(int sock_fd)
 {
 	struct sockaddr_storage addr;
