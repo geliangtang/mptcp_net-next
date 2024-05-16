@@ -6,7 +6,6 @@
 #include "test_cgroup_link.skel.h"
 
 static __u32 duration = 0;
-#define PING_CMD	"ping -q -c1 -w1 127.0.0.1 > /dev/null"
 
 static struct test_cgroup_link *skel = NULL;
 
@@ -14,7 +13,7 @@ int ping_and_check(int exp_calls, int exp_alt_calls)
 {
 	skel->bss->calls = 0;
 	skel->bss->alt_calls = 0;
-	CHECK_FAIL(system(PING_CMD));
+	CHECK_FAIL(system(ping_cmd));
 	if (CHECK(skel->bss->calls != exp_calls, "call_cnt",
 		  "exp %d, got %d\n", exp_calls, skel->bss->calls))
 		return -EINVAL;

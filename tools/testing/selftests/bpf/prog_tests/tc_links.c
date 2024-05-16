@@ -6,7 +6,6 @@
 #include <test_progs.h>
 
 #define loopback 1
-#define ping_cmd "ping -q -c1 -w1 127.0.0.1 > /dev/null"
 
 #include "test_tc_link.skel.h"
 

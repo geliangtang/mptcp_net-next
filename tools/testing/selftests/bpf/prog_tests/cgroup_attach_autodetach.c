@@ -4,8 +4,6 @@
 
 #include "cgroup_helpers.h"
 
-#define PING_CMD	"ping -q -c1 -w1 127.0.0.1 > /dev/null"
-
 static char bpf_log_buf[BPF_LOG_BUF_SIZE];
 
 static int prog_load(void)
@@ -60,7 +58,7 @@ void serial_test_cgroup_attach_autodetach(void)
 				 prog_ids, &prog_cnt),
 		  "prog_query", "errno=%d\n", errno))
 		goto err;
-	if (CHECK_FAIL(system(PING_CMD)))
+	if (CHECK_FAIL(system(ping_cmd)))
 		goto err;
 
 	/* allocate some memory (4Mb) to pin the original cgroup */

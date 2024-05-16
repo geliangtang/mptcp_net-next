@@ -410,6 +410,8 @@ int test__join_cgroup(const char *path);
 		system(cmd);						\
 	})
 
+#define ping_cmd "ping -q -c1 -w1 127.0.0.1 > /dev/null"
+
 int start_libbpf_log_capture(void);
 char *stop_libbpf_log_capture(void);
 

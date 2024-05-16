@@ -4,8 +4,6 @@
 
 #include "cgroup_helpers.h"
 
-#define PING_CMD	"ping -q -c1 -w1 127.0.0.1 > /dev/null"
-
 static char bpf_log_buf[BPF_LOG_BUF_SIZE];
 
 static int map_fd = -1;
@@ -147,7 +145,7 @@ void serial_test_cgroup_attach_multi(void)
 		  "prog5_attach_to_cg5_none", "errno=%d\n", errno))
 		goto err;
 
-	CHECK_FAIL(system(PING_CMD));
+	CHECK_FAIL(system(ping_cmd));
 	CHECK_FAIL(bpf_map_lookup_elem(map_fd, &key, &value));
 	CHECK_FAIL(value != 1 + 2 + 8 + 32);
 
@@ -186,7 +184,7 @@ void serial_test_cgroup_attach_multi(void)
 
 	value = 0;
 	CHECK_FAIL(bpf_map_update_elem(map_fd, &key, &value, 0));
-	CHECK_FAIL(system(PING_CMD));
+	CHECK_FAIL(system(ping_cmd));
 	CHECK_FAIL(bpf_map_lookup_elem(map_fd, &key, &value));
 	CHECK_FAIL(value != 1 + 2 + 8 + 16);
 
@@ -239,7 +237,7 @@ void serial_test_cgroup_attach_multi(void)
 
 	value = 0;
 	CHECK_FAIL(bpf_map_update_elem(map_fd, &key, &value, 0));
-	CHECK_FAIL(system(PING_CMD));
+	CHECK_FAIL(system(ping_cmd));
 	CHECK_FAIL(bpf_map_lookup_elem(map_fd, &key, &value));
 	CHECK_FAIL(value != 64 + 2 + 8 + 16);
 
@@ -254,7 +252,7 @@ void serial_test_cgroup_attach_multi(void)
 
 	value = 0;
 	CHECK_FAIL(bpf_map_update_elem(map_fd, &key, &value, 0));
-	CHECK_FAIL(system(PING_CMD));
+	CHECK_FAIL(system(ping_cmd));
 	CHECK_FAIL(bpf_map_lookup_elem(map_fd, &key, &value));
 	CHECK_FAIL(value != 64 + 2 + 16);
 
@@ -265,7 +263,7 @@ void serial_test_cgroup_attach_multi(void)
 
 	value = 0;
 	CHECK_FAIL(bpf_map_update_elem(map_fd, &key, &value, 0));
-	CHECK_FAIL(system(PING_CMD));
+	CHECK_FAIL(system(ping_cmd));
 	CHECK_FAIL(bpf_map_lookup_elem(map_fd, &key, &value));
 	CHECK_FAIL(value != 64 + 2 + 4);
 

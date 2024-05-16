@@ -6,7 +6,6 @@
 
 #define FOO		"/foo"
 #define BAR		"/foo/bar/"
-#define PING_CMD	"ping -q -c1 -w1 127.0.0.1 > /dev/null"
 
 static char bpf_log_buf[BPF_LOG_BUF_SIZE];
 
@@ -48,7 +47,7 @@ void serial_test_cgroup_attach_override(void)
 		  "attach prog to %s failed, errno=%d\n", FOO, errno))
 		goto err;
 
-	if (CHECK(!system(PING_CMD), "ping_fail",
+	if (CHECK(!system(ping_cmd), "ping_fail",
 		  "ping unexpectedly succeeded\n"))
 		goto err;
 
@@ -56,7 +55,7 @@ void serial_test_cgroup_attach_override(void)
 	if (CHECK(bar < 0, "cgroup_join_bar", "cgroup setup failed\n"))
 		goto err;
 
-	if (CHECK(!system(PING_CMD), "ping_fail",
+	if (CHECK(!system(ping_cmd), "ping_fail",
 		  "ping unexpectedly succeeded\n"))
 		goto err;
 
@@ -66,7 +65,7 @@ void serial_test_cgroup_attach_override(void)
 		  "attach prog to %s failed, errno=%d\n", BAR, errno))
 		goto err;
 
-	if (CHECK(system(PING_CMD), "ping_ok", "ping failed\n"))
+	if (CHECK(system(ping_cmd), "ping_ok", "ping failed\n"))
 		goto err;
 
 	if (CHECK(bpf_prog_detach(bar, BPF_CGROUP_INET_EGRESS),
@@ -74,7 +73,7 @@ void serial_test_cgroup_attach_override(void)
 		  "detach prog from %s failed, errno=%d\n", BAR, errno))
 		goto err;
 
-	if (CHECK(!system(PING_CMD), "ping_fail",
+	if (CHECK(!system(ping_cmd), "ping_fail",
 		  "ping unexpectedly succeeded\n"))
 		goto err;
 
@@ -89,7 +88,7 @@ void serial_test_cgroup_attach_override(void)
 		  "detach prog from %s failed, errno=%d\n", FOO, errno))
 		goto err;
 
-	if (CHECK(system(PING_CMD), "ping_ok", "ping failed\n"))
+	if (CHECK(system(ping_cmd), "ping_ok", "ping failed\n"))
 		goto err;
 
 	if (CHECK(bpf_prog_attach(allow_prog, bar, BPF_CGROUP_INET_EGRESS,
