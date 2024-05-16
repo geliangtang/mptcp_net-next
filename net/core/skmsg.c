@@ -665,6 +665,7 @@ static void sk_psock_backlog(struct work_struct *work)
 			len = stm->full_len;
 		}
 		ingress = skb_bpf_ingress(skb);
+		pr_info("%s ingress=%u\n", __func__, ingress);
 		skb_bpf_redirect_clear(skb);
 		do {
 			ret = -EIO;
