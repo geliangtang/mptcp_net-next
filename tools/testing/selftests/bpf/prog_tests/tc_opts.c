@@ -4,8 +4,6 @@
 #include <net/if.h>
 #include <test_progs.h>
 
-#define loopback 1
-
 #include "test_tc_link.skel.h"
 #include "tc_helpers.h"
 
