@@ -1317,8 +1317,10 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 	timeo = sock_rcvtimeo(sk, nonblock);
 
 	while (!tls_strp_msg_ready(ctx)) {
-		if (!sk_psock_queue_empty(psock))
+		if (!sk_psock_queue_empty(psock)) {
+			pr_info("%s return 0\n", __func__);
 			return 0;
+		}
 
 		if (sk->sk_err)
 			return sock_error(sk);
@@ -1338,8 +1340,10 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 		if (sock_flag(sk, SOCK_DONE))
 			return 0;
 
-		if (!timeo)
+		if (!timeo) {
+			pr_info("%s return -EAGAIN\n", __func__);
 			return -EAGAIN;
+		}
 
 		released = true;
 		add_wait_queue(sk_sleep(sk), &wait);
@@ -1358,6 +1362,7 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 
 	tls_strp_msg_load(&ctx->strp, released);
 
+	pr_info("%s return 1\n", __func__);
 	return 1;
 }
 
@@ -1973,6 +1978,8 @@ int tls_sw_recvmsg(struct sock *sk,
 	bool bpf_strp_enabled;
 	bool zc_capable;
 
+	pr_info("%s tls_sw_sock_is_readable(sk)=%u\n", __func__, tls_sw_sock_is_readable(sk));
+
 	if (unlikely(flags & MSG_ERRQUEUE))
 		return sock_recv_errqueue(sk, msg, len, SOL_IP, IP_RECVERR);
 
@@ -2347,6 +2354,7 @@ bool tls_sw_sock_is_readable(struct sock *sk)
 	struct tls_sw_context_rx *ctx = tls_sw_ctx_rx(tls_ctx);
 	bool ingress_empty = true;
 	struct sk_psock *psock;
+	bool ret;
 
 	rcu_read_lock();
 	psock = sk_psock(sk);
@@ -2354,8 +2362,10 @@ bool tls_sw_sock_is_readable(struct sock *sk)
 		ingress_empty = list_empty(&psock->ingress_msg);
 	rcu_read_unlock();
 
-	return !ingress_empty || tls_strp_msg_ready(ctx) ||
+	ret = !ingress_empty || tls_strp_msg_ready(ctx) ||
 		!skb_queue_empty(&ctx->rx_list);
+	pr_info("%s ret=%u ingress_empty=%u\n", __func__, ret, ingress_empty);
+	return ret;
 }
 
 int tls_rx_msg_size(struct tls_strparser *strp, struct sk_buff *skb)
