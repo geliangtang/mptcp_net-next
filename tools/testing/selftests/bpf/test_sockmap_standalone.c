@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <stdbool.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -6,9 +11,7 @@
 #include <sys/wait.h>
 #include <linux/tls.h>
 #include <assert.h>
-#include <bpf/bpf.h>
 
-#include "bpf_util.h"
 #include "cgroup_helpers.h"
 
 # define TCP_ULP 31
@@ -19,16 +22,6 @@
 
 /* global sockets */
 int s1, s2, c1, c2, p1, p2;
-int map_fd[3];
-struct bpf_map *maps[3];
-struct bpf_program *progs[4];
-struct bpf_link *links[4];
-
-char *map_names[] = {
-	"sock_map",
-	"sock_skb_opts",
-	"tls_sock_map",
-};
 
 static int sockmap_init_ktls(int s)
 {
@@ -261,7 +254,7 @@ static int msg_verify_data(struct msghdr *msg, int size, int chunk_sz)
 	return 0;
 }
 
-static int msg_loop(struct msg_stats *s, bool tx, bool nonblock)
+static int msg_loop(int fd, struct msg_stats *s, bool tx, bool nonblock)
 {
 	struct msghdr msg = {0};
 	int err;
@@ -273,20 +266,22 @@ static int msg_loop(struct msg_stats *s, bool tx, bool nonblock)
 	if (tx) {
 		int sent;
 
-		sent = sendmsg(c1, &msg, MSG_NOSIGNAL);
+		sent = sendmsg(fd, &msg, MSG_NOSIGNAL);
+		fprintf(stderr, "sent=%d errno=%d\n", sent, errno);
 		if (sent > 0)
 			s->bytes_sent += sent;
 	} else {
-		int slct, recv, max_fd = p2;
+		int slct, recv = 0, max_fd = fd;
 		struct timeval timeout = { .tv_sec = 3 };
 		fd_set r;
 
-		if (nonblock && fcntl(p2, F_SETFL, O_NONBLOCK))
+		if (nonblock && fcntl(fd, F_SETFL, O_NONBLOCK))
 			goto out_errno;
 
 		/* FD sets */
 		FD_ZERO(&r);
-		FD_SET(p2, &r);
+		FD_SET(fd, &r);
+		fprintf(stderr, "recv=%d errno=%d\n", recv, errno);
 
 		while (s->bytes_recvd < 100) {
 			slct = select(max_fd + 1, &r, NULL, NULL, &timeout);
@@ -300,7 +295,7 @@ static int msg_loop(struct msg_stats *s, bool tx, bool nonblock)
 
 			errno = 0;
 
-			recv = recvmsg(p2, &msg, MSG_NOSIGNAL);
+			recv = recvmsg(fd, &msg, MSG_NOSIGNAL);
 			fprintf(stderr, "recv=%d errno=%d\n", recv, errno);
 			if (recv < 0) {
 				if (errno != EWOULDBLOCK) {
@@ -348,7 +343,7 @@ static int sendmsg_test(bool nonblock)
 
 	rxpid = fork();
 	if (rxpid == 0) {
-		err = msg_loop(&s, false, nonblock);
+		err = msg_loop(p2, &s, false, nonblock);
 		exit(err ? 1 : 0);
 	} else if (rxpid == -1) {
 		return errno;
@@ -356,7 +351,7 @@ static int sendmsg_test(bool nonblock)
 
 	txpid = fork();
 	if (txpid == 0) {
-		err = msg_loop(&s, true, nonblock);
+		err = msg_loop(c1, &s, true, nonblock);
 		exit(err ? 1 : 0);
 	} else if (txpid == -1) {
 		return errno;
@@ -376,84 +371,16 @@ out:
 	return err;
 }
 
-static int prog_attach(int prog_fd_id, int map_fd_id)
-{
-	links[map_fd_id] = bpf_program__attach_sockmap(progs[prog_fd_id], map_fd[map_fd_id]);
-	if (!links[map_fd_id]) {
-		fprintf(stderr,
-			"ERROR: bpf_prog_attach (%s %i->%i): (%s)\n",
-			map_names[map_fd_id], bpf_program__fd(progs[prog_fd_id]),
-			map_fd[map_fd_id], strerror(errno));
-		return -1;
-	}
-	return 0;
-}
-
-static int map_update_elem(int map_fd_id, const int key, const int value)
+static int run_options(bool nonblock)
 {
 	int err;
-
-	err = bpf_map_update_elem(map_fd[map_fd_id], &key, &value, BPF_ANY);
-	if (err) {
-		fprintf(stderr,
-			"ERROR: bpf_map_update_elem (%s): %d (%s)\n",
-			map_names[map_fd_id], err, strerror(errno));
-	}
-	return err;
-}
-
-static int run_options(int cg_fd, bool nonblock, bool ingress)
-{
-	int i, key, next_key, err, zero = 0;
-
-	err = prog_attach(1, 0);
-	if (err)
-		return err;
-
-	/* Attach programs to TLS sockmap */
-	err = prog_attach(0, 2);
-	if (err)
-		return err;
-
-	err = prog_attach(2, 2);
-	if (err)
-		return err;
-
-	/* Attach to cgroups */
-	err = bpf_prog_attach(bpf_program__fd(progs[3]), cg_fd, BPF_CGROUP_SOCK_OPS, 0);
-	if (err) {
-		fprintf(stderr, "ERROR: bpf_prog_attach (groups): %d (%s)\n",
-			err, strerror(errno));
-		return err;
-	}
 
 	err = sockmap_init_sockets();
 	if (err)
 		goto out;
 
-	err = map_update_elem(2, 0, p2);
-	if (ingress)
-		err = map_update_elem(1, 1, BPF_F_INGRESS);
-
 	err = sendmsg_test(nonblock);
 out:
-	/* Detatch and zero all the maps */
-	bpf_prog_detach2(bpf_program__fd(progs[3]), cg_fd, BPF_CGROUP_SOCK_OPS);
-
-	for (i = 0; i < ARRAY_SIZE(links); i++) {
-		if (links[i])
-			bpf_link__detach(links[i]);
-	}
-
-	for (i = 0; i < ARRAY_SIZE(map_fd); i++) {
-		key = next_key = 0;
-		bpf_map_update_elem(map_fd[i], &key, &zero, BPF_ANY);
-		while (bpf_map_get_next_key(map_fd[i], &key, &next_key) == 0) {
-			bpf_map_update_elem(map_fd[i], &key, &zero, BPF_ANY);
-			key = next_key;
-		}
-	}
-
 	close(s1);
 	close(s2);
 	close(p1);
@@ -463,52 +390,20 @@ out:
 	return err;
 }
 
-static int populate_progs(void)
-{
-	struct bpf_program *prog;
-	struct bpf_object *obj;
-	int i = 0;
-
-	obj = bpf_object__open("test_sockmap_kern.bpf.o");
-	bpf_object__load(obj);
-	i = 0;
-	bpf_object__for_each_program(prog, obj) {
-		progs[i] = prog;
-		i++;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(map_fd); i++) {
-		maps[i] = bpf_object__find_map_by_name(obj, map_names[i]);
-		map_fd[i] = bpf_map__fd(maps[i]);
-		if (map_fd[i] < 0)
-			return -1;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(links); i++)
-		links[i] = NULL;
-
-	return 0;
-}
-
 int main(int argc, char **argv)
 {
 	bool nonblock = true;
-	bool ingress=true;
-	int err, cg_fd = 0;
+	int cg_fd = 0;
 
 	if (argc == 2 && !strcmp(argv[1], "block"))
 		nonblock = false;
-	if (argc == 2 && !strcmp(argv[1], "noingress"))
-		ingress = false;
 
 	cg_fd = cgroup_setup_and_join("/sockmap");
 	if (cg_fd < 0)
 		return cg_fd;
-	err = populate_progs();
-	if (err < 0)
-		return err;
-	run_options(cg_fd, nonblock, ingress);
+
+	run_options(nonblock);
 	close(cg_fd);
 	cleanup_cgroup_environment();
-	return err;
+	return 0;
 }
