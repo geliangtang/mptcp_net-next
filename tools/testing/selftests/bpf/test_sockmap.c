@@ -63,6 +63,7 @@ int passed;
 int failed;
 int map_fd[9];
 struct bpf_map *maps[9];
+char *map_names[];
 struct bpf_program *progs[9];
 struct bpf_link *links[9];
 
@@ -954,6 +955,19 @@ enum {
 	SENDPAGE,
 };
 
+static int map_update_elem(int map_fd_id, const int key, const int value)
+{
+	int err;
+
+	err = bpf_map_update_elem(map_fd[map_fd_id], &key, &value, BPF_ANY);
+	if (err) {
+		fprintf(stderr,
+			"ERROR: bpf_map_update_elem (%s): %d (%s)\n",
+			map_names[map_fd_id], err, strerror(errno));
+	}
+	return err;
+}
+
 static int run_options(struct sockmap_options *options, int cg_fd,  int test)
 {
 	int i, key, next_key, err, zero = 0;
@@ -1042,219 +1056,77 @@ run:
 			goto out;
 		}
 
-		i = 0;
-		err = bpf_map_update_elem(map_fd[1], &i, &c1, BPF_ANY);
-		if (err) {
-			fprintf(stderr,
-				"ERROR: bpf_map_update_elem (txmsg):  %d (%s\n",
-				err, strerror(errno));
+		if (map_update_elem(1, 0, c1))
 			goto out;
-		}
 
 		if (txmsg_redir)
 			redir_fd = c2;
 		else
 			redir_fd = c1;
 
-		err = bpf_map_update_elem(map_fd[2], &i, &redir_fd, BPF_ANY);
-		if (err) {
-			fprintf(stderr,
-				"ERROR: bpf_map_update_elem (txmsg):  %d (%s\n",
-				err, strerror(errno));
+		if (map_update_elem(2, 0, redir_fd))
 			goto out;
-		}
 
-		if (txmsg_apply) {
-			err = bpf_map_update_elem(map_fd[3],
-						  &i, &txmsg_apply, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (apply_bytes):  %d (%s\n",
-					err, strerror(errno));
-				goto out;
-			}
-		}
+		if (txmsg_apply && map_update_elem(3, 0, txmsg_apply))
+			goto out;
 
-		if (txmsg_cork) {
-			err = bpf_map_update_elem(map_fd[4],
-						  &i, &txmsg_cork, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (cork_bytes):  %d (%s\n",
-					err, strerror(errno));
-				goto out;
-			}
-		}
+		if (txmsg_cork && map_update_elem(4, 0, txmsg_cork))
+			goto out;
 
-		if (txmsg_start) {
-			err = bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_start, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (txmsg_start):  %d (%s)\n",
-					err, strerror(errno));
-				goto out;
-			}
-		}
+		if (txmsg_start && map_update_elem(5, 0, txmsg_start))
+			goto out;
 
-		if (txmsg_end) {
-			i = 1;
-			err = bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_end, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (txmsg_end):  %d (%s)\n",
-					err, strerror(errno));
-				goto out;
-			}
-		}
+		if (txmsg_end && map_update_elem(5, 1, txmsg_end))
+			goto out;
 
-		if (txmsg_start_push) {
-			i = 2;
-			err = bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_start_push, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (txmsg_start_push):  %d (%s)\n",
-					err, strerror(errno));
-				goto out;
-			}
-		}
+		if (txmsg_start_push && map_update_elem(5, 2, txmsg_start_push))
+			goto out;
 
-		if (txmsg_end_push) {
-			i = 3;
-			err = bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_end_push, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem %i@%i (txmsg_end_push):  %d (%s)\n",
-					txmsg_end_push, i, err, strerror(errno));
-				goto out;
-			}
-		}
+		if (txmsg_end_push && map_update_elem(5, 3, txmsg_end_push))
+			goto out;
 
 		if (txmsg_start_pop) {
-			i = 4;
-			err = bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_start_pop, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem %i@%i (txmsg_start_pop):  %d (%s)\n",
-					txmsg_start_pop, i, err, strerror(errno));
+			if (map_update_elem(5, 4, txmsg_start_pop))
 				goto out;
-			}
 		} else {
-			i = 4;
-			bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_start_pop, BPF_ANY);
+			map_update_elem(5, 4, txmsg_start_pop);
 		}
 
 		if (txmsg_pop) {
-			i = 5;
-			err = bpf_map_update_elem(map_fd[5],
-						  &i, &txmsg_pop, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem %i@%i (txmsg_pop):  %d (%s)\n",
-					txmsg_pop, i, err, strerror(errno));
+			if (map_update_elem(5, 5, txmsg_pop))
 				goto out;
-			}
 		} else {
-			i = 5;
-			bpf_map_update_elem(map_fd[5],
-					    &i, &txmsg_pop, BPF_ANY);
-
+			map_update_elem(5, 5, txmsg_pop);
 		}
 
 		if (txmsg_ingress) {
-			int in = BPF_F_INGRESS;
-
-			i = 0;
-			err = bpf_map_update_elem(map_fd[6], &i, &in, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (txmsg_ingress): %d (%s)\n",
-					err, strerror(errno));
-			}
-			i = 1;
-			err = bpf_map_update_elem(map_fd[1], &i, &p1, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (p1 txmsg): %d (%s)\n",
-					err, strerror(errno));
-			}
-			err = bpf_map_update_elem(map_fd[2], &i, &p1, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (p1 redir): %d (%s)\n",
-					err, strerror(errno));
-			}
-
-			i = 2;
-			err = bpf_map_update_elem(map_fd[2], &i, &p2, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (p2 txmsg): %d (%s)\n",
-					err, strerror(errno));
-			}
+			err = map_update_elem(6, 0, BPF_F_INGRESS);
+			err = map_update_elem(1, 1, p1);
+			err = map_update_elem(2, 1, p1);
+			err = map_update_elem(2, 2, p2);
 		}
 
 		if (txmsg_ktls_skb) {
-			int ingress = BPF_F_INGRESS;
+			err = map_update_elem(8, 0, p2);
 
-			i = 0;
-			err = bpf_map_update_elem(map_fd[8], &i, &p2, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (c1 sockmap): %d (%s)\n",
-					err, strerror(errno));
-			}
+			if (txmsg_ktls_skb_redir)
+				err = map_update_elem(7, 1, BPF_F_INGRESS);
 
-			if (txmsg_ktls_skb_redir) {
-				i = 1;
-				err = bpf_map_update_elem(map_fd[7],
-							  &i, &ingress, BPF_ANY);
-				if (err) {
-					fprintf(stderr,
-						"ERROR: bpf_map_update_elem (txmsg_ingress): %d (%s)\n",
-						err, strerror(errno));
-				}
-			}
-
-			if (txmsg_ktls_skb_drop) {
-				i = 1;
-				err = bpf_map_update_elem(map_fd[7], &i, &i, BPF_ANY);
-			}
+			if (txmsg_ktls_skb_drop)
+				err = map_update_elem(7, 1, 1);
 		}
 
 		if (txmsg_redir_skb) {
 			int skb_fd = (test == SENDMSG || test == SENDPAGE) ?
 					p2 : p1;
-			int ingress = BPF_F_INGRESS;
+			err = map_update_elem(7, 0, BPF_F_INGRESS);
 
-			i = 0;
-			err = bpf_map_update_elem(map_fd[7],
-						  &i, &ingress, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (txmsg_ingress): %d (%s)\n",
-					err, strerror(errno));
-			}
-
-			i = 3;
-			err = bpf_map_update_elem(map_fd[0], &i, &skb_fd, BPF_ANY);
-			if (err) {
-				fprintf(stderr,
-					"ERROR: bpf_map_update_elem (c1 sockmap): %d (%s)\n",
-					err, strerror(errno));
-			}
+			err = map_update_elem(0, 3, skb_fd);
 		}
 	}
 
-	if (skb_use_parser) {
-		i = 2;
-		err = bpf_map_update_elem(map_fd[7], &i, &skb_use_parser, BPF_ANY);
-	}
+	if (skb_use_parser)
+		err = map_update_elem(7, 2, skb_use_parser);
 
 	if (txmsg_drop)
 		options->drop_expected = true;
