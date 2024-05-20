@@ -96,7 +96,8 @@ void close_netns(struct nstoken *token);
 int create_netns_unshare(void);
 struct nstoken *create_netns(const char *name);
 void cleanup_netns(struct nstoken *token);
-int send_recv_data(int lfd, int fd, uint32_t total_bytes);
+int send_recv_data(int lfd, int fd, uint32_t total_bytes,
+		   int (*post_accept_cb)(int fd));
 int make_netns(const char *name);
 int remove_netns(const char *name);
 
