@@ -3,18 +3,18 @@
 #
 # Run a series of udpgro benchmarks
 
+source lib.sh
 source net_helper.sh
 
-readonly PEER_NS="ns-peer-$(mktemp -u XXXXXX)"
+PEER_NS=""
 
 BPF_FILE="xdp_dummy.bpf.o"
 
 cleanup() {
 	local -r jobs="$(jobs -p)"
-	local -r ns="$(ip netns list|grep $PEER_NS)"
 
 	[ -n "${jobs}" ] && kill -INT ${jobs} 2>/dev/null
-	[ -n "$ns" ] && ip netns del $ns 2>/dev/null
+	cleanup_all_ns
 }
 trap cleanup EXIT
 
@@ -24,10 +24,7 @@ run_one() {
 	local -r tx_args=${all%rx*}
 	local rx_args=${all#*rx}
 
-
-
-	ip netns add "${PEER_NS}"
-	ip -netns "${PEER_NS}" link set lo up
+	setup_ns PEER_NS
 	ip link add type veth
 	ip link set dev veth0 up
 	ip addr add dev veth0 192.168.1.2/24
