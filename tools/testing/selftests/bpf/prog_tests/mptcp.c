@@ -1226,7 +1226,7 @@ static void send_data_and_verify(char *sched, bool addr1, bool addr2)
 	if (clock_gettime(CLOCK_MONOTONIC, &start) < 0)
 		goto close_client;
 
-	if (!ASSERT_OK(send_recv_data(server_fd, client_fd, total_bytes),
+	if (!ASSERT_OK(send_recv_data(server_fd, client_fd, total_bytes, NULL),
 		       "send_recv_data"))
 		goto close_client;
 
