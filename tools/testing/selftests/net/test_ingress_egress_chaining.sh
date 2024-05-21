@@ -1,6 +1,8 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
+. "$(dirname "${0}")/lib.sh"
+
 # This test runs a simple ingress tc setup between two veth pairs,
 # and chains a single egress rule to test ingress chaining to egress.
 #
@@ -17,7 +19,7 @@ for mod in $needed_mods; do
 	modinfo $mod &>/dev/null || { echo "SKIP: Need act_mirred module"; exit $ksft_skip; }
 done
 
-ns="ns$((RANDOM%899+100))"
+ns=""
 veth1="veth1$((RANDOM%899+100))"
 veth2="veth2$((RANDOM%899+100))"
 peer1="peer1$((RANDOM%899+100))"
@@ -34,7 +36,7 @@ function cleanup() {
 	killall -q -9 udpgso_bench_rx
 	ip link del $veth1 &> /dev/null
 	ip link del $veth2 &> /dev/null
-	ip netns del $ns &> /dev/null
+	cleanup_all_ns
 }
 trap cleanup EXIT
 
@@ -44,7 +46,7 @@ function config() {
 	ip link add $veth2 type veth peer name $peer2
 	ip addr add $ip_peer1/24 dev $peer1
 	ip link set $peer1 up
-	ip netns add $ns
+	setup_ns ns
 	ip link set dev $peer2 netns $ns
 	ip netns exec $ns ip addr add $ip_peer2/24 dev $peer2
 	ip netns exec $ns ip link set $peer2 up
