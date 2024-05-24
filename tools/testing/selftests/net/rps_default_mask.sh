@@ -1,6 +1,8 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
+source lib.sh
+
 readonly ksft_skip=4
 readonly cpus=$(nproc)
 ret=0
@@ -10,16 +12,15 @@ ret=0
 readonly INITIAL_RPS_DEFAULT_MASK=$(cat /proc/sys/net/core/rps_default_mask)
 readonly TAG="$(mktemp -u XXXXXX)"
 readonly VETH="veth${TAG}"
-readonly NETNS="ns-${TAG}"
+NETNS=""
 
 setup() {
-	ip netns add "${NETNS}"
-	ip -netns "${NETNS}" link set lo up
+	setup_ns NETNS
 }
 
 cleanup() {
 	echo $INITIAL_RPS_DEFAULT_MASK > /proc/sys/net/core/rps_default_mask
-	ip netns del $NETNS
+	cleanup_all_ns
 }
 
 chk_rps() {

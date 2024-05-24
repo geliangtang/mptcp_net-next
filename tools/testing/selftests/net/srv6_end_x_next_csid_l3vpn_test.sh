@@ -287,6 +287,8 @@
 # packet using the SRv6 End.DT46 behavior (associated with the SID fcff:1::d46)
 # and sends it to the host hs-1.
 
+source lib.sh
+
 # Kselftest framework requirement - SKIP code is 4.
 readonly ksft_skip=4
 
@@ -1153,13 +1155,14 @@ test_iproute2_supp_or_ksft_skip()
 test_dummy_dev_or_ksft_skip()
 {
         local test_netns
+        local dummy=""
 
-        test_netns="dummy-$(mktemp -u XXXXXXXX)"
-
-        if ! ip netns add "${test_netns}"; then
+        if ! setup_ns dummy; then
                 echo "SKIP: Cannot set up netns for testing dummy dev support"
                 exit "${ksft_skip}"
         fi
+
+        test_netns=${dummy}
 
         modprobe dummy &>/dev/null || true
         if ! ip -netns "${test_netns}" link \
@@ -1170,7 +1173,7 @@ test_dummy_dev_or_ksft_skip()
                 exit "${ksft_skip}"
         fi
 
-        ip netns del "${test_netns}"
+        cleanup_ns "${test_netns}"
 }
 
 test_vrf_or_ksft_skip()

@@ -4,15 +4,17 @@
 # Testing For IPv4 and IPv6 BIG TCP.
 # TOPO: CLIENT_NS (link0)<--->(link1) ROUTER_NS (link2)<--->(link3) SERVER_NS
 
-CLIENT_NS=$(mktemp -u client-XXXXXXXX)
+source lib.sh
+
+CLIENT_NS=""
 CLIENT_IP4="198.51.100.1"
 CLIENT_IP6="2001:db8:1::1"
 
-SERVER_NS=$(mktemp -u server-XXXXXXXX)
+SERVER_NS=""
 SERVER_IP4="203.0.113.1"
 SERVER_IP6="2001:db8:2::1"
 
-ROUTER_NS=$(mktemp -u router-XXXXXXXX)
+ROUTER_NS=""
 SERVER_GW4="203.0.113.2"
 CLIENT_GW4="198.51.100.2"
 SERVER_GW6="2001:db8:2::2"
@@ -25,9 +27,7 @@ CHK_SIZE=65535
 ksft_skip=4
 
 setup() {
-	ip netns add $CLIENT_NS
-	ip netns add $SERVER_NS
-	ip netns add $ROUTER_NS
+	setup_ns CLIENT_NS SERVER_NS ROUTER_NS
 	ip -net $ROUTER_NS link add link1 type veth peer name link0 netns $CLIENT_NS
 	ip -net $ROUTER_NS link add link2 type veth peer name link3 netns $SERVER_NS
 
@@ -83,9 +83,7 @@ cleanup() {
 	ip net exec $SERVER_NS pkill netserver
 	ip -net $ROUTER_NS link del link1
 	ip -net $ROUTER_NS link del link2
-	ip netns del "$CLIENT_NS"
-	ip netns del "$SERVER_NS"
-	ip netns del "$ROUTER_NS"
+	cleanup_all_ns
 }
 
 start_counter() {

@@ -3,32 +3,26 @@
 #
 # Regression tests for the SO_TXTIME interface
 
+source lib.sh
+
 set -e
 
 readonly ksft_skip=4
 readonly DEV="veth0"
 readonly BIN="./so_txtime"
 
-readonly RAND="$(mktemp -u XXXXXX)"
-readonly NSPREFIX="ns-${RAND}"
-readonly NS1="${NSPREFIX}1"
-readonly NS2="${NSPREFIX}2"
+NS1=""
+NS2=""
 
 readonly SADDR4='192.168.1.1'
 readonly DADDR4='192.168.1.2'
 readonly SADDR6='fd::1'
 readonly DADDR6='fd::2'
 
-cleanup() {
-	ip netns del "${NS2}"
-	ip netns del "${NS1}"
-}
-
-trap cleanup EXIT
+trap cleanup_all_ns EXIT
 
 # Create virtual ethernet pair between network namespaces
-ip netns add "${NS1}"
-ip netns add "${NS2}"
+setup_ns NS1 NS2
 
 ip link add "${DEV}" netns "${NS1}" type veth \
   peer name "${DEV}" netns "${NS2}"

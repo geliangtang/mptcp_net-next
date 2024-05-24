@@ -194,6 +194,8 @@
 # after the IPv6 header. At this point, the packet with IPv6 DA=cafe::1 is sent
 # to the destination, i.e. hs-1.
 
+source lib.sh
+
 # Kselftest framework requirement - SKIP code is 4.
 readonly ksft_skip=4
 
@@ -778,13 +780,14 @@ test_kernel_supp_or_ksft_skip()
 {
 	local flavor="$1"
 	local test_netns
+	local kflv
 
-	test_netns="kflv-$(mktemp -u XXXXXXXX)"
-
-	if ! ip netns add "${test_netns}"; then
+	if ! setup_ns kflv; then
 		echo "SKIP: Cannot set up netns to test kernel support for flavors"
 		exit "${ksft_skip}"
 	fi
+
+	test_netns=${kflv}
 
 	if ! ip -netns "${test_netns}" link \
 		add "${DUMMY_DEVNAME}" type dummy; then
@@ -811,19 +814,20 @@ test_kernel_supp_or_ksft_skip()
 		exit "${ksft_skip}"
 	fi
 
-	ip netns del "${test_netns}"
+	cleanup_ns "${test_netns}"
 }
 
 test_dummy_dev_or_ksft_skip()
 {
 	local test_netns
+	local dummy
 
-	test_netns="dummy-$(mktemp -u XXXXXXXX)"
-
-	if ! ip netns add "${test_netns}"; then
+	if ! setup_ns dummy; then
 		echo "SKIP: Cannot set up netns for testing dummy dev support"
 		exit "${ksft_skip}"
 	fi
+
+	test_netns=${dummy}
 
 	modprobe dummy &>/dev/null || true
 	if ! ip -netns "${test_netns}" link \
@@ -834,7 +838,7 @@ test_dummy_dev_or_ksft_skip()
 		exit "${ksft_skip}"
 	fi
 
-	ip netns del "${test_netns}"
+	cleanup_ns "${test_netns}"
 }
 
 if [ "$(id -u)" -ne 0 ]; then

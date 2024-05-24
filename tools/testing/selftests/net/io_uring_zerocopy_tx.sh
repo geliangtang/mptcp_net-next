@@ -3,6 +3,8 @@
 # Send data between two processes across namespaces
 # Run twice: once without and once with zerocopy
 
+source lib.sh
+
 set -e
 
 readonly DEV="veth0"
@@ -10,10 +12,8 @@ readonly DEV_MTU=65535
 readonly BIN_TX="./io_uring_zerocopy_tx"
 readonly BIN_RX="./msg_zerocopy"
 
-readonly RAND="$(mktemp -u XXXXXX)"
-readonly NSPREFIX="ns-${RAND}"
-readonly NS1="${NSPREFIX}1"
-readonly NS2="${NSPREFIX}2"
+NS1=""
+NS2=""
 
 readonly SADDR4='192.168.1.1'
 readonly DADDR4='192.168.1.2'
@@ -78,15 +78,13 @@ esac
 # Start of state changes: install cleanup handler
 
 cleanup() {
-	ip netns del "${NS2}"
-	ip netns del "${NS1}"
+	cleanup_ns "${NS1}" "${NS2}"
 }
 
 trap cleanup EXIT
 
 # Create virtual ethernet pair between network namespaces
-ip netns add "${NS1}"
-ip netns add "${NS2}"
+setup_ns NS1 NS2
 
 # Configure system settings
 ip netns exec "${NS1}" sysctl -w -q "${path_sysctl_mem}=1000000"
