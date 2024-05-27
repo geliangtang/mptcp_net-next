@@ -5,6 +5,7 @@
 #include <sys/epoll.h>
 
 #include "test_progs.h"
+#include "network_helpers.h"
 #include "test_skmsg_load_helpers.skel.h"
 #include "test_sockmap_update.skel.h"
 #include "test_sockmap_invalid_update.skel.h"
@@ -21,32 +22,46 @@
 #define TCP_REPAIR_ON		1
 #define TCP_REPAIR_OFF_NO_WP	-1	/* Turn off without window probes */
 
+static int repair_socket_cb(int fd, void *opts)
+{
+	int err, repair;
+
+	repair = TCP_REPAIR_ON;
+	err = setsockopt(fd, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
+	if (!ASSERT_OK(err, "setsockopt(TCP_REPAIR)"))
+		return err;
+
+	return 0;
+}
+
+static int repair_connect_cb(int fd, void *opts)
+{
+	int err, repair;
+
+	repair = TCP_REPAIR_OFF_NO_WP;
+	err = setsockopt(fd, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
+	if (!ASSERT_OK(err, "setsockopt(TCP_REPAIR)"))
+		return err;
+
+	return 0;
+}
+
 static int connected_socket_v4(void)
 {
+	struct network_helper_opts opts = {
+		.post_socket_cb = repair_socket_cb,
+		.post_connect_cb = repair_connect_cb,
+	};
 	struct sockaddr_in addr = {
 		.sin_family = AF_INET,
 		.sin_port = htons(80),
 		.sin_addr = { inet_addr("127.0.0.1") },
 	};
 	socklen_t len = sizeof(addr);
-	int s, repair, err;
+	int s;
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	if (!ASSERT_GE(s, 0, "socket"))
-		goto error;
-
-	repair = TCP_REPAIR_ON;
-	err = setsockopt(s, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
-	if (!ASSERT_OK(err, "setsockopt(TCP_REPAIR)"))
-		goto error;
-
-	err = connect(s, (struct sockaddr *)&addr, len);
-	if (!ASSERT_OK(err, "connect"))
-		goto error;
-
-	repair = TCP_REPAIR_OFF_NO_WP;
-	err = setsockopt(s, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
-	if (!ASSERT_OK(err, "setsockopt(TCP_REPAIR)"))
+	s = connect_to_addr(SOCK_STREAM, (struct sockaddr_storage *)&addr, len, &opts);
+	if (!ASSERT_GE(s, 0, "connect_to_addr"))
 		goto error;
 
 	return s;
