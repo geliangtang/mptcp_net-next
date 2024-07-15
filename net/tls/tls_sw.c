@@ -2024,9 +2024,6 @@ int tls_sw_recvmsg(struct sock *sk,
 					len -= chunk;
 					continue;
 				}
-				if (!chunk && !tls_strp_msg_ready(ctx) &&
-				    skb_queue_empty_lockless(&ctx->rx_list))
-					continue;
 			}
 			goto recv_end;
 		}
