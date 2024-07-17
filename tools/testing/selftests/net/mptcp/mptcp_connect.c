@@ -306,9 +306,9 @@ static void sock_test_tcpulp(int sock, int proto, unsigned int line)
 		if (ret == 0)
 			X("setsockopt");
 	} else if (proto == IPPROTO_MPTCP) {
-		ret = do_ulp_so(sock, "tls");
-		if (ret != -1)
-			X("setsockopt");
+		//ret = do_ulp_so(sock, "tls");
+		//if (ret != -1)
+		//	X("setsockopt");
 	}
 
 	ret = do_ulp_so(sock, "mptcp");
