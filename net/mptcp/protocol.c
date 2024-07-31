@@ -1798,8 +1798,11 @@ static u32 mptcp_send_limit(const struct sock *sk)
 	const struct mptcp_sock *msk = mptcp_sk(sk);
 	u32 limit, not_sent;
 
-	if (sk->sk_wmem_queued >= READ_ONCE(sk->sk_sndbuf))
+	if (sk->sk_wmem_queued >= READ_ONCE(sk->sk_sndbuf)) {
+		//pr_info("%s return 0 sk->sk_wmem_queued=%d READ_ONCE(sk->sk_sndbuf)=%d\n",
+		//	__func__, sk->sk_wmem_queued, READ_ONCE(sk->sk_sndbuf));
 		return 0;
+	}
 
 	limit = mptcp_notsent_lowat(sk);
 	if (limit == UINT_MAX)
@@ -1860,8 +1863,10 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 
 		/* ensure fitting the notsent_lowat() constraint */
 		copy_limit = mptcp_send_limit(sk);
-		if (!copy_limit)
+		if (!copy_limit) {
+			pr_info("%s call wait_for_memory timeo=%ld\n", __func__, timeo);
 			goto wait_for_memory;
+		}
 
 		/* reuse tail pfrag, if possible, or carve a new one from the
 		 * page allocator
@@ -1922,6 +1927,7 @@ wait_for_memory:
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		__mptcp_push_pending(sk, msg->msg_flags);
 		ret = sk_stream_wait_memory(sk, &timeo);
+		pr_info("%s sk_stream_wait_memory ret=%d timeo=%ld\n", __func__, ret, timeo);
 		if (ret)
 			goto do_error;
 	}
@@ -1931,6 +1937,8 @@ wait_for_memory:
 
 out:
 	release_sock(sk);
+	if (copied == -EAGAIN)
+		pr_info("%s return EAGAIN\n", __func__);
 	return copied;
 
 do_error:
@@ -2009,6 +2017,7 @@ static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 	u8 scaling_ratio = U8_MAX;
 	u32 time, advmss = 1;
 	u64 rtt_us, mstamp;
+	int nr = 0;
 
 	msk_owned_by_me(msk);
 
@@ -2040,11 +2049,20 @@ static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 
 		rtt_us = max(sf_rtt_us, rtt_us);
 		advmss = max(sf_advmss, advmss);
+		//pr_info("%s subflow_%u scaling_ratio=%u, tp->scaling_ratio=%u\n", __func__, nr, scaling_ratio, tp->scaling_ratio);
 		scaling_ratio = min(tp->scaling_ratio, scaling_ratio);
+		nr++;
 	}
+
+	//if (nr)
+	//	scaling_ratio -= TCP_RMEM_TO_WIN_SCALE;
+	//if (scaling_ratio > 220)
+	//	scaling_ratio -= TCP_RMEM_TO_WIN_SCALE;
 
 	msk->rcvq_space.rtt_us = rtt_us;
 	msk->scaling_ratio = scaling_ratio;
+	//pr_info("%s msk->scaling_ratio=%u\n", __func__, msk->scaling_ratio);
+
 	if (time < (rtt_us >> 3) || rtt_us == 0)
 		return;
 

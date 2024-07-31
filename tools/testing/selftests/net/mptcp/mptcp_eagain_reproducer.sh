@@ -1,1 +1,1 @@
-./mptcp_eagain_reproducer 200 200
+./mptcp_eagain_reproducer 1000 200

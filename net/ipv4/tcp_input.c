@@ -246,6 +246,8 @@ static void tcp_measure_rcv_mss(struct sock *sk, const struct sk_buff *skb)
 			if (old_ratio != tcp_sk(sk)->scaling_ratio)
 				WRITE_ONCE(tcp_sk(sk)->window_clamp,
 					   tcp_win_from_space(sk, sk->sk_rcvbuf));
+			//pr_info("%s skb->len=%u skb->truesize=%u scaling_ratio=%u\n",
+			//	__func__, skb->len, skb->truesize, tcp_sk(sk)->scaling_ratio);
 		}
 		icsk->icsk_ack.rcv_mss = min_t(unsigned int, len,
 					       tcp_sk(sk)->advmss);
