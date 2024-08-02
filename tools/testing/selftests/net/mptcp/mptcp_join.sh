@@ -3923,15 +3923,14 @@ io_thread_tests()
 {
 	if reset "io thread tests"; then
 		local nr=0 max=100
-		mptcp_lib_pm_nl_set_limits $ns1 8 8
 		mptcp_lib_pm_nl_add_endpoint $ns1 10.0.2.1 flags subflow
 		while [ $nr -lt $max ]; do
 			nr=$((nr + 1))
-			ip netns exec $ns1 ./mptcp_connect -l 10.0.1.1 -m "thread" -O 3000
-			if [ $? -ne 0 ]; then
-				echo "Test no. $nr failed."
+			if ! ip netns exec $ns1 ./mptcp_connect -l 10.0.1.1 -m thread -O 3000; then
+				echo "io thread test $nr failed"
 				break;
 			fi
+			echo "io thread test $nr passed"
 		done
 		chk_join_nr $max 0 $max
 	fi
