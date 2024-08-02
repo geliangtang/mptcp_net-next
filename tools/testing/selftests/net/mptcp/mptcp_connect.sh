@@ -864,6 +864,21 @@ check_mptcp_disabled
 
 stop_if_error "The kernel configuration is not valid for MPTCP"
 
+io_thread_tests()
+{
+	local nr=0 max=100
+	mptcp_lib_pm_nl_add_endpoint $ns2 10.0.2.1 flags subflow
+	while [ $nr -lt $max ]; do
+		nr=$((nr + 1))
+		if ! ip netns exec $ns2 ./mptcp_connect -l 10.0.1.2 -m thread -O 3000; then
+			echo "io thread test $nr failed"
+			break;
+		fi
+	done
+}
+
+io_thread_tests
+
 print_larger_title "Validating network environment with pings"
 for sender in "$ns1" "$ns2" "$ns3" "$ns4";do
 	do_ping "$ns1" $sender 10.0.1.1
