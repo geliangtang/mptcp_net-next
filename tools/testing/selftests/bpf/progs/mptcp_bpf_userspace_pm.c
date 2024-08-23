@@ -213,6 +213,8 @@ int BPF_PROG(mptcp_pm_subflow_create, struct mptcp_sock *msk,
 		msk->pm.subflows++;
 	bpf_spin_unlock_bh(&msk->pm.lock);
 
+	bpf_printk("mptcp_pm_subflow_create done");
+
 	return err;
 }
 
@@ -296,6 +298,8 @@ int BPF_PROG(mptcp_pm_subflow_destroy, struct mptcp_sock *msk,
 		mptcp_close_ssk(sk, ssk, subflow);
 	}
 
+	bpf_printk("mptcp_pm_subflow_destroy done");
+
 	return err;
 }
 
@@ -307,6 +311,8 @@ int BPF_PROG(mptcp_pm_get_local_id, struct mptcp_sock *msk,
 						     struct inet_sock);
 	__be16 msk_sport = issk->inet_sport;
 	struct mptcp_pm_addr_entry *entry;
+
+	bpf_printk("mptcp_pm_get_local_id");
 
 	bpf_spin_lock_bh(&msk->pm.lock);
 	entry = mptcp_userspace_pm_lookup_addr(msk, &local->addr);
@@ -333,6 +339,8 @@ u8 BPF_PROG(mptcp_pm_get_flags, struct mptcp_sock *msk,
 		flags = entry->flags;
 	bpf_spin_unlock_bh(&msk->pm.lock);
 
+	bpf_printk("mptcp_pm_get_flags done");
+
 	return flags;
 }
 
@@ -340,6 +348,8 @@ SEC("struct_ops")
 struct mptcp_pm_addr_entry *
 BPF_PROG(mptcp_pm_get_addr, struct mptcp_sock *msk, u8 id)
 {
+	bpf_printk("mptcp_pm_get_addr");
+
 	return mptcp_userspace_pm_lookup_addr_by_id(msk, id);
 }
 
@@ -364,6 +374,8 @@ SEC("struct_ops")
 int BPF_PROG(mptcp_pm_dump_addr, struct mptcp_sock *msk,
 	     struct mptcp_id_bitmap *bitmap)
 {
+	bpf_printk("mptcp_pm_dump_addr");
+
 	return mptcp_userspace_pm_set_bitmap(msk, bitmap);
 }
 
@@ -373,6 +385,8 @@ int BPF_PROG(mptcp_pm_set_flags, struct mptcp_sock *msk,
 {
 	struct mptcp_pm_addr_entry *entry;
 	u8 bkup = 0;
+
+	bpf_printk("mptcp_pm_set_flags");
 
 	if (local->addr.family == AF_UNSPEC ||
 	    remote->family == AF_UNSPEC)

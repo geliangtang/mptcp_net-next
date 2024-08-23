@@ -14,6 +14,7 @@ static int mptcp_setsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 	int *optval = ctx->optval;
 	struct mptcp_sock *msk;
 	__u32 mark;
+	int i = 0;
 
 	if (ctx->optval + sizeof(mark) > ctx->optval_end)
 		return 1;
@@ -33,6 +34,8 @@ static int mptcp_setsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		bpf_spin_unlock_bh(&ssk->sk_lock.slock);
 		if (err < 0)
 			break;
+
+		bpf_printk("setsockopt i=%d mark=%u", i++, mark);
 	}
 	bpf_mptcp_sock_release(msk);
 
@@ -45,6 +48,7 @@ static int mptcp_setsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 	char *optval = ctx->optval;
 	char cc[TCP_CA_NAME_MAX];
 	struct mptcp_sock *msk;
+	int i = 0;
 
 	if (ctx->optval + TCP_CA_NAME_MAX > ctx->optval_end)
 		return 1;
@@ -64,6 +68,8 @@ static int mptcp_setsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		bpf_spin_unlock_bh(&ssk->sk_lock.slock);
 		if (err < 0)
 			break;
+
+		bpf_printk("setsockopt i=%d cc=%s", i++, cc);
 	}
 	bpf_mptcp_sock_release(msk);
 
@@ -92,6 +98,7 @@ static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
 	struct mptcp_sock *msk;
+	int i = 0;
 
 	msk = bpf_mptcp_sock_acquire(bpf_mptcp_sk((struct sock *)sk));
 	if (!msk)
@@ -104,6 +111,8 @@ static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 			ctx->retval = -1;
 			break;
 		}
+
+		bpf_printk("i=%d mark=%u", i++, ssk->sk_mark);
 	}
 	bpf_mptcp_sock_release(msk);
 
@@ -114,6 +123,7 @@ static int mptcp_getsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
 	struct mptcp_sock *msk;
+	int i = 0;
 
 	msk = bpf_mptcp_sock_acquire(bpf_mptcp_sk((struct sock *)sk));
 	if (!msk)
@@ -129,6 +139,8 @@ static int mptcp_getsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 			ctx->retval = -1;
 			break;
 		}
+
+		bpf_printk("i=%d cc=%s", i++, icsk->icsk_ca_ops->name);
 	}
 	bpf_mptcp_sock_release(msk);
 
