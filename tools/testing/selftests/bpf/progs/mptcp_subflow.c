@@ -66,15 +66,18 @@ static int _check_getsockopt_subflow_mark(struct mptcp_sock *msk, struct bpf_soc
 	int i = 0;
 
 	mptcp_for_each_subflow(msk, subflow) {
+		struct tcp_sock *tsk;
 		struct sock *ssk;
 
 		ssk = mptcp_subflow_tcp_sock(bpf_core_cast(subflow,
 							   struct mptcp_subflow_context));
+		tsk = bpf_core_cast(ssk, struct tcp_sock);
 
 		if (ssk->sk_mark != ++i) {
 			ctx->retval = -2;
 			break;
 		}
+		bpf_printk("i=%d mark=%u bytes_sent=%u", i, ssk->sk_mark, tsk->bytes_sent);
 	}
 
 	return 1;
@@ -83,6 +86,7 @@ static int _check_getsockopt_subflow_mark(struct mptcp_sock *msk, struct bpf_soc
 static int _check_getsockopt_subflow_cc(struct mptcp_sock *msk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
+	int i = 0;
 
 	mptcp_for_each_subflow(msk, subflow) {
 		struct inet_connection_sock *icsk;
@@ -97,6 +101,7 @@ static int _check_getsockopt_subflow_cc(struct mptcp_sock *msk, struct bpf_socko
 			ctx->retval = -2;
 			break;
 		}
+		bpf_printk("i=%d cc=%s", i++, icsk->icsk_ca_ops->name);
 	}
 
 	return 1;
