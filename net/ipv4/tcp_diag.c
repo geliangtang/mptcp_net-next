@@ -132,7 +132,7 @@ static int tcp_diag_get_aux(struct sock *sk, bool net_admin,
 	if (net_admin) {
 		const struct tcp_ulp_ops *ulp_ops;
 
-		ulp_ops = icsk->icsk_ulp_ops;
+		ulp_ops = icsk->icsk_ulp_ops[ULP_INDEX_DEFAULT];
 		if (ulp_ops)
 			err = tcp_diag_put_ulp(skb, sk, ulp_ops);
 		if (err)
@@ -167,7 +167,7 @@ static size_t tcp_diag_get_aux_size(struct sock *sk, bool net_admin)
 	if (net_admin && sk_fullsock(sk)) {
 		const struct tcp_ulp_ops *ulp_ops;
 
-		ulp_ops = icsk->icsk_ulp_ops;
+		ulp_ops = icsk->icsk_ulp_ops[ULP_INDEX_DEFAULT];
 		if (ulp_ops) {
 			size += nla_total_size(0) +
 				nla_total_size(TCP_ULP_NAME_MAX);
