@@ -567,6 +567,7 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		case TCP_FASTOPEN_CONNECT:
 		case TCP_FASTOPEN_KEY:
 		case TCP_FASTOPEN_NO_COOKIE:
+		case TCP_ULP:
 			return true;
 		}
 
@@ -576,7 +577,52 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		 * TCP_REPAIR_WINDOW are not supported, better avoid this mess
 		 */
 	}
+	if (level == SOL_TLS) {
+		switch (optname) {
+		case TLS_TX:
+		case TLS_RX:
+			return true;
+		}
+	}
 	return false;
+}
+
+static int mptcp_setsockopt_sol_tcp_ulp(struct mptcp_sock *msk, sockptr_t optval,
+					unsigned int optlen)
+{
+	struct mptcp_subflow_context *subflow;
+	struct sock *sk = (struct sock *)msk;
+	char name[TCP_ULP_NAME_MAX];
+	int ret;
+
+	if (optlen < 1)
+		return -EINVAL;
+
+	ret = strncpy_from_sockptr(name, optval,
+				   min_t(long, TCP_ULP_NAME_MAX - 1, optlen));
+	if (ret < 0)
+		return -EFAULT;
+	name[ret] = 0;
+
+	ret = 0;
+	lock_sock(sk);
+	sockopt_seq_inc(msk);
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+		int err;
+
+		lock_sock(ssk);
+		err = tcp_set_ulp(ssk, name);
+		if (err < 0 && ret == 0) {
+			pr_info("%s err=%d\n", __func__, err);
+			ret = err;
+		}
+		subflow->setsockopt_seq = msk->setsockopt_seq;
+		release_sock(ssk);
+	}
+
+	release_sock(sk);
+	return ret;
 }
 
 static int mptcp_setsockopt_sol_tcp_congestion(struct mptcp_sock *msk, sockptr_t optval,
@@ -806,7 +852,7 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 
 	switch (optname) {
 	case TCP_ULP:
-		return -EOPNOTSUPP;
+		return mptcp_setsockopt_sol_tcp_ulp(msk, optval, optlen);
 	case TCP_CONGESTION:
 		return mptcp_setsockopt_sol_tcp_congestion(msk, optval, optlen);
 	case TCP_DEFER_ACCEPT:
@@ -867,6 +913,8 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	return ret;
 }
 
+int tls_setsockopt(struct sock *sk, int level, int optname,
+		   sockptr_t optval, unsigned int optlen);
 int mptcp_setsockopt(struct sock *sk, int level, int optname,
 		     sockptr_t optval, unsigned int optlen)
 {
@@ -901,6 +949,9 @@ int mptcp_setsockopt(struct sock *sk, int level, int optname,
 
 	if (level == SOL_TCP)
 		return mptcp_setsockopt_sol_tcp(msk, optname, optval, optlen);
+
+	if (level == SOL_TLS)
+		return tls_setsockopt(msk->first, level, optname, optval, optlen);
 
 	return -EOPNOTSUPP;
 }

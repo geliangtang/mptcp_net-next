@@ -495,7 +495,7 @@ static int espintcp_init_sk(struct sock *sk)
 	sk->sk_data_ready = espintcp_data_ready;
 	sk->sk_write_space = espintcp_write_space;
 	sk->sk_destruct = espintcp_destruct;
-	rcu_assign_pointer(icsk->icsk_ulp_data, ctx);
+	rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_DEFAUL], ctx);
 	INIT_WORK(&ctx->work, espintcp_tx_work);
 
 	/* avoid using task_frag */
@@ -578,6 +578,7 @@ static void build_protos(struct proto *espintcp_prot,
 }
 
 static struct tcp_ulp_ops espintcp_ulp __read_mostly = {
+	.id = ULP_INDEX_DEFAULT,
 	.name = "espintcp",
 	.owner = THIS_MODULE,
 	.init = espintcp_init_sk,
