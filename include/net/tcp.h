@@ -2558,6 +2558,7 @@ enum hrtimer_restart tcp_pace_kick(struct hrtimer *timer);
 
 struct tcp_ulp_ops {
 	struct list_head	list;
+	int			id;
 
 	/* initialize ulp */
 	int (*init)(struct sock *sk);

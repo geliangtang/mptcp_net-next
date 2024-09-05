@@ -104,27 +104,36 @@ void tcp_update_ulp(struct sock *sk, struct proto *proto,
 		    void (*write_space)(struct sock *sk))
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct tcp_ulp_ops *ulp_ops;
+	int i;
 
-	if (icsk->icsk_ulp_ops->update)
-		icsk->icsk_ulp_ops->update(sk, proto, write_space);
+	for (i = 0; i < ULP_INDEX_MAX; i++) {
+		ulp_ops = icsk->icsk_ulp_ops[i];
+		if (ulp_ops && ulp_ops->update)
+			ulp_ops->update(sk, proto, write_space);
+	}
 }
 
 void tcp_cleanup_ulp(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct tcp_ulp_ops *ulp_ops;
+	int i;
 
 	/* No sock_owned_by_me() check here as at the time the
 	 * stack calls this function, the socket is dead and
 	 * about to be destroyed.
 	 */
-	if (!icsk->icsk_ulp_ops)
-		return;
-
-	if (icsk->icsk_ulp_ops->release)
-		icsk->icsk_ulp_ops->release(sk);
-	module_put(icsk->icsk_ulp_ops->owner);
-
-	icsk->icsk_ulp_ops = NULL;
+	for (i = 0; i < ULP_INDEX_MAX; i++) {
+		ulp_ops = icsk->icsk_ulp_ops[i];
+		if (ulp_ops) {
+			//pr_info("%s ulp_ops->name=%s\n", __func__, ulp_ops->name);
+			if (ulp_ops->release)
+				ulp_ops->release(sk);
+			module_put(ulp_ops->owner);
+			ulp_ops = NULL;
+		}
+	}
 }
 
 static int __tcp_set_ulp(struct sock *sk, const struct tcp_ulp_ops *ulp_ops)
@@ -133,7 +142,7 @@ static int __tcp_set_ulp(struct sock *sk, const struct tcp_ulp_ops *ulp_ops)
 	int err;
 
 	err = -EEXIST;
-	if (icsk->icsk_ulp_ops)
+	if (icsk->icsk_ulp_ops[ulp_ops->id])
 		goto out_err;
 
 	if (sk->sk_socket)
@@ -147,7 +156,7 @@ static int __tcp_set_ulp(struct sock *sk, const struct tcp_ulp_ops *ulp_ops)
 	if (err)
 		goto out_err;
 
-	icsk->icsk_ulp_ops = ulp_ops;
+	icsk->icsk_ulp_ops[ulp_ops->id] = ulp_ops;
 	return 0;
 out_err:
 	module_put(ulp_ops->owner);

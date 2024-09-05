@@ -383,7 +383,7 @@ static void tls_sk_proto_close(struct sock *sk, long timeout)
 
 	write_lock_bh(&sk->sk_callback_lock);
 	if (free_ctx)
-		rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
+		rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_DEFAULT], NULL);
 	WRITE_ONCE(sk->sk_prot, ctx->sk_proto);
 	if (sk->sk_write_space == tls_write_space)
 		sk->sk_write_space = ctx->sk_write_space;
@@ -797,8 +797,8 @@ static int do_tls_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 	return rc;
 }
 
-static int tls_setsockopt(struct sock *sk, int level, int optname,
-			  sockptr_t optval, unsigned int optlen)
+int tls_setsockopt(struct sock *sk, int level, int optname,
+		   sockptr_t optval, unsigned int optlen)
 {
 	struct tls_context *ctx = tls_get_ctx(sk);
 
@@ -829,7 +829,7 @@ struct tls_context *tls_ctx_create(struct sock *sk)
 	 * address dependency between sk->sk_proto->{getsockopt,setsockopt}
 	 * and ctx->sk_proto.
 	 */
-	rcu_assign_pointer(icsk->icsk_ulp_data, ctx);
+	rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_DEFAULT], ctx);
 	return ctx;
 }
 
@@ -1026,7 +1026,7 @@ static int tls_get_info(struct sock *sk, struct sk_buff *skb)
 		return -EMSGSIZE;
 
 	rcu_read_lock();
-	ctx = rcu_dereference(inet_csk(sk)->icsk_ulp_data);
+	ctx = rcu_dereference(inet_csk(sk)->icsk_ulp_data[ULP_INDEX_DEFAULT]);
 	if (!ctx) {
 		err = 0;
 		goto nla_failure;
@@ -1118,6 +1118,7 @@ static struct pernet_operations tls_proc_ops = {
 };
 
 static struct tcp_ulp_ops tcp_tls_ulp_ops __read_mostly = {
+	.id			= ULP_INDEX_DEFAULT,
 	.name			= "tls",
 	.owner			= THIS_MODULE,
 	.init			= tls_init,

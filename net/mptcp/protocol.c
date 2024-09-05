@@ -2484,7 +2484,7 @@ static void __mptcp_close_ssk(struct sock *sk, struct sock *ssk,
 	 * the ssk has been already destroyed, we just need to release the
 	 * reference owned by msk;
 	 */
-	if (!inet_csk(ssk)->icsk_ulp_ops) {
+	if (!inet_csk(ssk)->icsk_ulp_ops[ULP_INDEX_MPTCP]) {
 		WARN_ON_ONCE(!sock_flag(ssk, SOCK_DEAD));
 		kfree_rcu(subflow, rcu);
 	} else {
