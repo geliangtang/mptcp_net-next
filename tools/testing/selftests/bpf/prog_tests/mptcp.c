@@ -885,7 +885,7 @@ static void test_first(void)
 	if (!ASSERT_OK_PTR(skel, "open_and_load: first"))
 		return;
 
-	test_bpf_sched(skel->obj, "first", WITH_DATA, WITHOUT_DATA);
+	test_bpf_sched(skel->maps.first, "first", WITH_DATA, WITHOUT_DATA);
 	mptcp_bpf_first__destroy(skel);
 }
 
