@@ -13,6 +13,7 @@
 #include "mptcp_subflow.skel.h"
 #include "mptcp_bpf_iters.skel.h"
 #include "mptcp_bpf_userspace_pm.skel.h"
+#include "mptcp_bpf_sockopt.skel.h"
 #include "mptcp_bpf_first.skel.h"
 #include "mptcp_bpf_bkup.skel.h"
 #include "mptcp_bpf_rr.skel.h"
@@ -1091,6 +1092,91 @@ skel_destroy:
 	mptcp_bpf_userspace_pm__destroy(skel);
 }
 
+static void run_sockopt(void)
+{
+	char cc[TCP_CA_NAME_MAX] = "reno";
+	int server_fd, client_fd, err;
+	unsigned int mark = 1;
+	socklen_t len;
+
+	server_fd = start_mptcp_server(AF_INET, ADDR_1, PORT_1, 0);
+	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
+		goto close_server;
+
+	send_byte(client_fd);
+	wait_for_new_subflows(client_fd);
+
+	len = sizeof(mark);
+	err = setsockopt(client_fd, SOL_SOCKET, SO_MARK, &mark, len);
+	if (!ASSERT_OK(err, "setsockopt(client_fd, SO_MARK)"))
+		goto close_client;
+
+	len = sizeof(cc);
+	err = setsockopt(client_fd, SOL_TCP, TCP_CONGESTION, cc, len);
+	if (!ASSERT_OK(err, "setsockopt(client_fd, TCP_CONGESTION)"))
+		goto close_client;
+
+	len = sizeof(mark);
+	err = getsockopt(client_fd, SOL_SOCKET, SO_MARK, &mark, &len);
+	if (ASSERT_OK(err, "getsockopt(client_fd, SO_MARK)"))
+		ASSERT_EQ(mark, 1, "mark");
+
+	len = sizeof(cc);
+	err = getsockopt(client_fd, SOL_TCP, TCP_CONGESTION, cc, &len);
+	if (ASSERT_OK(err, "getsockopt(client_fd, TCP_CONGESTION)"))
+		ASSERT_STREQ(cc, "reno", "cc");
+
+close_client:
+	close(client_fd);
+close_server:
+	close(server_fd);
+}
+
+static void test_sockopt(void)
+{
+	struct mptcp_bpf_sockopt *skel;
+	struct nstoken *nstoken;
+	int cgroup_fd;
+
+	cgroup_fd = test__join_cgroup("/bpf_sockopt");
+	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: bpf_sockopt"))
+		return;
+
+	skel = mptcp_bpf_sockopt__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "skel_open_load: bpf_sockopt"))
+		goto close_cgroup;
+
+	skel->links.mptcp_setsockopt = bpf_program__attach_cgroup(skel->progs.mptcp_setsockopt,
+								  cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.mptcp_setsockopt, "attach setsockopt"))
+		goto skel_destroy;
+
+	skel->links.mptcp_getsockopt = bpf_program__attach_cgroup(skel->progs.mptcp_getsockopt,
+								  cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.mptcp_getsockopt, "attach getsockopt"))
+		goto skel_destroy;
+
+	nstoken = create_netns();
+	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
+		goto skel_destroy;
+
+	if (endpoint_init("subflow", 3) < 0)
+		goto close_netns;
+
+	run_sockopt();
+
+close_netns:
+	cleanup_netns(nstoken);
+skel_destroy:
+	mptcp_bpf_sockopt__destroy(skel);
+close_cgroup:
+	close(cgroup_fd);
+}
+
 static int sched_init(char *flags, char *sched)
 {
 	if (endpoint_init(flags, 2) < 0)
@@ -1281,6 +1367,8 @@ void test_mptcp(void)
 		test_userspace_pm();
 	if (test__start_subtest("bpf_pm"))
 		test_bpf_pm();
+	if (test__start_subtest("sockopt"))
+		test_sockopt();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))
