@@ -812,7 +812,7 @@ skel_destroy:
 
 static int sched_init(char *flags, char *sched)
 {
-	if (endpoint_init(flags, 2) < 0)
+	if (endpoint_init(flags, 4) < 0)
 		return -1;
 
 	SYS(fail, "ip netns exec %s sysctl -qw net.mptcp.scheduler=%s", NS_TEST, sched);
