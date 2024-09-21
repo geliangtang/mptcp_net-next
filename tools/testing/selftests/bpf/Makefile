@@ -135,7 +135,8 @@ TEST_GEN_PROGS_EXTENDED = \
 	xdp_hw_metadata \
 	xdp_synproxy \
 	xdping \
-	xskxceiver
+	xskxceiver \
+	mptcp_pm_nl_ctl
 
 TEST_GEN_FILES += liburandom_read.so urandom_read sign-file uprobe_multi
 
@@ -723,6 +724,7 @@ TRUNNER_EXTRA_FILES := $(OUTPUT)/urandom_read				\
 		       $(OUTPUT)/xdp_synproxy				\
 		       $(OUTPUT)/sign-file				\
 		       $(OUTPUT)/uprobe_multi				\
+		       $(OUTPUT)/mptcp_pm_nl_ctl			\
 		       $(TEST_KMOD_TARGETS)				\
 		       ima_setup.sh 					\
 		       verify_sig_setup.sh				\
