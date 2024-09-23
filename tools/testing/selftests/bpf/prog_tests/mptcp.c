@@ -12,6 +12,7 @@
 #include "mptcpify.skel.h"
 #include "mptcp_subflow.skel.h"
 #include "mptcp_bpf_iters.skel.h"
+#include "mptcp_bpf_userspace_pm.skel.h"
 #include "mptcp_bpf_bytes.skel.h"
 #include "mptcp_bpf_first.skel.h"
 #include "mptcp_bpf_bkup.skel.h"
@@ -59,6 +60,7 @@
 enum mptcp_pm_type {
 	MPTCP_PM_TYPE_KERNEL = 0,
 	MPTCP_PM_TYPE_USERSPACE,
+	MPTCP_PM_TYPE_BPF,
 
 	__MPTCP_PM_TYPE_NR,
 	__MPTCP_PM_TYPE_MAX = __MPTCP_PM_TYPE_NR - 1,
@@ -1049,6 +1051,72 @@ fail:
 	cleanup_netns(nstoken);
 }
 
+static void test_bpf_pm(struct bpf_object *obj, char *pm, bool ipv6)
+{
+	struct nstoken *nstoken;
+	struct bpf_link *link;
+	struct bpf_map *map;
+	int err;
+
+	map = bpf_object__find_map_by_name(obj, pm);
+	link = bpf_map__attach_struct_ops(map);
+	if (CHECK(!link, pm, "attach_struct_ops: %d\n", errno))
+		return;
+
+	nstoken = create_netns();
+	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
+		goto link_destroy;
+
+	err = userspace_pm_init(MPTCP_PM_TYPE_BPF);
+	if (!ASSERT_OK(err, "userspace_pm_init: bpf pm"))
+		goto close_netns;
+
+	run_userspace_pm(ipv6);
+
+	userspace_pm_cleanup();
+close_netns:
+	cleanup_netns(nstoken);
+link_destroy:
+	bpf_link__destroy(link);
+}
+
+static void test_userspace_bpf(void)
+{
+	struct mptcp_bpf_userspace_pm *skel;
+
+	skel = mptcp_bpf_userspace_pm__open();
+	if (!ASSERT_OK_PTR(skel, "open: userspace_pm"))
+		return;
+
+	if (!ASSERT_OK(bpf_program__set_flags(skel->progs.mptcp_pm_address_announce,
+		BPF_F_SLEEPABLE), "set pm_address_announce sleepable"))
+		goto fail;
+
+	if (!ASSERT_OK(bpf_program__set_flags(skel->progs.mptcp_pm_address_remove,
+		BPF_F_SLEEPABLE), "set pm_address_remove sleepable"))
+		goto fail;
+
+	if (!ASSERT_OK(bpf_program__set_flags(skel->progs.mptcp_pm_subflow_create,
+		BPF_F_SLEEPABLE), "set pm_subflow_create sleepable"))
+		goto fail;
+
+	if (!ASSERT_OK(bpf_program__set_flags(skel->progs.mptcp_pm_subflow_destroy,
+		BPF_F_SLEEPABLE), "set pm_subflow_destroy sleepable"))
+		goto fail;
+
+	if (!ASSERT_OK(bpf_program__set_flags(skel->progs.mptcp_pm_set_flags,
+		BPF_F_SLEEPABLE), "set pm_set_flags sleepable"))
+		goto fail;
+
+	if (!ASSERT_OK(mptcp_bpf_userspace_pm__load(skel), "load: userspace_pm"))
+		goto fail;
+
+	test_bpf_pm(skel->obj, "userspace_pm", skel->kconfig->CONFIG_MPTCP_IPV6);
+
+fail:
+	mptcp_bpf_userspace_pm__destroy(skel);
+}
+
 static struct nstoken *sched_init(char *flags, char *sched)
 {
 	struct nstoken *nstoken;
@@ -1239,6 +1307,8 @@ void test_mptcp(void)
 		test_iters_address();
 	if (test__start_subtest("userspace_pm"))
 		test_userspace_pm();
+	if (test__start_subtest("userspace_bpf"))
+		test_userspace_bpf();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))
