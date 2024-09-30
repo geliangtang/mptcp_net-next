@@ -47,41 +47,52 @@ static int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
 						    struct mptcp_pm_addr_entry *entry,
 						    bool needs_id)
 {
+	struct mptcp_pm_addr_entry *match = NULL;
 	struct sock *sk = (struct sock *)msk;
 	struct mptcp_id_bitmap id_bitmap;
 	struct mptcp_pm_addr_entry *e;
+	bool addr_match = false;
+	bool id_match = false;
 	int ret = -EINVAL;
 
 	bitmap_zero(id_bitmap.map, MPTCP_PM_MAX_ADDR_ID + 1);
 
 	spin_lock_bh(&msk->pm.lock);
 	mptcp_for_each_address(msk, e) {
-		if (mptcp_addresses_equal_check_id(&e->addr, &entry->addr, true, entry->addr.id)) {
-			if (entry->addr.id == 0 && needs_id)
-				entry->addr.id = e->addr.id;
-			ret = entry->addr.id;
-			goto append_err;
+		addr_match = mptcp_addresses_equal(&e->addr, &entry->addr, true);
+		if (addr_match && entry->addr.id == 0 && needs_id)
+			entry->addr.id = e->addr.id;
+		id_match = (e->addr.id == entry->addr.id);
+		if (addr_match && id_match) {
+			match = e;
+			break;
+		} else if (addr_match || id_match) {
+			break;
 		}
 		__set_bit(e->addr.id, id_bitmap.map);
 	}
 
-	/* Memory for the entry is allocated from the
-	 * sock option buffer.
-	 */
-	e = sock_kmalloc(sk, sizeof(*e), GFP_ATOMIC);
-	if (!e) {
-		ret = -ENOMEM;
-		goto append_err;
-	}
+	if (!match && !addr_match && !id_match) {
+		/* Memory for the entry is allocated from the
+		 * sock option buffer.
+		 */
+		e = sock_kmalloc(sk, sizeof(*e), GFP_ATOMIC);
+		if (!e) {
+			ret = -ENOMEM;
+			goto append_err;
+		}
 
-	*e = *entry;
-	if (!e->addr.id && needs_id)
-		e->addr.id = find_next_zero_bit(id_bitmap,
-						MPTCP_PM_MAX_ADDR_ID + 1,
-						1);
-	list_add_tail_rcu(&e->list, &msk->pm.userspace_pm_local_addr_list);
-	msk->pm.local_addr_used++;
-	ret = e->addr.id;
+		*e = *entry;
+		if (!e->addr.id && needs_id)
+			e->addr.id = find_next_zero_bit(id_bitmap.map,
+							MPTCP_PM_MAX_ADDR_ID + 1,
+							1);
+		list_add_tail_rcu(&e->list, &msk->pm.userspace_pm_local_addr_list);
+		msk->pm.local_addr_used++;
+		ret = e->addr.id;
+	} else if (match) {
+		ret = entry->addr.id;
+	}
 
 append_err:
 	spin_unlock_bh(&msk->pm.lock);
