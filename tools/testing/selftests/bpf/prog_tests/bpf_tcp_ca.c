@@ -95,6 +95,7 @@ static void test_cubic(void)
 	};
 	struct network_helper_opts opts = {
 		.post_socket_cb	= cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	struct bpf_cubic *cubic_skel;
@@ -142,10 +143,12 @@ static void test_dctcp(void)
 	};
 	struct network_helper_opts opts = {
 		.post_socket_cb	= cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	struct network_helper_opts cli_opts = {
 		.post_socket_cb	= stg_post_socket_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	int lfd = -1, fd = -1, tmp_stg, err;
@@ -268,6 +271,7 @@ static void test_dctcp_fallback(void)
 	};
 	struct network_helper_opts srv_opts = {
 		.post_socket_cb = cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts = &dctcp,
 	};
 	struct cb_opts cubic = {
@@ -275,6 +279,7 @@ static void test_dctcp_fallback(void)
 	};
 	struct network_helper_opts cli_opts = {
 		.post_socket_cb = cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts = &cubic,
 	};
 	char srv_cc[16];
@@ -397,6 +402,7 @@ static void test_update_ca(void)
 	};
 	struct network_helper_opts opts = {
 		.post_socket_cb	= cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	struct tcp_ca_update *skel;
@@ -435,6 +441,7 @@ static void test_update_wrong(void)
 	};
 	struct network_helper_opts opts = {
 		.post_socket_cb	= cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	struct tcp_ca_update *skel;
@@ -472,6 +479,7 @@ static void test_mixed_links(void)
 	};
 	struct network_helper_opts opts = {
 		.post_socket_cb	= cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	struct tcp_ca_update *skel;
@@ -584,6 +592,7 @@ static void test_cc_cubic(void)
 	};
 	struct network_helper_opts opts = {
 		.post_socket_cb	= cc_cb,
+		.post_connect_cb = NULL,
 		.cb_opts	= &cb_opts,
 	};
 	struct bpf_cc_cubic *cc_cubic_skel;

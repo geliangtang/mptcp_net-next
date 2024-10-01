@@ -296,6 +296,10 @@ int connect_to_addr(int type, const struct sockaddr_storage *addr, socklen_t add
 		return -1;
 	}
 
+	if (opts->post_connect_cb &&
+	    opts->post_connect_cb(fd, opts->cb_opts))
+		return -1;
+
 	return fd;
 }
 
