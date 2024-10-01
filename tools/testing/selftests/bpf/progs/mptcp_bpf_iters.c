@@ -101,3 +101,19 @@ int iters_address(struct bpf_sockopt *ctx)
 
 	return 1;
 }
+
+/* tools/testing/selftests/bpf/tools/include/vmlinux.h */
+SEC("tracepoint/mptcp/mptcp_subflow_get_send")
+int trace_get_send(struct trace_event_raw_mptcp_subflow_get_send *ctx)
+{
+	struct mptcp_sock *msk = bpf_core_cast(ctx->msk, struct mptcp_sock);
+	struct mptcp_subflow_context *subflow;
+	int i = 0;
+
+	mptcp_for_each_subflow(msk, subflow) {
+		bpf_printk("bpf_iter tracepoint i=%d subflows=%u", i++, msk->pm.subflows);
+	}
+
+	bpf_printk("trace_get_send snd_wnd=%u token=%u", ctx->snd_wnd, msk->token);
+	return 0;
+}
