@@ -22,6 +22,7 @@ TRACE_EVENT(mptcp_subflow_get_send,
 	TP_ARGS(subflow),
 
 	TP_STRUCT__entry(
+		__field(struct mptcp_sock *, msk)
 		__field(bool, active)
 		__field(bool, free)
 		__field(u32, snd_wnd)
@@ -42,6 +43,7 @@ TRACE_EVENT(mptcp_subflow_get_send,
 			__entry->free = 0;
 
 		ssk = mptcp_subflow_tcp_sock(subflow);
+		__entry->msk = mptcp_sk(mptcp_subflow_ctx(ssk)->conn);
 		if (ssk && sk_fullsock(ssk)) {
 			__entry->snd_wnd = tcp_sk(ssk)->snd_wnd;
 			__entry->pace = READ_ONCE(ssk->sk_pacing_rate);
