@@ -59,4 +59,13 @@ static inline void bpf_strlcpy(char *dst, const char *src, size_t sz)
 	(offsetof(TYPE, MEMBER)	+ sizeof_field(TYPE, MEMBER))
 #endif
 
+#define clean_errno() (errno == 0 ? "None" : strerror(errno))
+#define log_err(MSG, ...) ({						\
+			int __save = errno;				\
+			fprintf(stderr, "(%s:%d: errno: %s) " MSG "\n", \
+				__FILE__, __LINE__, clean_errno(),	\
+				##__VA_ARGS__);				\
+			errno = __save;					\
+})
+
 #endif /* __BPF_UTIL__ */

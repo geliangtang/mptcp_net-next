@@ -11,10 +11,6 @@
 #include "test_progs.h"
 #include "network_helpers.h"
 
-#define log_err(MSG, ...) \
-	fprintf(stderr, "(%s:%d: errno: %s) " MSG "\n", \
-		__FILE__, __LINE__, strerror(errno), ##__VA_ARGS__)
-
 #define RUN_TEST(name)                                                        \
 	({                                                                    \
 		if (test__start_subtest(#name)) {                             \

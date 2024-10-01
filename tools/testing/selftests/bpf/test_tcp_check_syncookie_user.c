@@ -17,6 +17,7 @@
 
 #include "cgroup_helpers.h"
 #include "network_helpers.h"
+#include "bpf_util.h"
 
 static int get_map_fd_by_prog_id(int prog_id, bool *xdp)
 {

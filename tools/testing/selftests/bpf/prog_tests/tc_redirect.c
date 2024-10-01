@@ -25,6 +25,7 @@
 #include "test_progs.h"
 #include "network_helpers.h"
 #include "netlink_helpers.h"
+#include "bpf_util.h"
 #include "test_tc_neigh_fib.skel.h"
 #include "test_tc_neigh.skel.h"
 #include "test_tc_peer.skel.h"
@@ -62,10 +63,6 @@
 
 #define TIMEOUT_MILLIS 10000
 #define NSEC_PER_SEC 1000000000ULL
-
-#define log_err(MSG, ...) \
-	fprintf(stderr, "(%s:%d: errno: %s) " MSG "\n", \
-		__FILE__, __LINE__, strerror(errno), ##__VA_ARGS__)
 
 static const char * const namespaces[] = {NS_SRC, NS_FWD, NS_DST, NULL};
 static struct netns_obj *netns_objs[3];
