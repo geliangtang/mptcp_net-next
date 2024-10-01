@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2020 Facebook */
 
-#include <sys/types.h>
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
 #include "test_progs.h"
 #include "network_helpers.h"
 #include "test_sk_storage_trace_itself.skel.h"

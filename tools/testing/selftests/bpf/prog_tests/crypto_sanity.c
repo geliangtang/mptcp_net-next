@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2024 Meta Platforms, Inc. and affiliates. */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <net/if.h>
 #include <linux/if_alg.h>
 
 #include "test_progs.h"

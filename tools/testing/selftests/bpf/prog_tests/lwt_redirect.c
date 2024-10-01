@@ -42,16 +42,7 @@
  *  Case 1,2 use tap device to test redirect to device that requires MAC
  *  header, and tun device to test the case with no MAC header added.
  */
-#include <sys/socket.h>
-#include <net/if.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
-#include <linux/if_tun.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <errno.h>
 #include <stdbool.h>
-#include <stdlib.h>
 
 #define NETNS "ns_lwt_redirect"
 #include "lwt_helpers.h"

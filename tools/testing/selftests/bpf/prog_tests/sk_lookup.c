@@ -15,19 +15,6 @@
  */
 
 #define _GNU_SOURCE
-#include <arpa/inet.h>
-#include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <sched.h>
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#include <bpf/libbpf.h>
-#include <bpf/bpf.h>
-
 #include "test_progs.h"
 #include "bpf_util.h"
 #include "cgroup_helpers.h"

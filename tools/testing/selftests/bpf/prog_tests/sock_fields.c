@@ -4,14 +4,8 @@
 #define _GNU_SOURCE
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unistd.h>
 #include <sched.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
 
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
 #include <linux/compiler.h>
 
 #include "network_helpers.h"

@@ -40,8 +40,6 @@
  *     d) 1 from device outside VRF to server outside VRF
  */
 
-#include <net/if.h>
-
 #include "test_progs.h"
 #include "network_helpers.h"
 #include "vrf_socket_lookup.skel.h"

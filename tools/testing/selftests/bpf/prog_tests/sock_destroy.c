@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <test_progs.h>
-#include <bpf/bpf_endian.h>
 
 #include "sock_destroy_prog.skel.h"
 #include "sock_destroy_prog_fail.skel.h"

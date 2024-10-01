@@ -23,9 +23,6 @@
  * Author: Kuniyuki Iwashima <kuniyu@amazon.co.jp>
  */
 
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
-
 #include "test_progs.h"
 #include "test_migrate_reuseport.skel.h"
 #include "network_helpers.h"

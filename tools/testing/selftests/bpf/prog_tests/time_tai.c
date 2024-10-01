@@ -6,7 +6,6 @@
 
 #include "test_time_tai.skel.h"
 
-#include <time.h>
 #include <stdint.h>
 
 #define TAI_THRESHOLD	1000000000ULL /* 1s */

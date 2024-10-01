@@ -2,9 +2,7 @@
 /* Copyright (c) 2022 Meta Platforms, Inc. and affiliates.*/
 
 #define _GNU_SOURCE
-#include <unistd.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <test_progs.h>
 #include "cgrp_ls_tp_btf.skel.h"
 #include "cgrp_ls_recursion.skel.h"

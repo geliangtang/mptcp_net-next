@@ -10,17 +10,13 @@
  * to drop unexpected traffic.
  */
 
-#include <arpa/inet.h>
 #include <linux/if_tun.h>
 #include <linux/limits.h>
 #include <linux/sysctl.h>
 #include <linux/time_types.h>
 #include <linux/net_tstamp.h>
-#include <net/if.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include "test_progs.h"
 #include "network_helpers.h"

@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2022 Meta Platforms, Inc. and affiliates. */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <net/if.h>
-
 #include "test_progs.h"
 #include "network_helpers.h"
 #include "decap_sanity.skel.h"

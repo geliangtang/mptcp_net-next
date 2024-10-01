@@ -12,7 +12,6 @@
 #include <linux/net_tstamp.h>
 #include <linux/udp.h>
 #include <sys/mman.h>
-#include <net/if.h>
 #include <poll.h>
 
 #define TX_NAME "veTX"

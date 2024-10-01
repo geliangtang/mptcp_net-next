@@ -2,8 +2,6 @@
 /* Copyright (c) 2023 Meta Platforms, Inc. and affiliates. */
 
 #include <linux/rtnetlink.h>
-#include <sys/types.h>
-#include <net/if.h>
 
 #include "test_progs.h"
 #include "network_helpers.h"

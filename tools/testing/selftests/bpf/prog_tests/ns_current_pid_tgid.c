@@ -5,11 +5,8 @@
 #include <test_progs.h>
 #include "test_ns_current_pid_tgid.skel.h"
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <sys/syscall.h>
 #include <sched.h>
-#include <sys/wait.h>
 #include <sys/mount.h>
 #include <fcntl.h>
 #include "network_helpers.h"

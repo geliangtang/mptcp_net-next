@@ -77,13 +77,11 @@
 #include <errno.h>
 #include <getopt.h>
 #include <linux/if_link.h>
-#include <linux/if_ether.h>
 #include <linux/mman.h>
 #include <linux/netdev.h>
 #include <linux/bitmap.h>
 #include <linux/ethtool.h>
 #include <arpa/inet.h>
-#include <net/if.h>
 #include <locale.h>
 #include <poll.h>
 #include <pthread.h>
@@ -94,9 +92,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <sys/mman.h>
-#include <sys/socket.h>
 #include <sys/time.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "xsk_xdp_progs.skel.h"

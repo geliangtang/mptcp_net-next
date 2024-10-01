@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <test_progs.h>
 #include <network_helpers.h>
-#include <net/if.h>
 #include "empty_skb.skel.h"
 
 void test_empty_skb(void)

@@ -2,9 +2,7 @@
 /* Copyright (c) 2023 Facebook */
 #include <test_progs.h>
 #include <linux/in6.h>
-#include <sys/socket.h>
 #include <sched.h>
-#include <unistd.h>
 #include "cgroup_helpers.h"
 #include "testing_helpers.h"
 #include "cgroup_tcp_skb.skel.h"

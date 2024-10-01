@@ -43,7 +43,6 @@
  *  5) requested if_id is compared with received if_id
  */
 
-#include <net/if.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_link.h>
 

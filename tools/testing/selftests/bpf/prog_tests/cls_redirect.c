@@ -3,11 +3,7 @@
 
 #define _GNU_SOURCE
 
-#include <arpa/inet.h>
-#include <string.h>
-
 #include <linux/pkt_cls.h>
-#include <netinet/tcp.h>
 
 #include <test_progs.h>
 #include "network_helpers.h"

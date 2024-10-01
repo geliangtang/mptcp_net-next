@@ -3,8 +3,6 @@
 
 #define _GNU_SOURCE
 #include <sched.h>
-#include <stdlib.h>
-#include <net/if.h>
 
 #include "test_progs.h"
 #include "cgroup_helpers.h"

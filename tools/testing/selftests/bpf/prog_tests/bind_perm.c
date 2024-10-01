@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #define _GNU_SOURCE
 #include <sched.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 
 #include "test_progs.h"
 #include "cap_helpers.h"

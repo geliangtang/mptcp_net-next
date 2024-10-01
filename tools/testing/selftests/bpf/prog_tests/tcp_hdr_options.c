@@ -3,9 +3,6 @@
 
 #define _GNU_SOURCE
 #include <sched.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/socket.h>
 #include <linux/compiler.h>
 
 #include "test_progs.h"

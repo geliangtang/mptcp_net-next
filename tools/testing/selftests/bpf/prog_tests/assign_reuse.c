@@ -3,7 +3,6 @@
 #include <uapi/linux/if_link.h>
 #include <test_progs.h>
 
-#include <netinet/tcp.h>
 #include <netinet/udp.h>
 
 #include "network_helpers.h"

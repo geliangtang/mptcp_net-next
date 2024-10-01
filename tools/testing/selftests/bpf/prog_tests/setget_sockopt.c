@@ -5,7 +5,6 @@
 #include <sched.h>
 #include <linux/socket.h>
 #include <linux/tls.h>
-#include <net/if.h>
 
 #include "test_progs.h"
 #include "cgroup_helpers.h"

@@ -6,7 +6,6 @@
 #include "test_check_mtu.skel.h"
 #include "network_helpers.h"
 
-#include <stdlib.h>
 #include <inttypes.h>
 
 #define IFINDEX_LO 1

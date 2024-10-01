@@ -3,15 +3,6 @@
 
 #define _GNU_SOURCE
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <sched.h>
-#include <net/if.h>
-#include <linux/compiler.h>
-#include <bpf/libbpf.h>
 
 #include "network_helpers.h"
 #include "test_progs.h"
