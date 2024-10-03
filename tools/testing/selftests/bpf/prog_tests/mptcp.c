@@ -610,9 +610,13 @@ fail:
 
 static void userspace_pm_cleanup(void)
 {
+	//SYS(fail, "ip netns exec %s cat %s", NS_TEST, PM_EVENTS);
+
 	SYS_NOFAIL("ip netns exec %s killall %s > /dev/null 2>&1",
 		   NS_TEST, PM_CTL);
 	SYS_NOFAIL("ip netns exec %s rm -rf %s", NS_TEST, PM_EVENTS);
+//fail:
+	;
 }
 
 static char *get_events_str(char *type)
