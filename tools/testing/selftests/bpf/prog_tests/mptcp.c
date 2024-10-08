@@ -64,6 +64,12 @@ enum mptcp_pm_type {
 	__MPTCP_PM_TYPE_MAX = __MPTCP_PM_TYPE_NR - 1,
 };
 
+enum mptcp_pm_family {
+	IPV4 = 0,
+	IPV6,
+	IPV4MAPPED,
+};
+
 static const unsigned int total_bytes = 10 * 1024 * 1024;
 static int duration;
 
@@ -764,6 +770,297 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+static int userspace_pm_add_addr(char *addr, __u8 id)
+{
+	__u32 token;
+	char *str;
+	int n;
+
+	str = get_events_str("type:2");
+	if (!str)
+		return -1;
+
+	n = sscanf(strstr(str, "token"), "token:%u,", &token);
+	if (n != 1)
+		return -1;
+	SYS_NOFAIL("ip netns exec %s %s ann %s id %u token %u",
+		   NS_TEST, PM_CTL, addr, id, token);
+
+	return 0;
+}
+
+static int userspace_pm_get_addr(__u8 id, char *output)
+{
+	char buf[1024];
+	__u32 token;
+	char *str;
+	FILE *fp;
+	int n;
+
+	str = get_events_str("type:2");
+	if (!str)
+		return -1;
+
+	n = sscanf(strstr(str, "token"), "token:%u,", &token);
+	if (n != 1)
+		return -1;
+
+	sprintf(buf, "ip netns exec %s %s get %u token %u",
+		NS_TEST, PM_CTL, id, token);
+	fp = popen(buf, "r");
+	if (!fp)
+		return -1;
+
+	bzero(buf, sizeof(buf));
+	fread(buf, 1, sizeof(buf), fp);
+	pclose(fp);
+
+	if (!ASSERT_STRNEQ(buf, output, sizeof(buf), "get_addr"))
+		return -1;
+
+	return 0;
+}
+
+static int userspace_pm_dump_addr(char *output)
+{
+	char buf[1024];
+	__u32 token;
+	char *str;
+	FILE *fp;
+	int n;
+
+	str = get_events_str("type:2");
+	if (!str)
+		return -1;
+
+	n = sscanf(strstr(str, "token"), "token:%u,", &token);
+	if (n != 1)
+		return -1;
+
+	sprintf(buf, "ip netns exec %s %s dump token %u",
+		NS_TEST, PM_CTL, token);
+	fp = popen(buf, "r");
+	if (!fp)
+		return -1;
+
+	bzero(buf, sizeof(buf));
+	fread(buf, 1, sizeof(buf), fp);
+	pclose(fp);
+
+	if (!ASSERT_STRNEQ(buf, output, sizeof(buf), "dump_addr"))
+		return -1;
+
+	return 0;
+}
+
+static int userspace_pm_set_flags(char *addr, char *flags)
+{
+	bool ipv6 = strstr(addr, ":");
+	__u32 token, sport, dport;
+	char *str;
+	int n;
+
+	str = get_events_str("type:10");
+	if (!str)
+		return -1;
+
+	n = sscanf(strstr(str, "token"), "token:%u,", &token);
+	if (n != 1)
+		return -1;
+	n = sscanf(strstr(str, "sport"), "sport:%u,dport:%u,", &sport, &dport);
+	if (n != 2)
+		return -1;
+	str = ipv6 ? (strstr(addr, ".") ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	SYS_NOFAIL("ip netns exec %s %s set %s port %u rip %s rport %u flags %s token %u",
+		   NS_TEST, PM_CTL, addr, sport, str, dport, flags, token);
+
+	return 0;
+}
+
+static int userspace_pm_rm_subflow(char *addr, __u8 id)
+{
+	bool ipv6 = strstr(addr, ":");
+	__u32 token, sport, dport;
+	char *str;
+	int n;
+
+	str = get_events_str("type:10");
+	if (!str)
+		return -1;
+
+	n = sscanf(strstr(str, "token"), "token:%u,", &token);
+	if (n != 1)
+		return -1;
+	n = sscanf(strstr(str, "sport"), "sport:%u,dport:%u,", &sport, &dport);
+	if (n != 2)
+		return -1;
+	str = ipv6 ? (strstr(addr, ".") ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	SYS_NOFAIL("ip netns exec %s %s dsf lip %s lport %u rip %s rport %u token %u",
+		   NS_TEST, PM_CTL, addr, sport, str, dport, token);
+
+	return 0;
+}
+
+static int userspace_pm_rm_addr(__u8 id)
+{
+	__u32 token;
+	char *str;
+	int n;
+
+	str = get_events_str("type:2");
+	if (!str)
+		return -1;
+
+	n = sscanf(strstr(str, "token"), "token:%u,", &token);
+	if (n != 1)
+		return -1;
+	SYS_NOFAIL("ip netns exec %s %s rem id %u token %u",
+		   NS_TEST, PM_CTL, id, token);
+
+	return 0;
+}
+
+static void run_userspace_pm(enum mptcp_pm_family family)
+{
+	bool ipv6 = (family == IPV6 || family == IPV4MAPPED);
+	bool ipv4mapped = (family == IPV4MAPPED);
+	int server_fd, client_fd, accept_fd;
+	char output[1024];
+	char *addr;
+	int err;
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	server_fd = start_mptcp_server(ipv6 ? AF_INET6 : AF_INET, addr, PORT_1, 0);
+	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
+		goto close_server;
+
+	accept_fd = accept(server_fd, NULL, NULL);
+	if (!ASSERT_OK_FD(accept_fd, "accept"))
+		goto close_client;
+
+	usleep(100000);
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+	usleep(100000);
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_2 : ADDR6_2) : ADDR_2;
+	err = userspace_pm_add_subflow(addr, 100);
+	if (!ASSERT_OK(err, "userspace_pm_add_subflow 100"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	sprintf(output, "id 100 flags subflow %s\n", addr);
+	err = userspace_pm_get_addr(100, output);
+	if (!ASSERT_OK(err, "userspace_pm_get_addr 100"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	err = userspace_pm_set_flags(addr, "backup");
+	if (!ASSERT_OK(err, "userspace_pm_set_flags backup"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	sprintf(output, "id 100 flags subflow,backup %s\n", addr);
+	err = userspace_pm_get_addr(100, output);
+	if (!ASSERT_OK(err, "userspace_pm_get_addr 100"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	err = userspace_pm_set_flags(addr, "nobackup");
+	if (!ASSERT_OK(err, "userspace_pm_set_flags nobackup"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	sprintf(output, "id 100 flags subflow %s\n", addr);
+	err = userspace_pm_get_addr(100, output);
+	if (!ASSERT_OK(err, "userspace_pm_get_addr 100"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	err = userspace_pm_rm_subflow(addr, 100);
+	if (!ASSERT_OK(err, "userspace_pm_rm_subflow 100"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	err = userspace_pm_dump_addr("");
+	if (!ASSERT_OK(err, "userspace_pm_dump_addr"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_3 : ADDR6_3) : ADDR_3;
+	err = userspace_pm_add_addr(addr, 200);
+	if (!ASSERT_OK(err, "userspace_pm_add_addr 200"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	sprintf(output, "id 200 flags signal %s\n", addr);
+	err = userspace_pm_dump_addr(output);
+	if (!ASSERT_OK(err, "userspace_pm_dump_addr"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	err = userspace_pm_rm_addr(200);
+	if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	err = userspace_pm_rm_addr(0);
+	ASSERT_OK(err, "userspace_pm_rm_addr 0");
+
+close_accept:
+	close(accept_fd);
+close_client:
+	close(client_fd);
+close_server:
+	close(server_fd);
+}
+
+static void test_userspace_pm(void)
+{
+	struct nstoken *nstoken;
+	int err;
+
+	nstoken = create_netns();
+	if (!ASSERT_OK_PTR(nstoken, "create_netns"))
+		return;
+
+	err = userspace_pm_init(MPTCP_PM_TYPE_USERSPACE);
+	if (!ASSERT_OK(err, "userspace_pm_init: userspace pm"))
+		goto fail;
+
+	run_userspace_pm(IPV4);
+
+	userspace_pm_cleanup();
+fail:
+	cleanup_netns(nstoken);
+}
+
 static int sched_init(char *flags, char *sched)
 {
 	if (endpoint_init(flags, 2) < 0)
@@ -953,6 +1250,8 @@ void test_mptcp(void)
 		test_iters_subflow();
 	if (test__start_subtest("iters_address"))
 		test_iters_address();
+	if (test__start_subtest("userspace_pm"))
+		test_userspace_pm();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))
