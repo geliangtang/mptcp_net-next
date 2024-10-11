@@ -3425,7 +3425,7 @@ static void smc_ulp_clone(const struct request_sock *req, struct sock *newsk,
 	struct inet_connection_sock *icsk = inet_csk(newsk);
 
 	/* don't inherit ulp ops to child when listen */
-	icsk->icsk_ulp_ops[ULP_INDEX_DEFAULT] = NULL;
+	icsk->icsk_ulp_ops = NULL;
 }
 
 static struct tcp_ulp_ops smc_ulp_ops __read_mostly = {

@@ -1229,14 +1229,11 @@ static void inet_clone_ulp(const struct request_sock *req, struct sock *newsk,
 			   const gfp_t priority)
 {
 	struct inet_connection_sock *icsk = inet_csk(newsk);
-	const struct tcp_ulp_ops *ulp_ops;
-	int i;
 
-	for (i = 0; i < ULP_INDEX_MAX; i++) {
-		ulp_ops = icsk->icsk_ulp_ops[i];
-		if (ulp_ops && ulp_ops->clone)
-			ulp_ops->clone(req, newsk, priority);
-	}
+	if (!icsk->icsk_ulp_ops)
+		return;
+
+	icsk->icsk_ulp_ops->clone(req, newsk, priority);
 }
 
 /**
@@ -1335,14 +1332,9 @@ EXPORT_SYMBOL(inet_csk_prepare_forced_close);
 static int inet_ulp_can_listen(const struct sock *sk)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
-	const struct tcp_ulp_ops *ulp_ops;
-	int i;
 
-	for (i = 0; i < ULP_INDEX_MAX; i++) {
-		ulp_ops = icsk->icsk_ulp_ops[i];
-		if (ulp_ops && !ulp_ops->clone)
-			return -EINVAL;
-	}
+	if (icsk->icsk_ulp_ops && !icsk->icsk_ulp_ops->clone)
+		return -EINVAL;
 
 	return 0;
 }
