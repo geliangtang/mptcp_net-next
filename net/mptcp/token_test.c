@@ -76,7 +76,7 @@ static void mptcp_token_test_msk_basic(struct kunit *test)
 	struct mptcp_sock *null_msk = NULL;
 	struct sock *sk;
 
-	rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_MPTCP], ctx);
+	rcu_assign_pointer(icsk->icsk_ulp_data, ctx);
 	ctx->conn = (struct sock *)msk;
 	sk = (struct sock *)msk;
 

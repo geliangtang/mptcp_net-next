@@ -28,12 +28,6 @@ struct inet_bind_bucket;
 struct inet_bind2_bucket;
 struct tcp_congestion_ops;
 
-enum ulp_index {
-	ULP_INDEX_DEFAULT,
-	ULP_INDEX_MPTCP,
-	ULP_INDEX_MAX,
-};
-
 /*
  * Pointers to address related TCP functions
  * (i.e. things that depend on the address family)
@@ -100,8 +94,8 @@ struct inet_connection_sock {
 	__u32			  icsk_pmtu_cookie;
 	const struct tcp_congestion_ops *icsk_ca_ops;
 	const struct inet_connection_sock_af_ops *icsk_af_ops;
-	const struct tcp_ulp_ops  *icsk_ulp_ops[ULP_INDEX_MAX];
-	void __rcu		  *icsk_ulp_data[ULP_INDEX_MAX];
+	const struct tcp_ulp_ops  *icsk_ulp_ops;
+	void __rcu		  *icsk_ulp_data;
 	void (*icsk_clean_acked)(struct sock *sk, u32 acked_seq);
 	unsigned int		  (*icsk_sync_mss)(struct sock *sk, u32 pmtu);
 	__u8			  icsk_ca_state:5,
@@ -359,8 +353,7 @@ static inline void inet_csk_inc_pingpong_cnt(struct sock *sk)
 
 static inline bool inet_csk_has_ulp(const struct sock *sk)
 {
-	return inet_test_bit(IS_ICSK, sk) && (!!inet_csk(sk)->icsk_ulp_ops[ULP_INDEX_DEFAULT] ||
-					      !!inet_csk(sk)->icsk_ulp_ops[ULP_INDEX_MPTCP]);
+	return inet_test_bit(IS_ICSK, sk) && !!inet_csk(sk)->icsk_ulp_ops;
 }
 
 static inline void inet_init_csk_locks(struct sock *sk)

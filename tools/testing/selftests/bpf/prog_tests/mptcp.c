@@ -4,7 +4,6 @@
 
 #include <linux/const.h>
 #include <netinet/in.h>
-#include <linux/tls.h>
 #include <test_progs.h>
 #include <unistd.h>
 #include "cgroup_helpers.h"
@@ -56,10 +55,6 @@
 #endif
 #ifndef MPTCP_INFO_FLAG_REMOTE_KEY_RECEIVED
 #define MPTCP_INFO_FLAG_REMOTE_KEY_RECEIVED	_BITUL(1)
-#endif
-
-#ifndef TCP_ULP
-#define TCP_ULP 31
 #endif
 
 #ifndef TCP_CA_NAME_MAX
@@ -1380,173 +1375,6 @@ static void test_stale(void)
 	mptcp_bpf_stale__destroy(skel);
 }
 
-static int sockmap_init_ktls(int fd)
-{
-	struct tls12_crypto_info_aes_gcm_128 tls_tx = {
-		.info = {
-			.version     = TLS_1_2_VERSION,
-			.cipher_type = TLS_CIPHER_AES_GCM_128,
-		},
-	};
-	struct tls12_crypto_info_aes_gcm_128 tls_rx = {
-		.info = {
-			.version     = TLS_1_2_VERSION,
-			.cipher_type = TLS_CIPHER_AES_GCM_128,
-		},
-	};
-	int so_buf = 6553500;
-	int err;
-
-	err = setsockopt(fd, SOL_TCP, TCP_ULP, "tls", sizeof("tls"));
-	if (!ASSERT_OK(err, "setsockopt TCP_ULP"))
-		return err;
-	err = setsockopt(fd, SOL_TLS, TLS_TX, (void *)&tls_tx, sizeof(tls_tx));
-	if (!ASSERT_OK(err, "setsockopt TLS_TX"))
-		return err;
-	err = setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
-	if (!ASSERT_OK(err, "setsockopt TLS_RX"))
-		return err;
-	err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &so_buf, sizeof(so_buf));
-	if (!ASSERT_OK(err, "setsockopt SO_SNDBUF"))
-		return err;
-	err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &so_buf, sizeof(so_buf));
-	if (!ASSERT_OK(err, "setsockopt SO_RCVBUF"))
-		return err;
-
-	return 0;
-}
-
-static int ss_search(char *src, char *dst, char *port, char *keyword)
-{
-	return SYS_NOFAIL("ip netns exec %s ss -enita src %s dst %s %s %d | grep -q '%s'",
-			  NS_TEST, src, dst, port, PORT_1, keyword);
-}
-
-static int has_bytes_sent(char *dst)
-{
-	return ss_search(ADDR_1, dst, "sport", "bytes_sent:");
-}
-
-static int ktls_cb(int fd)
-{
-	int err;
-
-	err = settimeo(fd, 0);
-	if (err)
-		return err;
-	err = sockmap_init_ktls(fd);
-	if (err)
-		return err;
-
-	return 0;
-}
-
-static void run_tcp_ktls(void)
-{
-	int server_fd, client_fd;
-
-	server_fd = start_server(AF_INET, SOCK_STREAM, ADDR_1, PORT_1, 0);
-	if (!ASSERT_GE(server_fd, 0, "start_server"))
-		return;
-
-	client_fd = connect_to_fd(server_fd, 0);
-	if (!ASSERT_GE(client_fd, 0, "connect to fd"))
-		goto fail;
-
-	if (!ASSERT_OK(sockmap_init_ktls(client_fd), "init_ktls client_fd"))
-		goto fail;
-
-	if (!ASSERT_OK(send_recv_data(server_fd, client_fd,
-				      total_bytes, ktls_cb),
-		       "send_recv_data"))
-		goto fail;
-
-	//CHECK(has_bytes_sent(ADDR_1), "tcp_ktls", "should have bytes_sent on addr1\n");
-	CHECK(!has_bytes_sent(ADDR_2), "tcp_ktls", "shouldn't have bytes_sent on addr2\n");
-
-	close(client_fd);
-fail:
-	close(server_fd);
-}
-
-static void test_tcp_ktls(void)
-{
-	struct nstoken *nstoken;
-	int cgroup_fd;
-
-	cgroup_fd = test__join_cgroup("/tcp_ktls");
-	if (!ASSERT_GE(cgroup_fd, 0, "join_cgroup: tcp_ktls"))
-		return;
-
-	nstoken = create_netns(NS_TEST);
-	if (!ASSERT_OK_PTR(nstoken, "create_netns: tcp_ktls"))
-		goto close_cgroup;
-
-	if (endpoint_init("subflow"))
-		goto close_netns;
-
-	run_tcp_ktls();
-
-close_netns:
-	cleanup_netns(nstoken);
-close_cgroup:
-	close(cgroup_fd);
-}
-
-#if 0
-static void run_mptcp_ktls(void)
-{
-	int server_fd, client_fd;
-
-	server_fd = start_mptcp_server(AF_INET, ADDR_1, PORT_1, 0);
-	if (!ASSERT_GE(server_fd, 0, "start_mptcp_server"))
-		return;
-
-	client_fd = connect_to_fd(server_fd, 0);
-	if (!ASSERT_GE(client_fd, 0, "connect to fd"))
-		goto fail;
-
-	if (!ASSERT_OK(sockmap_init_ktls(client_fd), "init_ktls client_fd"))
-		goto fail;
-
-	if (!ASSERT_OK(send_recv_data(server_fd, client_fd,
-				      total_bytes, ktls_cb),
-		       "send_recv_data"))
-		goto fail;
-
-	CHECK(has_bytes_sent(ADDR_1), "mptcp ktls", "should have bytes_sent on addr1\n");
-	CHECK(has_bytes_sent(ADDR_2), "mptcp ktls", "should have bytes_sent on addr2\n");
-
-	close(client_fd);
-fail:
-	close(server_fd);
-}
-
-static void test_mptcp_ktls(void)
-{
-	struct nstoken *nstoken;
-	int cgroup_fd;
-
-	cgroup_fd = test__join_cgroup("/mptcp_ktls");
-	if (!ASSERT_GE(cgroup_fd, 0, "join_cgroup: mptcp_ktls"))
-		return;
-
-	nstoken = create_netns(NS_TEST);
-	if (!ASSERT_OK_PTR(nstoken, "create_netns: mptcp_ktls"))
-		goto close_cgroup;
-
-	if (endpoint_init("subflow"))
-		goto close_netns;
-
-	run_mptcp_ktls();
-
-close_netns:
-	cleanup_netns(nstoken);
-close_cgroup:
-	close(cgroup_fd);
-}
-#endif
-
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -1579,10 +1407,4 @@ void test_mptcp(void)
 		test_burst();
 	if (test__start_subtest("stale"))
 		test_stale();
-	if (test__start_subtest("tcp_ktls"))
-		test_tcp_ktls();
-#if 0
-	if (test__start_subtest("mptcp_ktls"))
-		test_mptcp_ktls();
-#endif
 }

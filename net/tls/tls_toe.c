@@ -50,7 +50,7 @@ static void tls_toe_sk_destruct(struct sock *sk)
 
 	ctx->sk_destruct(sk);
 	/* Free ctx */
-	rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_DEFAULT], NULL);
+	rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
 	tls_ctx_free(sk, ctx);
 }
 

@@ -103,7 +103,7 @@ static void mptcp_diag_dump_listeners(struct sk_buff *skb, struct netlink_callba
 			if (num < diag_ctx->l_num)
 				goto next_listen;
 
-			if (!ctx || strcmp(inet_csk(sk)->icsk_ulp_ops[ULP_INDEX_MPTCP]->name, "mptcp"))
+			if (!ctx || strcmp(inet_csk(sk)->icsk_ulp_ops->name, "mptcp"))
 				goto next_listen;
 
 			sk = ctx->conn;

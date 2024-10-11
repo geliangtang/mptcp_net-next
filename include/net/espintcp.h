@@ -35,6 +35,6 @@ static inline struct espintcp_ctx *espintcp_getctx(const struct sock *sk)
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	/* RCU is only needed for diag */
-	return (__force void *)icsk->icsk_ulp_data[ULP_INDEX_DEFAULT];
+	return (__force void *)icsk->icsk_ulp_data;
 }
 #endif

@@ -13,7 +13,6 @@
 #include <uapi/linux/mptcp.h>
 #include <net/genetlink.h>
 #include <net/rstreason.h>
-#include <net/tls.h>
 
 #define MPTCP_SUPPORTED_VERSION	1
 
@@ -509,7 +508,6 @@ DECLARE_PER_CPU(struct mptcp_delegated_action, mptcp_delegated_actions);
 struct mptcp_subflow_context {
 	struct	list_head node;/* conn_list of subflows */
 
-	struct tls_context tls;
 	struct_group(reset,
 
 	unsigned long avg_pacing_rate; /* protected by msk socket lock */
@@ -598,7 +596,7 @@ mptcp_subflow_ctx(const struct sock *sk)
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	/* Use RCU on icsk_ulp_data only for sock diag code */
-	return (__force struct mptcp_subflow_context *)icsk->icsk_ulp_data[ULP_INDEX_MPTCP];
+	return (__force struct mptcp_subflow_context *)icsk->icsk_ulp_data;
 }
 
 static inline struct sock *

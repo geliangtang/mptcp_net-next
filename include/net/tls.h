@@ -367,7 +367,7 @@ static inline struct tls_context *tls_get_ctx(const struct sock *sk)
 	/* Use RCU on icsk_ulp_data only for sock diag code,
 	 * TLS data path doesn't need rcu_dereference().
 	 */
-	return (__force void *)icsk->icsk_ulp_data[ULP_INDEX_DEFAULT];
+	return (__force void *)icsk->icsk_ulp_data;
 }
 
 static inline struct tls_sw_context_rx *tls_sw_ctx_rx(
