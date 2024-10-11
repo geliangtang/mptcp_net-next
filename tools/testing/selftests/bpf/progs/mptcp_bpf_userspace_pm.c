@@ -5,41 +5,17 @@
 #include "mptcp_bpf.h"
 
 char _license[] SEC("license") = "GPL";
-int use_bpf_list = 0;
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 256);
-	__type(key, int);
-	__type(value, struct mptcp_pm_addr_entry);
-} mptcp_pm_list SEC(".maps");
 
 SEC("struct_ops")
 void BPF_PROG(mptcp_pm_init, struct mptcp_sock *msk)
 {
-	struct mptcp_pm_addr_entry *entry;
-	__u32 key = 0;
-
 	bpf_printk("BPF userspace PM (%s)",
 		   CONFIG_MPTCP_IPV6 ? "IPv6" : "IPv4");
-
-	if (!use_bpf_list)
-		return;
-
-	//for (__u32 i = 0; i < MPTCP_SUBFLOWS_MAX; i++) {
-	entry = bpf_map_lookup_elem(&mptcp_pm_list, &key);
-	if (entry)
-		bpf_printk("id=%u", entry->addr.id);
-	//}
 }
 
 SEC("struct_ops")
 void BPF_PROG(mptcp_pm_release, struct mptcp_sock *msk)
 {
-	if (!use_bpf_list)
-		return;
-
-	//bpf_sk_storage_delete(&mptcp_pm_list_map, msk);
 }
 
 static int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
@@ -144,34 +120,10 @@ static int mptcp_pm_remove_id_zero_address(struct mptcp_sock *msk)
 	return 0;
 }
 
-#if 0
-static struct mptcp_pm_addr_entry *
-bpf_mptcp_userspace_pm_lookup_addr_by_id(struct mptcp_sock *msk, unsigned int id)
-{
-	struct mptcp_pm_list_storage *storage;
-	struct mptcp_pm_addr_entry *entry;
-
-	storage = bpf_sk_storage_get(&mptcp_pm_list_map, msk, 0, 0);
-	if (!storage)
-		return NULL;
-
-	for (int i = 0; i < storage->nr && i < MPTCP_SUBFLOWS_MAX; i++) {
-		entry = storage->pm_list[i];
-		if (entry->addr.id == id)
-			return entry;
-	}
-
-	return NULL;
-}
-#endif
-
 static struct mptcp_pm_addr_entry *
 mptcp_userspace_pm_lookup_addr_by_id(struct mptcp_sock *msk, unsigned int id)
 {
 	struct mptcp_pm_addr_entry *entry;
-
-	//if (use_bpf_list)
-	//	return bpf_mptcp_userspace_pm_lookup_addr_by_id(msk, id);
 
 	bpf_for_each(mptcp_address, entry, msk) {
 		if (entry->addr.id == id)
