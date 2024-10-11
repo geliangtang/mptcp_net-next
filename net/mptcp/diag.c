@@ -29,7 +29,7 @@ static int subflow_get_info(struct sock *sk, struct sk_buff *skb)
 
 	slow = lock_sock_fast(sk);
 	rcu_read_lock();
-	sf = rcu_dereference(inet_csk(sk)->icsk_ulp_data[ULP_INDEX_MPTCP]);
+	sf = rcu_dereference(inet_csk(sk)->icsk_ulp_data);
 	if (!sf) {
 		err = 0;
 		goto nla_failure;

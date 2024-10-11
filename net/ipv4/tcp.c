@@ -4405,7 +4405,7 @@ int do_tcp_getsockopt(struct sock *sk, int level,
 		if (copy_from_sockptr(&len, optlen, sizeof(int)))
 			return -EFAULT;
 		len = min_t(unsigned int, len, TCP_ULP_NAME_MAX);
-		if (!icsk->icsk_ulp_ops[ULP_INDEX_DEFAULT]) {
+		if (!icsk->icsk_ulp_ops) {
 			len = 0;
 			if (copy_to_sockptr(optlen, &len, sizeof(int)))
 				return -EFAULT;
@@ -4413,7 +4413,7 @@ int do_tcp_getsockopt(struct sock *sk, int level,
 		}
 		if (copy_to_sockptr(optlen, &len, sizeof(int)))
 			return -EFAULT;
-		if (copy_to_sockptr(optval, icsk->icsk_ulp_ops[ULP_INDEX_DEFAULT]->name, len))
+		if (copy_to_sockptr(optval, icsk->icsk_ulp_ops->name, len))
 			return -EFAULT;
 		return 0;
 

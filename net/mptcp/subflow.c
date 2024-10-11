@@ -771,8 +771,8 @@ static void subflow_ulp_fallback(struct sock *sk,
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	mptcp_subflow_tcp_fallback(sk, old_ctx);
-	icsk->icsk_ulp_ops[ULP_INDEX_MPTCP] = NULL;
-	rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_MPTCP], NULL);
+	icsk->icsk_ulp_ops = NULL;
+	rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
 	tcp_sk(sk)->is_mptcp = 0;
 
 	mptcp_subflow_ops_undo_override(sk);
@@ -786,7 +786,7 @@ void mptcp_subflow_drop_ctx(struct sock *ssk)
 		return;
 
 	list_del(&mptcp_subflow_ctx(ssk)->node);
-	if (inet_csk(ssk)->icsk_ulp_ops[ULP_INDEX_MPTCP]) {
+	if (inet_csk(ssk)->icsk_ulp_ops) {
 		subflow_ulp_fallback(ssk, ctx);
 		if (ctx->conn)
 			sock_put(ctx->conn);
@@ -1819,7 +1819,7 @@ static struct mptcp_subflow_context *subflow_create_ctx(struct sock *sk,
 	if (!ctx)
 		return NULL;
 
-	rcu_assign_pointer(icsk->icsk_ulp_data[ULP_INDEX_MPTCP], ctx);
+	rcu_assign_pointer(icsk->icsk_ulp_data, ctx);
 	INIT_LIST_HEAD(&ctx->node);
 	INIT_LIST_HEAD(&ctx->delegated_node);
 
@@ -2109,7 +2109,6 @@ static int tcp_abort_override(struct sock *ssk, int err)
 }
 
 static struct tcp_ulp_ops subflow_ulp_ops __read_mostly = {
-	.id		= ULP_INDEX_MPTCP,
 	.name		= "mptcp",
 	.owner		= THIS_MODULE,
 	.init		= subflow_ulp_init,
