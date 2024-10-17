@@ -41,7 +41,7 @@ srctree := $(patsubst %/,%,$(dir $(srctree)))
 endif
 
 CFLAGS += -g $(OPT_FLAGS) -rdynamic					\
-	  -fno-omit-frame-pointer				\
+	  -Wall -Werror -fno-omit-frame-pointer				\
 	  $(GENFLAGS) $(SAN_CFLAGS) $(LIBELF_CFLAGS)			\
 	  -I$(CURDIR) -I$(INCLUDE_DIR) -I$(GENDIR) -I$(LIBDIR)		\
 	  -I$(TOOLSINCDIR) -I$(APIDIR) -I$(OUTPUT)
