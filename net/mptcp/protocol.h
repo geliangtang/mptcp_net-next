@@ -1056,6 +1056,7 @@ void mptcp_pm_remove_addr_entry(struct mptcp_sock *msk,
 				struct mptcp_pm_addr_entry *entry);
 
 struct mptcp_pm_ops *mptcp_pm_find(enum mptcp_pm_type type);
+int mptcp_validate_path_manager(struct mptcp_pm_ops *pm);
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
 void mptcp_unregister_path_manager(struct mptcp_pm_ops *pm);
 int mptcp_init_pm(struct mptcp_sock *msk, struct mptcp_pm_ops *pm);
