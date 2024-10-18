@@ -15,8 +15,8 @@ int BPF_PROG(trace_mptcp_sched_get_send, struct mptcp_sock *msk)
 {
 	struct mptcp_subflow_context *subflow;
 
-	if (bpf_get_current_pid_tgid() >> 32 != pid)
-		return 0;
+	//if (bpf_get_current_pid_tgid() >> 32 != pid)
+	//	return 0;
 
 	if (!msk->pm.server_side)
 		return 0;
@@ -29,10 +29,13 @@ int BPF_PROG(trace_mptcp_sched_get_send, struct mptcp_sock *msk)
 		ssk = mptcp_subflow_tcp_sock(subflow);
 		tp = bpf_core_cast(ssk, struct tcp_sock);
 
-		if (subflow->subflow_id == 1)
-			bytes_sent_1 = tp->bytes_sent;
-		else if (subflow->subflow_id == 2)
-			bytes_sent_2 = tp->bytes_sent;
+		if (subflow->subflow_id == 1) {
+			bpf_printk("bytes 1: sent %lu received %lu subflows %u", tp->bytes_sent, tp->bytes_received, msk->pm.subflows);
+			bytes_sent_1 += tp->bytes_sent;
+		} else if (subflow->subflow_id == 2) {
+			bpf_printk("bytes 2: sent %lu received %lu subflows %u", tp->bytes_sent, tp->bytes_received, msk->pm.subflows);
+			bytes_sent_2 += tp->bytes_sent;
+		}
 	}
 
 	return 0;

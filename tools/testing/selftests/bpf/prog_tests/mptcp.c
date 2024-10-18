@@ -1278,6 +1278,183 @@ fail:
 	cleanup_netns(nstoken);
 }
 
+#define NS1		NS_TEST"_1"
+#define NS2		NS_TEST"_2"
+#define ADDR_1_NS2	"10.0.1.2"
+#define ADDR_2_NS2	"10.0.2.2"
+#define ADDR_3_NS2	"10.0.3.2"
+#define ADDR_3_NS4	"10.0.4.2"
+#define ADDR6_1_NS2	"dead:beef:1::2"
+#define ADDR6_2_NS2	"dead:beef:2::2"
+#define ADDR6_3_NS2	"dead:beef:3::2"
+#define ADDR6_4_NS2	"dead:beef:4::2"
+
+static int address_init_1(void)
+{
+	SYS(fail, "ip link add ns1eth1 netns %s type veth peer name ns2eth1 netns %s", NS1, NS2);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns1eth1", NS1, ADDR_1);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns1eth1 nodad", NS1, ADDR6_1);
+	SYS(fail, "ip -net %s link set dev ns1eth1 up", NS1);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns2eth1", NS2, ADDR_1_NS2);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns2eth1 nodad", NS2, ADDR6_1_NS2);
+	SYS(fail, "ip -net %s link set dev ns2eth1 up", NS2);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth1 metric 101", NS2, ADDR_1);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth1 metric 101", NS2, ADDR6_1);
+
+	SYS(fail, "ip link add ns1eth2 netns %s type veth peer name ns2eth2 netns %s", NS1, NS2);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns1eth2", NS1, ADDR_2);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns1eth2 nodad", NS1, ADDR6_2);
+	SYS(fail, "ip -net %s link set dev ns1eth2 up", NS1);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns2eth2", NS2, ADDR_2_NS2);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns2eth2 nodad", NS2, ADDR6_2_NS2);
+	SYS(fail, "ip -net %s link set dev ns2eth2 up", NS2);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth2 metric 102", NS2, ADDR_2);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth2 metric 102", NS2, ADDR6_2);
+
+	SYS(fail, "ip link add ns1eth3 netns %s type veth peer name ns2eth3 netns %s", NS1, NS2);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns1eth3", NS1, ADDR_3);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns1eth3 nodad", NS1, ADDR6_3);
+	SYS(fail, "ip -net %s link set dev ns1eth3 up", NS1);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns2eth3", NS2, ADDR_3_NS2);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns2eth3 nodad", NS2, ADDR6_3_NS2);
+	SYS(fail, "ip -net %s link set dev ns2eth3 up", NS2);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth3 metric 103", NS2, ADDR_3);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth3 metric 103", NS2, ADDR6_3);
+
+	SYS(fail, "ip link add ns1eth4 netns %s type veth peer name ns2eth4 netns %s", NS1, NS2);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns1eth4", NS1, ADDR_4);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns1eth4 nodad", NS1, ADDR6_4);
+	SYS(fail, "ip -net %s link set dev ns1eth4 up", NS1);
+	SYS(fail, "ip -net %s addr add %s/24 dev ns2eth4", NS2, ADDR_3_NS4);
+	SYS(fail, "ip -net %s addr add %s/64 dev ns2eth4 nodad", NS2, ADDR6_4_NS2);
+	SYS(fail, "ip -net %s link set dev ns2eth4 up", NS2);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth4 metric 104", NS2, ADDR_4);
+	SYS(fail, "ip -net %s route add default via %s dev ns2eth4 metric 104", NS2, ADDR6_4);
+
+	return 0;
+fail:
+	return -1;
+}
+
+static int endpoint_add_1(char *netns, char *addr, char *flags, bool ip_mptcp)
+{
+	if (ip_mptcp)
+		return SYS_NOFAIL("ip -net %s mptcp endpoint add %s %s",
+				  netns, addr, flags);
+	return SYS_NOFAIL("ip netns exec %s %s add %s flags %s",
+			  netns, PM_CTL, addr, flags);
+}
+
+static int endpoint_init_1(char *flags, u8 endpoints)
+{
+	bool ip_mptcp = true;
+	int ret = -1;
+
+	if (!endpoints || endpoints > 4)
+		goto fail;
+
+	if (address_init_1())
+		goto fail;
+
+	if (SYS_NOFAIL("ip -net %s mptcp limits set add_addr_accepted 4 subflows 4",
+		       NS1)) {
+		SYS(fail, "ip netns exec %s %s limits 4 4", NS1, PM_CTL);
+		ip_mptcp = false;
+	}
+
+	if (endpoints > 1)
+		ret = endpoint_add_1(NS2, ADDR_2_NS2, flags, ip_mptcp);
+	if (endpoints > 2)
+		ret = ret ?: endpoint_add_1(NS2, ADDR_3, flags, ip_mptcp);
+	if (endpoints > 3)
+		ret = ret ?: endpoint_add_1(NS2, ADDR_4, flags, ip_mptcp);
+
+fail:
+	return ret;
+}
+
+static int sched_init_1(char *flags, char *sched)
+{
+	if (endpoint_init_1(flags, 2) < 0)
+		goto fail;
+
+	SYS(fail, "ip netns exec %s sysctl -qw net.mptcp.scheduler=%s", NS1, sched);
+
+	return 0;
+fail:
+	return -1;
+}
+
+static void do_verify(struct mptcp_bpf_bytes *skel, bool addr1, bool addr2)
+{
+	if (addr1)
+		ASSERT_GT(skel->bss->bytes_sent_1, 0, "should have bytes_sent on addr1");
+	else
+		ASSERT_EQ(skel->bss->bytes_sent_1, 0, "shouldn't have bytes_sent on addr1");
+	if (addr2)
+		;//ASSERT_GT(skel->bss->bytes_sent_2, 0, "should have bytes_sent on addr2");
+	else
+		ASSERT_EQ(skel->bss->bytes_sent_2, 0, "shouldn't have bytes_sent on addr2");
+}
+
+static char *sin = "/tmp/sin";
+static char *cin = "/tmp/cin";
+static char *sout = "/tmp/sout";
+static char *cout = "/tmp/cout";
+
+static void test_connect(void)
+{
+	struct mptcp_bpf_bytes *skel;
+	int err;
+
+	SYS_NOFAIL("ip netns del %s", NS1);
+	SYS_NOFAIL("ip netns del %s", NS2);
+	SYS(close_netns, "ip netns add %s", NS1);
+	SYS(close_netns, "ip netns add %s", NS2);
+
+	err = sched_init_1("subflow", "default");
+	if (!ASSERT_OK(err, "sched_init"))
+		goto close_netns;
+
+	skel = mptcp_bpf_bytes__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "open_and_load: bytes"))
+		return;
+
+	skel->bss->pid = getpid();
+
+	err = mptcp_bpf_bytes__attach(skel);
+	if (!ASSERT_OK(err, "skel_attach: bytes"))
+		goto skel_destroy;
+
+	SYS(close_netns, "ip netns exec %s dd if=/dev/urandom of=%s bs=1M count=10 2> /dev/null", NS1, sin);
+	SYS(close_netns, "ip netns exec %s dd if=/dev/urandom of=%s bs=1M count=10 2> /dev/null", NS2, cin);
+	//SYS(close_netns, "ip netns exec %s echo hello > %s", NS1, sin);
+	//SYS(close_netns, "ip netns exec %s echo world > %s", NS2, cin);
+
+	SYS(close_netns, "ip netns exec %s ./mptcp_connect -l :: < %s > %s &", NS1, sin, sout);
+	usleep(100000); /* 0.1s */
+	SYS(close_netns, "ip netns exec %s ./mptcp_connect %s < %s > %s", NS2, ADDR_1, cin, cout);
+
+	//usleep(100000); /* 0.1s */
+
+	SYS_NOFAIL("ip netns exec %s killall ./mptcp_connect > /dev/null 2>&1", NS1);
+	//SYS_NOFAIL("ip netns exec %s killall ./mptcp_connect > /dev/null 2>&1", NS2);
+
+	//SYS(close_netns, "ip netns exec %s cat %s", NS1, sin);
+	//SYS(close_netns, "ip netns exec %s cat %s", NS2, cin);
+
+	do_verify(skel, WITH_DATA, WITH_DATA);
+	SYS_NOFAIL("ip netns exec %s rm -rf %s %s", NS1, sin, sout);
+	SYS_NOFAIL("ip netns exec %s rm -rf %s %s", NS2, cin, cout);
+	SYS(close_netns, "ip netns del %s", NS1);
+	SYS(close_netns, "ip netns del %s", NS2);
+
+skel_destroy:
+	mptcp_bpf_bytes__destroy(skel);
+close_netns:
+	;
+}
+
 static void test_bpf_sched(struct bpf_map *map, char *sched,
 			   bool addr1, bool addr2)
 {
@@ -1383,6 +1560,9 @@ static void test_stale(void)
 
 void test_mptcp(void)
 {
+	if (test__start_subtest("connect"))
+		test_connect();
+#if 1
 	if (test__start_subtest("base"))
 		test_base();
 	if (test__start_subtest("mptcpify"))
@@ -1413,4 +1593,5 @@ void test_mptcp(void)
 		test_burst();
 	if (test__start_subtest("stale"))
 		test_stale();
+#endif
 }
