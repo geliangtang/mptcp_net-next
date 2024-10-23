@@ -20,6 +20,9 @@ int BPF_PROG(trace_mptcp_sched_get_send, struct mptcp_sock *msk)
 	if (!msk->pm.server_side)
 		return 0;
 
+	bytes_sent_1 = 0;
+	bytes_sent_2 = 0;
+
 	mptcp_for_each_subflow(msk, subflow) {
 		struct tcp_sock *tp;
 		struct sock *ssk;

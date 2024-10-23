@@ -1393,7 +1393,7 @@ static void send_data_and_verify(char *sched, bool addr1, bool addr2)
 	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
 		goto skel_destroy;
 
-	client_fd = connect_to_fd(server_fd, 0);
+	client_fd = connect_to_fd(server_fd, 30000);
 	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
 		goto close_server;
 

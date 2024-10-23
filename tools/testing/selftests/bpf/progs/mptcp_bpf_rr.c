@@ -61,6 +61,7 @@ int BPF_PROG(bpf_rr_get_send, struct mptcp_sock *msk)
 
 out:
 	mptcp_subflow_set_scheduled(next, true);
+	//bpf_printk("rr subflow=%u/%u", next->subflow_id, msk->pm.subflows + 1);
 	ptr->last_snd = mptcp_subflow_tcp_sock(next);
 	return 0;
 }
