@@ -25,7 +25,7 @@ static int mptcp_setsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		return 1;
 
 	bpf_for_each(mptcp_subflow, subflow, msk) {
-		struct sock *ssk = bpf_mptcp_subflow_tcp_sock(subflow);
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 		int err;
 
 		bpf_spin_lock_bh(&ssk->sk_lock.slock);
@@ -59,7 +59,7 @@ static int mptcp_setsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		return 1;
 
 	bpf_for_each(mptcp_subflow, subflow, msk) {
-		struct sock *ssk = bpf_mptcp_subflow_tcp_sock(subflow);
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 		int err;
 
 		bpf_spin_lock_bh(&ssk->sk_lock.slock);
@@ -101,7 +101,7 @@ static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		return 1;
 
 	bpf_for_each(mptcp_subflow, subflow, msk) {
-		struct sock *ssk = bpf_mptcp_subflow_tcp_sock(subflow);
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 
 		if (ssk->sk_mark != 1) {
 			ctx->retval = -1;
@@ -126,7 +126,7 @@ static int mptcp_getsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		return 1;
 
 	bpf_for_each(mptcp_subflow, subflow, msk) {
-		struct sock *ssk = bpf_mptcp_subflow_tcp_sock(subflow);
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 		struct inet_connection_sock *icsk;
 
 		icsk = bpf_core_cast(ssk, struct inet_connection_sock);

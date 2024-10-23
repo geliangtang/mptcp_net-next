@@ -30,10 +30,10 @@ int BPF_PROG(trace_mptcp_sched_get_send, struct mptcp_sock *msk)
 		tp = bpf_core_cast(ssk, struct tcp_sock);
 
 		if (subflow->subflow_id == 1) {
-			bpf_printk("bytes 1: sent %lu received %lu subflows %u", tp->bytes_sent, tp->bytes_received, msk->pm.subflows);
+			//bpf_printk("bytes 1: sent %lu received %lu subflows %u", tp->bytes_sent, tp->bytes_received, msk->pm.subflows);
 			bytes_sent_1 += tp->bytes_sent;
 		} else if (subflow->subflow_id == 2) {
-			bpf_printk("bytes 2: sent %lu received %lu subflows %u", tp->bytes_sent, tp->bytes_received, msk->pm.subflows);
+			//bpf_printk("bytes 2: sent %lu received %lu subflows %u", tp->bytes_sent, tp->bytes_received, msk->pm.subflows);
 			bytes_sent_2 += tp->bytes_sent;
 		}
 	}
