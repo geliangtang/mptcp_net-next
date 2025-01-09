@@ -935,6 +935,24 @@ static int userspace_pm_get_addr(__u32 token, __u8 id, char *output)
 	return 0;
 }
 
+static int userspace_pm_dump_addr(__u32 token, char *output)
+{
+	char cmd[1024];
+	FILE *fp;
+
+	sprintf(cmd, "ip netns exec %s %s dump token %u",
+		NS_TEST, PM_CTL, token);
+	fp = popen(cmd, "r");
+	if (!fp)
+		return -1;
+
+	bzero(output, BUFSIZ);
+	fread(output, 1, BUFSIZ, fp);
+	pclose(fp);
+
+	return 0;
+}
+
 static void run_userspace_pm(enum mptcp_pm_family family)
 {
 	bool ipv4mapped = (family == IPV4MAPPED);
@@ -1012,6 +1030,11 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	send_byte(client_fd);
 	recv_byte(accept_fd);
 
+	err = userspace_pm_dump_addr(token, output);
+	if (!ASSERT_OK(err, "userspace_pm_dump_addr") ||
+	    !ASSERT_STRNEQ(output, "", sizeof(output), "dump_addr"))
+		goto close_accept;
+
 	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_3 : ADDR6_3) : ADDR_3;
 	err = userspace_pm_add_addr(token, addr, 200);
 	if (!ASSERT_OK(err, "userspace_pm_add_addr 200"))
@@ -1019,6 +1042,12 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 
 	send_byte(accept_fd);
 	recv_byte(client_fd);
+
+	sprintf(expect, "id 200 flags signal %s\n", addr);
+	err = userspace_pm_dump_addr(token, output);
+	if (!ASSERT_OK(err, "userspace_pm_dump_addr") ||
+	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "dump_addr"))
+		goto close_accept;
 
 	err = userspace_pm_rm_addr(token, 200);
 	if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))

@@ -17,6 +17,9 @@ struct {
 
 struct callback_ctx {
 	struct mptcp_sock *msk;
+	struct sk_buff *msg;
+	struct netlink_callback *cb;
+	unsigned long *bitmap;
 };
 
 extern u8 bpf_find_next_zero_bit(const unsigned long *addr,
@@ -328,3 +331,65 @@ struct mptcp_pm_ops bpf_userspace = {
 	.release		= (void *)mptcp_pm_userspace_release,
 	.name			= "bpf_userspace",
 };
+
+extern void bpf_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
+			      struct mptcp_pm_addr_entry *src) __ksym;
+
+SEC("fexit/mptcp_pm_userspace_get_addr_msk")
+int BPF_PROG(mptcp_pm_hashmap_get_addr, struct mptcp_sock *msk, u8 id,
+	     struct mptcp_pm_addr_entry *addr)
+{
+	struct mptcp_pm_addr_entry *entry;
+
+	bpf_spin_lock_bh(&msk->pm.lock);
+	entry = mptcp_pm_hashmap_lookup_addr_by_id(msk, id);
+	if (entry)
+		bpf_pm_copy_entry(addr, entry);
+	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	return 0;
+}
+
+extern bool bpf_test_bit(unsigned long nr, const unsigned long *addr) __ksym;
+extern int mptcp_pm_genl_fill_addr(struct sk_buff *msg,
+				   struct netlink_callback *cb,
+				   struct mptcp_pm_addr_entry *entry) __ksym;
+
+static int dump_addr_callback(struct bpf_map *map, __u32 *key, void *val,
+			      struct callback_ctx *data)
+{
+	struct mptcp_pm_addr_entry *entry;
+
+	entry = mptcp_pm_hashmap_lookup_addr_by_id(data->msk, *key);
+	if (entry) {
+		if (bpf_test_bit(entry->addr.id, data->bitmap))
+			return 0;
+
+		if (mptcp_pm_genl_fill_addr(data->msg, data->cb, entry) < 0)
+			return 1;
+
+		bpf_set_bit(entry->addr.id, data->bitmap);
+	}
+
+	return 0;
+}
+
+SEC("fmod_ret/mptcp_pm_userspace_dump_addr_msk")
+int BPF_PROG(mptcp_pm_hashmap_dump_addr, struct mptcp_sock *msk,
+	     struct sk_buff *msg, struct netlink_callback *cb)
+{
+	unsigned long bitmap[4] = { 0 };
+	struct callback_ctx data;
+
+	data.msk = msk;
+	data.msg = msg;
+	data.cb = cb;
+	data.bitmap = bitmap;
+
+	bpf_spin_lock_bh(&msk->pm.lock);
+	bpf_for_each_map_elem(&mptcp_pm_addr_map,
+			      dump_addr_callback, &data, 0);
+	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	return msg->len;
+}
