@@ -572,6 +572,7 @@ struct mptcp_sock *bpf_mptcp_sock_from_sock(struct sock *sk)
 
 BTF_SET8_START(bpf_mptcp_fmodret_ids)
 BTF_ID_FLAGS(func, update_socket_protocol)
+BTF_ID_FLAGS(func, mptcp_pm_userspace_dump_addr_msk)
 BTF_SET8_END(bpf_mptcp_fmodret_ids)
 
 static const struct btf_kfunc_id_set bpf_mptcp_fmodret_set = {

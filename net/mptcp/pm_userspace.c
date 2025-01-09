@@ -483,31 +483,20 @@ mptcp_pm_userspace_get_addr_msk(struct mptcp_sock *msk, u8 id,
 	return 0;
 }
 
-__bpf_kfunc_end_defs();
-
-int mptcp_userspace_pm_dump_addr(struct sk_buff *msg,
+__bpf_kfunc static int
+mptcp_pm_userspace_dump_addr_msk(struct mptcp_sock *msk,
+				 struct sk_buff *msg,
 				 struct netlink_callback *cb)
 {
 	struct id_bitmap {
 		DECLARE_BITMAP(map, MPTCP_PM_MAX_ADDR_ID + 1);
 	} *bitmap;
-	const struct genl_info *info = genl_info_dump(cb);
 	struct mptcp_pm_addr_entry *entry;
-	struct mptcp_sock *msk;
-	int ret = -EINVAL;
-	struct sock *sk;
 
 	BUILD_BUG_ON(sizeof(struct id_bitmap) > sizeof(cb->ctx));
 
 	bitmap = (struct id_bitmap *)cb->ctx;
 
-	msk = mptcp_userspace_pm_get_sock(info);
-	if (!msk)
-		return ret;
-
-	sk = (struct sock *)msk;
-
-	lock_sock(sk);
 	spin_lock_bh(&msk->pm.lock);
 	mptcp_for_each_userspace_pm_addr(msk, entry) {
 		if (test_bit(entry->addr.id, bitmap->map))
@@ -519,8 +508,29 @@ int mptcp_userspace_pm_dump_addr(struct sk_buff *msg,
 		__set_bit(entry->addr.id, bitmap->map);
 	}
 	spin_unlock_bh(&msk->pm.lock);
+
+	return msg->len;
+}
+
+__bpf_kfunc_end_defs();
+
+int mptcp_userspace_pm_dump_addr(struct sk_buff *msg,
+				 struct netlink_callback *cb)
+{
+	const struct genl_info *info = genl_info_dump(cb);
+	struct mptcp_sock *msk;
+	int ret = -EINVAL;
+	struct sock *sk;
+
+	msk = mptcp_userspace_pm_get_sock(info);
+	if (!msk)
+		return ret;
+
+	sk = (struct sock *)msk;
+
+	lock_sock(sk);
+	ret = mptcp_pm_userspace_dump_addr_msk(msk, msg, cb);
 	release_sock(sk);
-	ret = msg->len;
 
 	sock_put(sk);
 	return ret;
