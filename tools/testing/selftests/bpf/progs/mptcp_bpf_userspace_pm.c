@@ -263,16 +263,18 @@ int BPF_PROG(mptcp_pm_userspace_set_priority, struct mptcp_sock *msk,
 	     struct mptcp_pm_addr_entry *local, struct mptcp_pm_addr_entry *remote)
 {
 	struct mptcp_pm_addr_entry *entry;
+	u8 lookup_by_id = 0;
 	u8 bkup = 0;
 
 	if (local->addr.family == AF_UNSPEC)
-		return -EINVAL;
+		lookup_by_id = 1;
 
 	if (local->flags & MPTCP_PM_ADDR_FLAG_BACKUP)
 		bkup = 1;
 
 	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_pm_userspace_lookup_addr(msk, &local->addr);
+	entry = lookup_by_id ? mptcp_pm_userspace_lookup_addr_by_id(msk, local->addr.id) :
+			       mptcp_pm_userspace_lookup_addr(msk, &local->addr);
 	if (entry) {
 		if (bkup)
 			entry->flags |= MPTCP_PM_ADDR_FLAG_BACKUP;
@@ -281,7 +283,8 @@ int BPF_PROG(mptcp_pm_userspace_set_priority, struct mptcp_sock *msk,
 	}
 	bpf_spin_unlock_bh(&msk->pm.lock);
 
-	return mptcp_pm_mp_prio_send_ack(msk, &local->addr, &remote->addr, bkup);
+	return mptcp_pm_mp_prio_send_ack(msk, entry ? &entry->addr : &local->addr,
+					 &remote->addr, bkup);
 }
 
 SEC("struct_ops")

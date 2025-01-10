@@ -954,6 +954,45 @@ static int userspace_pm_dump_addr(__u32 token, char *output)
 	return 0;
 }
 
+static int userspace_pm_set_flags_by_id(__u32 token, __u8 id, char *flags)
+{
+	bool ipv6 = false, ipv4mapped = false;
+	char line[1024], *str;
+	__u32 dport;
+	int family;
+
+	if (userspace_pm_get_events_line("type:10", line))
+		return -1;
+
+	str = strstr(line, "family");
+	if (!str || sscanf(str, "family:%u,", &family) != 1) {
+		log_err("set_flags_by_id error, str=%s\n", str);
+		return -1;
+	}
+
+	if (family == AF_INET6) {
+		ipv6 = true;
+		str = strstr(line, "daddr6");
+		if (!str) {
+			log_err("set_flags_by_id error, str=%s\n", str);
+			return -1;
+		}
+
+		if (!strncmp(str, "daddr6:::ffff:", 14))
+			ipv4mapped = true;
+	}
+
+	str = strstr(line, "dport");
+	if (!str || sscanf(str, "dport:%u,", &dport) != 1) {
+		log_err("set_flags_by_id error, str=%s\n", str);
+		return -1;
+	}
+
+	str = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	return SYS_NOFAIL("ip netns exec %s %s set id %u rip %s rport %u flags %s token %u",
+			  NS_TEST, PM_CTL, id, str, dport, flags, token);
+}
+
 static void run_userspace_pm(enum mptcp_pm_family family)
 {
 	bool ipv4mapped = (family == IPV4MAPPED);
@@ -1011,8 +1050,8 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "get_addr"))
 		goto close_accept;
 
-	err = userspace_pm_set_flags(token, addr, "nobackup");
-	if (!ASSERT_OK(err, "userspace_pm_set_flags nobackup"))
+	err = userspace_pm_set_flags_by_id(token, 100, "nobackup");
+	if (!ASSERT_OK(err, "userspace_pm_set_flags_by_id nobackup"))
 		goto close_accept;
 
 	send_byte(accept_fd);
