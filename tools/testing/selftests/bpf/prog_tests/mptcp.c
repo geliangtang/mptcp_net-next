@@ -827,6 +827,7 @@ static int userspace_pm_get_token(int fd)
 
 	/* Wait max 2 sec for the connection to be established */
 	for (i = 0; i < 10; i++) {
+		//SYS(fail, "ip netns exec %s echo sleep 0.2 s", NS_TEST);
 		usleep(200000); /* 0.2s */
 		send_byte(fd);
 
@@ -841,6 +842,7 @@ static int userspace_pm_get_token(int fd)
 		return token;
 	}
 
+//fail:
 	return 0;
 }
 
@@ -1126,9 +1128,13 @@ fail:
 
 static void userspace_pm_cleanup(void)
 {
+	//SYS(fail, "ip netns exec %s cat %s", NS_TEST, PM_EVENTS);
+
 	SYS_NOFAIL("ip netns exec %s killall %s > /dev/null 2>&1",
 		   NS_TEST, PM_CTL);
 	SYS_NOFAIL("ip netns exec %s rm -rf %s", NS_TEST, PM_EVENTS);
+//fail:
+	;
 }
 
 static void test_userspace_pm(void)

@@ -86,6 +86,8 @@ int BPF_PROG(mptcp_pm_netlink_get_local_id, struct mptcp_sock *msk,
 	struct mptcp_pm_addr_entry *entry;
 	int ret;
 
+	bpf_printk("1 mptcp_pm_netlink_get_local_id");
+
 	bpf_rcu_read_lock();
 	entry = mptcp_pm_nl_lookup_addr(msk, &skc->addr);
 	ret = entry ? entry->addr.id : -1;
@@ -111,6 +113,8 @@ bool BPF_PROG(mptcp_pm_netlink_get_priority, struct mptcp_sock *msk,
 {
 	struct mptcp_pm_addr_entry *entry;
 	bool backup;
+
+	bpf_printk("2 mptcp_pm_netlink_get_priority");
 
 	bpf_rcu_read_lock();
 	entry = __lookup_addr(msk, skc);

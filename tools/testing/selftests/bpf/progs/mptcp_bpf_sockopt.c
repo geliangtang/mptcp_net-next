@@ -12,6 +12,7 @@ static int mptcp_setsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 	struct mptcp_subflow_context *subflow;
 	int *optval = ctx->optval;
 	__u32 mark;
+	int i = 0;
 
 	if (ctx->optval + sizeof(mark) > ctx->optval_end)
 		return 1;
@@ -27,6 +28,8 @@ static int mptcp_setsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		bpf_spin_unlock_bh(&ssk->sk_lock.slock);
 		if (err < 0)
 			break;
+
+		bpf_printk("setsockopt i=%d mark=%u", i++, mark);
 	}
 
 	return 1;
@@ -37,6 +40,7 @@ static int mptcp_setsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 	struct mptcp_subflow_context *subflow;
 	char *optval = ctx->optval;
 	char cc[TCP_CA_NAME_MAX];
+	int i = 0;
 
 	if (ctx->optval + TCP_CA_NAME_MAX > ctx->optval_end)
 		return 1;
@@ -52,6 +56,8 @@ static int mptcp_setsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 		bpf_spin_unlock_bh(&ssk->sk_lock.slock);
 		if (err < 0)
 			break;
+
+		bpf_printk("setsockopt i=%d cc=%s", i++, cc);
 	}
 
 	return 1;
@@ -75,6 +81,7 @@ int mptcp_setsockopt(struct bpf_sockopt *ctx)
 static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
+	int i = 0;
 
 	bpf_for_each(mptcp_subflow, subflow, (struct sock *)sk) {
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
@@ -83,6 +90,8 @@ static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 			ctx->retval = -1;
 			break;
 		}
+
+		bpf_printk("i=%d mark=%u", i++, ssk->sk_mark);
 	}
 
 	return 1;
@@ -91,6 +100,7 @@ static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 static int mptcp_getsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
+	int i = 0;
 
 	bpf_for_each(mptcp_subflow, subflow, (struct sock *)sk) {
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
@@ -102,6 +112,8 @@ static int mptcp_getsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 			ctx->retval = -1;
 			break;
 		}
+
+		bpf_printk("i=%d cc=%s", i++, icsk->icsk_ca_ops->name);
 	}
 
 	return 1;

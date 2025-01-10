@@ -120,6 +120,8 @@ int BPF_PROG(mptcp_pm_userspace_get_local_id, struct mptcp_sock *msk,
 					 struct inet_sock)->inet_sport;
 	struct mptcp_pm_addr_entry *entry;
 
+	bpf_printk("5 mptcp_pm_get_local_id");
+
 	bpf_spin_lock_bh(&msk->pm.lock);
 	entry = mptcp_pm_userspace_lookup_addr(msk, &skc->addr);
 	bpf_spin_unlock_bh(&msk->pm.lock);
@@ -143,6 +145,8 @@ bool BPF_PROG(mptcp_pm_userspace_get_priority, struct mptcp_sock *msk,
 	entry = mptcp_pm_userspace_lookup_addr(msk, skc);
 	backup = entry && !!(entry->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
 	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	bpf_printk("6 mptcp_pm_get_priority done");
 
 	return backup;
 }
@@ -181,6 +185,8 @@ int BPF_PROG(mptcp_pm_userspace_address_announce, struct mptcp_sock *msk,
 
 	bpf_spin_unlock_bh(&msk->pm.lock);
 
+	bpf_printk("1 mptcp_pm_address_announced done");
+
 	return 0;
 }
 
@@ -208,6 +214,8 @@ int BPF_PROG(mptcp_pm_userspace_address_remove, struct mptcp_sock *msk,
 
 	bpf_sock_kfree_entry((struct sock *)msk, entry, sizeof(*entry));
 
+	bpf_printk("2 mptcp_pm_address_removed done");
+
 	return 0;
 }
 
@@ -229,6 +237,8 @@ int BPF_PROG(mptcp_pm_userspace_subflow_create, struct mptcp_sock *msk,
 	else
 		msk->pm.extra_subflows++;
 	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	bpf_printk("3 mptcp_pm_subflow_established err=%d", err);
 
 	return err;
 }
@@ -255,6 +265,8 @@ int BPF_PROG(mptcp_pm_userspace_subflow_destroy, struct mptcp_sock *msk,
 	mptcp_close_ssk(sk, ssk, subflow);
 	BPF_MPTCP_INC_STATS(bpf_sock_net(sk), MPTCP_MIB_RMSUBFLOW);
 
+	bpf_printk("4 mptcp_pm_subflow_closed done");
+
 	return 0;
 }
 
@@ -265,6 +277,8 @@ int BPF_PROG(mptcp_pm_userspace_set_priority, struct mptcp_sock *msk,
 	struct mptcp_pm_addr_entry *entry;
 	u8 lookup_by_id = 0;
 	u8 bkup = 0;
+
+	bpf_printk("7 mptcp_pm_set_priority");
 
 	if (local->addr.family == AF_UNSPEC)
 		lookup_by_id = 1;
