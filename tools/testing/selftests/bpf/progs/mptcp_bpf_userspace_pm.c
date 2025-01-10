@@ -114,6 +114,8 @@ int BPF_PROG(mptcp_pm_userspace_get_local_id, struct mptcp_sock *msk,
 					 struct inet_sock)->inet_sport;
 	struct mptcp_pm_addr_entry *entry;
 
+	bpf_printk("5 mptcp_pm_get_local_id");
+
 	bpf_spin_lock_bh(&msk->pm.lock);
 	entry = mptcp_pm_userspace_lookup_addr(msk, &skc->addr);
 	bpf_spin_unlock_bh(&msk->pm.lock);
@@ -137,6 +139,8 @@ bool BPF_PROG(mptcp_pm_userspace_get_priority, struct mptcp_sock *msk,
 	entry = mptcp_pm_userspace_lookup_addr(msk, skc);
 	backup = entry && !!(entry->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
 	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	bpf_printk("6 mptcp_pm_get_priority done");
 
 	return backup;
 }
