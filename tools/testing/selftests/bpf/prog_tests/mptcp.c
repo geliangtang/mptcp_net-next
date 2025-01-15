@@ -917,11 +917,30 @@ static int userspace_pm_set_flags(__u32 token, char *addr, char *flags)
 			  NS_TEST, PM_CTL, addr, sport, str, dport, flags, token);
 }
 
+static int userspace_pm_get_addr(__u32 token, __u8 id, char *output)
+{
+	char cmd[1024];
+	FILE *fp;
+
+	sprintf(cmd, "ip netns exec %s %s get %u token %u",
+		NS_TEST, PM_CTL, id, token);
+	fp = popen(cmd, "r");
+	if (!fp)
+		return -1;
+
+	bzero(output, BUFSIZ);
+	fread(output, 1, BUFSIZ, fp);
+	pclose(fp);
+
+	return 0;
+}
+
 static void run_userspace_pm(enum mptcp_pm_family family)
 {
 	bool ipv4mapped = (family == IPV4MAPPED);
 	bool ipv6 = (family == IPV6 || ipv4mapped);
 	int server_fd, client_fd, accept_fd;
+	char output[BUFSIZ], expect[1024];
 	__u32 token;
 	char *addr;
 	int err;
@@ -954,6 +973,12 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	send_byte(accept_fd);
 	recv_byte(client_fd);
 
+	sprintf(expect, "id 100 flags subflow %s\n", addr);
+	err = userspace_pm_get_addr(token, 100, output);
+	if (!ASSERT_OK(err, "userspace_pm_get_addr 100") ||
+	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "get_addr"))
+		goto close_accept;
+
 	err = userspace_pm_set_flags(token, addr, "backup");
 	if (!ASSERT_OK(err, "userspace_pm_set_flags backup"))
 		goto close_accept;
@@ -961,12 +986,24 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	send_byte(client_fd);
 	recv_byte(accept_fd);
 
+	sprintf(expect, "id 100 flags subflow,backup %s\n", addr);
+	err = userspace_pm_get_addr(token, 100, output);
+	if (!ASSERT_OK(err, "userspace_pm_get_addr 100") ||
+	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "get_addr"))
+		goto close_accept;
+
 	err = userspace_pm_set_flags(token, addr, "nobackup");
 	if (!ASSERT_OK(err, "userspace_pm_set_flags nobackup"))
 		goto close_accept;
 
 	send_byte(accept_fd);
 	recv_byte(client_fd);
+
+	sprintf(expect, "id 100 flags subflow %s\n", addr);
+	err = userspace_pm_get_addr(token, 100, output);
+	if (!ASSERT_OK(err, "userspace_pm_get_addr 100") ||
+	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "get_addr"))
+		goto close_accept;
 
 	err = userspace_pm_rm_subflow(token, addr, 100);
 	if (!ASSERT_OK(err, "userspace_pm_rm_subflow 100"))

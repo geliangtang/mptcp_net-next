@@ -236,3 +236,21 @@ struct mptcp_pm_ops bpf_hashmap = {
 	.release		= (void *)mptcp_pm_hashmap_release,
 	.name			= "bpf_hashmap",
 };
+
+extern void bpf_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
+			      struct mptcp_pm_addr_entry *src) __ksym;
+
+SEC("fexit/mptcp_pm_userspace_get_addr_msk")
+int BPF_PROG(mptcp_pm_hashmap_get_addr, struct mptcp_sock *msk, u8 id,
+	     struct mptcp_pm_addr_entry *addr)
+{
+	struct mptcp_pm_addr_entry *entry;
+
+	bpf_spin_lock_bh(&msk->pm.lock);
+	entry = mptcp_pm_hashmap_lookup_addr_by_id(msk, id);
+	if (entry)
+		bpf_pm_copy_entry(addr, entry);
+	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	return 0;
+}
