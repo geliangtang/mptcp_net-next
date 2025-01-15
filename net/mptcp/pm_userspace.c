@@ -460,6 +460,25 @@ destroy_err:
 	return err;
 }
 
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc static int
+mptcp_pm_userspace_get_addr_msk(struct mptcp_sock *msk, u8 id,
+				struct mptcp_pm_addr_entry *addr)
+{
+	struct mptcp_pm_addr_entry *entry;
+
+	spin_lock_bh(&msk->pm.lock);
+	entry = mptcp_userspace_pm_lookup_addr_by_id(msk, id);
+	if (entry)
+		*addr = *entry;
+	spin_unlock_bh(&msk->pm.lock);
+
+	return 0;
+}
+
+__bpf_kfunc_end_defs();
+
 int mptcp_userspace_pm_dump_addr(struct sk_buff *msg,
 				 struct netlink_callback *cb)
 {
@@ -504,7 +523,6 @@ int mptcp_userspace_pm_dump_addr(struct sk_buff *msg,
 int mptcp_userspace_pm_get_addr(u8 id, struct mptcp_pm_addr_entry *addr,
 				struct genl_info *info)
 {
-	struct mptcp_pm_addr_entry *entry;
 	struct mptcp_sock *msk;
 	struct sock *sk;
 
@@ -517,11 +535,7 @@ int mptcp_userspace_pm_get_addr(u8 id, struct mptcp_pm_addr_entry *addr,
 	sk = (struct sock *)msk;
 
 	lock_sock(sk);
-	spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_userspace_pm_lookup_addr_by_id(msk, id);
-	if (entry)
-		*addr = *entry;
-	spin_unlock_bh(&msk->pm.lock);
+	mptcp_pm_userspace_get_addr_msk(msk, id, addr);
 	release_sock(sk);
 
 	sock_put(sk);
