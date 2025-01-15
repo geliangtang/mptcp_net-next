@@ -506,27 +506,26 @@ int mptcp_userspace_pm_get_addr(u8 id, struct mptcp_pm_addr_entry *addr,
 {
 	struct mptcp_pm_addr_entry *entry;
 	struct mptcp_sock *msk;
-	int ret = -EINVAL;
 	struct sock *sk;
+
+	addr->addr.family = AF_UNSPEC;
 
 	msk = mptcp_userspace_pm_get_sock(info);
 	if (!msk)
-		return ret;
+		return -EINVAL;
 
 	sk = (struct sock *)msk;
 
 	lock_sock(sk);
 	spin_lock_bh(&msk->pm.lock);
 	entry = mptcp_userspace_pm_lookup_addr_by_id(msk, id);
-	if (entry) {
+	if (entry)
 		*addr = *entry;
-		ret = 0;
-	}
 	spin_unlock_bh(&msk->pm.lock);
 	release_sock(sk);
 
 	sock_put(sk);
-	return ret;
+	return addr->addr.family == AF_UNSPEC ? -EINVAL : 0;
 }
 
 static bool mptcp_pm_userspace_accept_new_subflow(struct mptcp_sock *msk,
