@@ -223,8 +223,9 @@ fail:
 
 int mptcp_pm_genl_fill_addr(struct sk_buff *msg,
 			    struct netlink_callback *cb,
-			    struct mptcp_pm_addr_entry *entry)
+			    struct mptcp_pm_addr_entry *entry__ign)
 {
+	struct mptcp_pm_addr_entry *entry = entry__ign;
 	void *hdr;
 
 	hdr = genlmsg_put(msg, NETLINK_CB(cb->skb).portid,

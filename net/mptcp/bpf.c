@@ -794,6 +794,11 @@ __bpf_kfunc static bool bpf_ipv4_is_private_10(__be32 addr)
 	return ipv4_is_private_10(addr);
 }
 
+__bpf_kfunc static bool bpf_test_bit(unsigned long nr, const unsigned long *addr__ign)
+{
+	return test_bit(nr, addr__ign);
+}
+
 __bpf_kfunc static int
 bpf_mptcp_subflow_connect(struct sock *sk,
 			  const struct mptcp_pm_addr_entry *entry,
@@ -940,6 +945,9 @@ BTF_KFUNCS_START(bpf_mptcp_tracing_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_spin_lock_bh)
 BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
 BTF_ID_FLAGS(func, bpf_pm_copy_entry)
+BTF_ID_FLAGS(func, mptcp_pm_genl_fill_addr)
+BTF_ID_FLAGS(func, bpf_test_bit)
+BTF_ID_FLAGS(func, bpf_set_bit)
 BTF_KFUNCS_END(bpf_mptcp_tracing_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_mptcp_tracing_kfunc_set = {
