@@ -800,6 +800,13 @@ __bpf_kfunc static void BPF_MPTCP_INC_STATS(struct net *net,
 	MPTCP_INC_STATS(net, field);
 }
 
+__bpf_kfunc static void
+bpf_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
+		  struct mptcp_pm_addr_entry *src__ign)
+{
+	*dst = *src__ign;
+}
+
 __bpf_kfunc static bool bpf_mptcp_subflow_queues_empty(struct sock *sk)
 {
 	return tcp_rtx_queue_empty(sk);
@@ -905,6 +912,17 @@ static const struct btf_kfunc_id_set bpf_mptcp_common_kfunc_set = {
 	.filter	= bpf_mptcp_common_kfunc_filter,
 };
 
+BTF_KFUNCS_START(bpf_mptcp_tracing_kfunc_ids)
+BTF_ID_FLAGS(func, bpf_spin_lock_bh)
+BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
+BTF_ID_FLAGS(func, bpf_pm_copy_entry)
+BTF_KFUNCS_END(bpf_mptcp_tracing_kfunc_ids)
+
+static const struct btf_kfunc_id_set bpf_mptcp_tracing_kfunc_set = {
+	.owner	= THIS_MODULE,
+	.set	= &bpf_mptcp_tracing_kfunc_ids,
+};
+
 static int __init bpf_mptcp_kfunc_init(void)
 {
 	int ret;
@@ -914,6 +932,10 @@ static int __init bpf_mptcp_kfunc_init(void)
 					       &bpf_mptcp_iter_kfunc_set);
 	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
 					       &bpf_mptcp_common_kfunc_set);
+	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_CGROUP_SOCKOPT,
+					       &bpf_mptcp_common_kfunc_set);
+	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_TRACING,
+					       &bpf_mptcp_tracing_kfunc_set);
 #ifdef CONFIG_BPF_JIT
 	ret = ret ?: register_bpf_struct_ops(&bpf_mptcp_pm_ops, mptcp_pm_ops);
 	ret = ret ?: register_bpf_struct_ops(&bpf_mptcp_sched_ops, mptcp_sched_ops);
