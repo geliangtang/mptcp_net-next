@@ -1092,6 +1092,19 @@ static void test_bpf_hashmap_pm(void)
 	if (!ASSERT_OK_PTR(skel, "open: bpf_hashmap pm"))
 		return;
 
+	err = bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_address_announce,
+				     BPF_F_SLEEPABLE);
+	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_address_remove,
+					    BPF_F_SLEEPABLE);
+	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_subflow_create,
+					    BPF_F_SLEEPABLE);
+	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_subflow_destroy,
+					    BPF_F_SLEEPABLE);
+	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_set_priority,
+					    BPF_F_SLEEPABLE);
+	if (!ASSERT_OK(err, "set sleepable flags"))
+		goto skel_destroy;
+
 	if (!ASSERT_OK(mptcp_bpf_hashmap_pm__load(skel), "load: bpf_hashmap pm"))
 		goto skel_destroy;
 
