@@ -13,6 +13,7 @@
 #include "mptcp_subflow.skel.h"
 #include "mptcp_bpf_netlink_pm.skel.h"
 #include "mptcp_bpf_userspace_pm.skel.h"
+#include "mptcp_bpf_hashmap_pm.skel.h"
 #include "mptcp_bpf_first.skel.h"
 #include "mptcp_bpf_bkup.skel.h"
 #include "mptcp_bpf_rr.skel.h"
@@ -1063,6 +1064,43 @@ skel_destroy:
 	mptcp_bpf_userspace_pm__destroy(skel);
 }
 
+static void test_bpf_hashmap_pm(void)
+{
+	struct mptcp_bpf_hashmap_pm *skel;
+	struct netns_obj *netns;
+	struct bpf_link *link;
+	int err;
+
+	skel = mptcp_bpf_hashmap_pm__open();
+	if (!ASSERT_OK_PTR(skel, "open: bpf_hashmap pm"))
+		return;
+
+	if (!ASSERT_OK(mptcp_bpf_hashmap_pm__load(skel), "load: bpf_hashmap pm"))
+		goto skel_destroy;
+
+	link = bpf_map__attach_struct_ops(skel->maps.bpf_hashmap);
+	if (!ASSERT_OK_PTR(link, "attach_struct_ops: bpf_hashmap pm"))
+		goto skel_destroy;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		goto link_destroy;
+
+	err = userspace_pm_init("bpf_hashmap");
+	if (!ASSERT_OK(err, "userspace_pm_init: bpf_hashmap pm"))
+		goto close_netns;
+
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4);
+
+	userspace_pm_cleanup();
+close_netns:
+	netns_free(netns);
+link_destroy:
+	bpf_link__destroy(link);
+skel_destroy:
+	mptcp_bpf_hashmap_pm__destroy(skel);
+}
+
 static int sched_init(char *flags, char *sched)
 {
 	if (endpoint_init(flags, 2) < 0)
@@ -1508,6 +1546,8 @@ void test_mptcp(void)
 		test_userspace_pm();
 	if (test__start_subtest("bpf_userspace_pm"))
 		test_bpf_userspace_pm();
+	if (test__start_subtest("bpf_hashmap_pm"))
+		test_bpf_hashmap_pm();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))
