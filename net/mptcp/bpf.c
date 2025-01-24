@@ -388,6 +388,23 @@ bpf_mptcp_sched_get_func_proto(enum bpf_func_id func_id,
 	}
 }
 
+static bool bpf_mptcp_sched_is_valid_access(int off, int size,
+					    enum bpf_access_type type,
+					    const struct bpf_prog *prog,
+					    struct bpf_insn_access_aux *info)
+{
+	if (!bpf_tracing_btf_ctx_access(off, size, type, prog, info))
+		return false;
+
+	if (base_type(info->reg_type) == PTR_TO_BTF_ID &&
+	    !bpf_type_has_unsafe_modifiers(info->reg_type) &&
+	    info->btf_id == mptcp_sock_id)
+		/* promote it to tcp_sock */
+		info->btf_id = mptcp_sock_id;
+
+	return true;
+}
+
 static int bpf_mptcp_sched_btf_struct_access(struct bpf_verifier_log *log,
 					     const struct bpf_reg_state *reg,
 					     int off, int size)
@@ -432,7 +449,7 @@ static int bpf_mptcp_sched_btf_struct_access(struct bpf_verifier_log *log,
 
 static const struct bpf_verifier_ops bpf_mptcp_sched_verifier_ops = {
 	.get_func_proto		= bpf_mptcp_sched_get_func_proto,
-	.is_valid_access	= bpf_tracing_btf_ctx_access,
+	.is_valid_access	= bpf_mptcp_sched_is_valid_access,
 	.btf_struct_access	= bpf_mptcp_sched_btf_struct_access,
 };
 
