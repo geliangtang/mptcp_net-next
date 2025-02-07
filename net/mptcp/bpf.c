@@ -15,6 +15,7 @@
 #include <linux/btf_ids.h>
 #include <net/bpf_sk_storage.h>
 #include "protocol.h"
+#include "mib.h"
 
 #ifdef CONFIG_BPF_JIT
 static struct bpf_struct_ops bpf_mptcp_pm_ops,
@@ -547,6 +548,13 @@ bpf_kfree_entry(struct mptcp_pm_addr_entry *entry)
 	kfree(entry);
 }
 
+__bpf_kfunc static void
+bpf_sock_kfree_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry__ign,
+		     int size__sz)
+{
+	sock_krfree_s(sk, entry__ign, size__sz);
+}
+
 __bpf_kfunc static void bpf_bitmap_fill(unsigned long *dst__ign, unsigned int nbits)
 {
 	bitmap_fill(dst__ign, nbits);
@@ -604,6 +612,8 @@ BTF_ID_FLAGS(func, mptcp_pm_is_init_remote_addr)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_create_subflow_or_signal_addr, KF_SLEEPABLE)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_subflow)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_address)
+BTF_ID_FLAGS(func, bpf_sock_kfree_entry)
+BTF_ID_FLAGS(func, mptcp_userspace_pm_active)
 BTF_ID_FLAGS(func, mptcp_subflow_set_scheduled)
 BTF_ID_FLAGS(func, mptcp_subflow_active)
 BTF_ID_FLAGS(func, mptcp_set_timeout)
