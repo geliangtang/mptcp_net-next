@@ -27,6 +27,9 @@ void mptcp_userspace_pm_free_local_addr_list(struct mptcp_sock *msk)
 	}
 }
 
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc
 static struct mptcp_pm_addr_entry *
 mptcp_userspace_pm_lookup_addr(struct mptcp_sock *msk,
 			       const struct mptcp_addr_info *addr)
@@ -40,6 +43,7 @@ mptcp_userspace_pm_lookup_addr(struct mptcp_sock *msk,
 	return NULL;
 }
 
+__bpf_kfunc
 static int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
 						    struct mptcp_pm_addr_entry *entry,
 						    bool needs_id)
@@ -89,6 +93,8 @@ append_err:
 	spin_unlock_bh(&msk->pm.lock);
 	return ret;
 }
+
+__bpf_kfunc_end_defs();
 
 static struct mptcp_pm_addr_entry *
 mptcp_userspace_pm_lookup_addr_by_id(struct mptcp_sock *msk, unsigned int id)
