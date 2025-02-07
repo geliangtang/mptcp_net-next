@@ -257,8 +257,9 @@ remove_err:
 }
 
 void mptcp_pm_remove_addr_entry(struct mptcp_sock *msk,
-				struct mptcp_pm_addr_entry *entry)
+				struct mptcp_pm_addr_entry *entry__ign)
 {
+	struct mptcp_pm_addr_entry *entry = entry__ign;
 	struct mptcp_rm_list alist = { .nr = 0 };
 	int anno_nr = 0;
 

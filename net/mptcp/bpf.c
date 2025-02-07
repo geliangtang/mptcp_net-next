@@ -613,6 +613,13 @@ bpf_kfree_entry(struct mptcp_pm_addr_entry *entry)
 	kfree(entry);
 }
 
+__bpf_kfunc static struct mptcp_pm_addr_entry *
+bpf_sock_kmemdup_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry,
+		       int size, gfp_t priority)
+{
+	return sock_kmemdup(sk, entry, size, priority);
+}
+
 __bpf_kfunc static void
 bpf_sock_kfree_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry__ign,
 		     int size__sz)
@@ -714,6 +721,7 @@ BTF_ID_FLAGS(func, bpf_spin_lock_bh)
 BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
 BTF_ID_FLAGS(func, bpf_find_next_zero_bit)
 BTF_ID_FLAGS(func, bpf_ipv4_is_private_10)
+BTF_ID_FLAGS(func, bpf_sock_kmemdup_entry)
 BTF_ID_FLAGS(func, mptcp_subflow_set_scheduled)
 BTF_ID_FLAGS(func, mptcp_subflow_active)
 BTF_ID_FLAGS(func, mptcp_set_timeout)
