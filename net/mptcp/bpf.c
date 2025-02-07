@@ -469,6 +469,15 @@ struct bpf_iter_mptcp_subflow_kern {
 	struct list_head *pos;
 } __aligned(8);
 
+struct bpf_iter_mptcp_pm_addr {
+	__u64 __opaque[2];
+} __aligned(8);
+
+struct bpf_iter_mptcp_pm_addr_kern {
+	struct list_head *list;
+	struct list_head *pos;
+} __aligned(8);
+
 __bpf_kfunc_start_defs();
 
 __bpf_kfunc static struct mptcp_subflow_context *
@@ -533,6 +542,56 @@ bpf_iter_mptcp_subflow_next(struct bpf_iter_mptcp_subflow *it)
 
 __bpf_kfunc static void
 bpf_iter_mptcp_subflow_destroy(struct bpf_iter_mptcp_subflow *it)
+{
+}
+
+__bpf_kfunc static int
+bpf_iter_mptcp_pm_addr_new(struct bpf_iter_mptcp_pm_addr *it,
+			   struct sock *sk, u8 pm_type)
+{
+	struct bpf_iter_mptcp_pm_addr_kern *kit = (void *)it;
+	struct list_head *list = NULL;
+	struct mptcp_sock *msk;
+
+	BUILD_BUG_ON(sizeof(struct bpf_iter_mptcp_pm_addr_kern) >
+		     sizeof(struct bpf_iter_mptcp_pm_addr));
+	BUILD_BUG_ON(__alignof__(struct bpf_iter_mptcp_pm_addr_kern) !=
+		     __alignof__(struct bpf_iter_mptcp_pm_addr));
+
+	msk = bpf_mptcp_sock_from_sock(sk);
+	if (!msk)
+		return -EINVAL;
+
+	if (pm_type == MPTCP_PM_TYPE_KERNEL) {
+		list = mptcp_pm_get_local_addr_list(msk);
+	} else if (pm_type == MPTCP_PM_TYPE_USERSPACE) {
+		if (!spin_is_locked(&msk->pm.lock))
+			return -EINVAL;
+		list = &msk->pm.userspace_pm_local_addr_list;
+	}
+
+	if (!list)
+		return -EINVAL;
+
+	kit->list = list;
+	kit->pos = kit->list;
+	return 0;
+}
+
+__bpf_kfunc static struct mptcp_pm_addr_entry *
+bpf_iter_mptcp_pm_addr_next(struct bpf_iter_mptcp_pm_addr *it)
+{
+	struct bpf_iter_mptcp_pm_addr_kern *kit = (void *)it;
+
+	if (!kit->list || list_is_last(kit->pos, kit->list))
+		return NULL;
+
+	kit->pos = kit->pos->next;
+	return list_entry_rcu(kit->pos, struct mptcp_pm_addr_entry, list);
+}
+
+__bpf_kfunc static void
+bpf_iter_mptcp_pm_addr_destroy(struct bpf_iter_mptcp_pm_addr *it)
 {
 }
 
@@ -615,6 +674,9 @@ BTF_KFUNCS_START(bpf_mptcp_iter_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_iter_mptcp_subflow_new, KF_ITER_NEW | KF_TRUSTED_ARGS)
 BTF_ID_FLAGS(func, bpf_iter_mptcp_subflow_next, KF_ITER_NEXT | KF_RET_NULL)
 BTF_ID_FLAGS(func, bpf_iter_mptcp_subflow_destroy, KF_ITER_DESTROY)
+BTF_ID_FLAGS(func, bpf_iter_mptcp_pm_addr_new, KF_ITER_NEW | KF_TRUSTED_ARGS)
+BTF_ID_FLAGS(func, bpf_iter_mptcp_pm_addr_next, KF_ITER_NEXT | KF_RET_NULL)
+BTF_ID_FLAGS(func, bpf_iter_mptcp_pm_addr_destroy, KF_ITER_DESTROY)
 BTF_KFUNCS_END(bpf_mptcp_iter_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_mptcp_iter_kfunc_set = {
