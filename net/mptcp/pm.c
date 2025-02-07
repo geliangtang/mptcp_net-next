@@ -239,10 +239,11 @@ void mptcp_pm_addr_send_ack(struct mptcp_sock *msk)
 }
 
 int mptcp_pm_mp_prio_send_ack(struct mptcp_sock *msk,
-			      struct mptcp_addr_info *addr,
+			      struct mptcp_addr_info *addr__ign,
 			      struct mptcp_addr_info *rem,
 			      u8 bkup)
 {
+	struct mptcp_addr_info *addr = addr__ign;
 	struct mptcp_subflow_context *subflow;
 
 	pr_debug("bkup=%d\n", bkup);
