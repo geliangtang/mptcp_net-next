@@ -252,6 +252,77 @@ static bool __bpf_mptcp_pm_accept_new_address(struct mptcp_sock *msk,
 	return false;
 }
 
+static int __bpf_mptcp_pm_add_addr(struct mptcp_sock *msk,
+				   struct mptcp_pm_addr_entry *entry)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_del_addr(struct mptcp_sock *msk,
+				   const struct mptcp_pm_addr_entry *entry)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_flush_addrs(struct mptcp_sock *msk,
+				      struct list_head *rm_list)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_address_announce(struct mptcp_sock *msk,
+					   struct mptcp_pm_addr_entry *local)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_address_remove(struct mptcp_sock *msk,
+					 struct mptcp_pm_addr_entry *local)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_subflow_create(struct mptcp_sock *msk,
+					 struct mptcp_pm_addr_entry *local,
+					 struct mptcp_addr_info *remote)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_subflow_destroy(struct mptcp_sock *msk,
+					  struct mptcp_pm_addr_entry *local,
+					  struct mptcp_addr_info *remote)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_set_priority(struct mptcp_sock *msk,
+				       struct mptcp_pm_addr_entry *local,
+				       struct mptcp_pm_addr_entry *remote)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_address_created(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_address_closed(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_address_listener_created(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
+static int __bpf_mptcp_pm_address_listener_closed(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
 static void __bpf_mptcp_pm_init(struct mptcp_sock *msk)
 {
 }
@@ -269,6 +340,18 @@ static struct mptcp_pm_ops __bpf_mptcp_pm_ops = {
 	.add_addr_received	= __bpf_mptcp_pm_add_addr_received,
 	.rm_addr_received	= __bpf_mptcp_pm_rm_addr_received,
 	.accept_new_address	= __bpf_mptcp_pm_accept_new_address,
+	.add_addr		= __bpf_mptcp_pm_add_addr,
+	.del_addr		= __bpf_mptcp_pm_del_addr,
+	.flush_addrs		= __bpf_mptcp_pm_flush_addrs,
+	.address_announce	= __bpf_mptcp_pm_address_announce,
+	.address_remove		= __bpf_mptcp_pm_address_remove,
+	.subflow_create		= __bpf_mptcp_pm_subflow_create,
+	.subflow_destroy	= __bpf_mptcp_pm_subflow_destroy,
+	.set_priority		= __bpf_mptcp_pm_set_priority,
+	.created		= __bpf_mptcp_pm_address_created,
+	.closed			= __bpf_mptcp_pm_address_closed,
+	.listener_created	= __bpf_mptcp_pm_address_listener_created,
+	.listener_closed	= __bpf_mptcp_pm_address_listener_closed,
 	.init			= __bpf_mptcp_pm_init,
 	.release		= __bpf_mptcp_pm_release,
 };
