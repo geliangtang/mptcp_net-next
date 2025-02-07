@@ -97,3 +97,23 @@ int netlink_addr(struct bpf_sockopt *ctx)
 
 	return 1;
 }
+
+SEC("cgroup/getsockopt")
+int userspace_addr(struct bpf_sockopt *ctx)
+{
+	struct bpf_sock *sk = ctx->sk;
+	struct mptcp_sock *msk;
+
+	if (ctx->level != SOL_TCP || ctx->optname != TCP_IS_MPTCP)
+		return 1;
+
+	msk = bpf_skc_to_mptcp_sock(sk);
+	if (!msk || msk->pm.server_side)
+		return 1;
+
+	bpf_spin_lock_bh(&msk->pm.lock);
+	ids = pm_get_local_ids((struct sock *)sk, MPTCP_PM_TYPE_USERSPACE);
+	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	return 1;
+}

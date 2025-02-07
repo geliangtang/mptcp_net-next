@@ -1401,6 +1401,97 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+static void run_iters_userspace_address(void)
+{
+	int server_fd, client_fd, accept_fd;
+	int is_mptcp, err;
+	socklen_t len;
+	__u32 token;
+
+	server_fd = start_mptcp_server(AF_INET, ADDR_1, PORT_1, 0);
+	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
+		goto close_server;
+
+	accept_fd = accept(server_fd, NULL, NULL);
+	if (!ASSERT_OK_FD(accept_fd, "accept"))
+		goto close_client;
+
+	token = userspace_pm_get_token(client_fd);
+	if (!ASSERT_GT(token, 0, "invalid token"))
+		goto close_client;
+
+	recv_byte(accept_fd);
+	usleep(200000); /* 0.2s */
+
+	err = userspace_pm_add_subflow(token, ADDR_2, 10);
+	err = err ?: userspace_pm_add_subflow(token, ADDR_3, 20);
+	err = err ?: userspace_pm_add_subflow(token, ADDR_4, 30);
+	if (!ASSERT_OK(err, "userspace_pm_add_subflow"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	len = sizeof(is_mptcp);
+	/* mainly to trigger the BPF program */
+	err = getsockopt(client_fd, SOL_TCP, TCP_IS_MPTCP, &is_mptcp, &len);
+	if (ASSERT_OK(err, "getsockopt(client_fd, TCP_IS_MPTCP)"))
+		ASSERT_EQ(is_mptcp, 1, "is_mptcp");
+
+close_accept:
+	close(accept_fd);
+close_client:
+	close(client_fd);
+close_server:
+	close(server_fd);
+}
+
+static void test_iters_userspace_address(void)
+{
+	struct mptcp_bpf_iters *skel;
+	struct netns_obj *netns;
+	int cgroup_fd;
+	int err;
+
+	cgroup_fd = test__join_cgroup("/iters_address");
+	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: iters_address"))
+		return;
+
+	skel = mptcp_bpf_iters__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "skel_open_load: iters_address"))
+		goto close_cgroup;
+
+	skel->links.userspace_addr = bpf_program__attach_cgroup(skel->progs.userspace_addr,
+								cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.userspace_addr, "attach getsockopt"))
+		goto skel_destroy;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		goto skel_destroy;
+
+	err = userspace_pm_init("userspace");
+	if (!ASSERT_OK(err, "userspace_pm_init: iters_address"))
+		goto close_netns;
+
+	run_iters_userspace_address();
+
+	/* 10 + 20 + 30 = 60 */
+	ASSERT_EQ(skel->bss->ids, 60, "address ids");
+
+	userspace_pm_cleanup();
+close_netns:
+	netns_free(netns);
+skel_destroy:
+	mptcp_bpf_iters__destroy(skel);
+close_cgroup:
+	close(cgroup_fd);
+}
+
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -1433,4 +1524,6 @@ void test_mptcp(void)
 		test_iters_subflow();
 	if (test__start_subtest("iters_netlink_address"))
 		test_iters_netlink_address();
+	if (test__start_subtest("iters_userspace_address"))
+		test_iters_userspace_address();
 }
