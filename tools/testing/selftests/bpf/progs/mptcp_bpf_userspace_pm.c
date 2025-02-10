@@ -188,6 +188,9 @@ int BPF_PROG(mptcp_pm_userspace_address_remove, struct mptcp_sock *msk,
 	struct mptcp_pm_addr_entry *entry;
 	u8 id = local->addr.id;
 
+	if (id == 0)
+		return mptcp_pm_remove_id_zero_address(msk);
+
 	bpf_spin_lock_bh(&msk->pm.lock);
 	entry = mptcp_pm_userspace_lookup_addr_by_id(msk, id);
 	if (!entry) {

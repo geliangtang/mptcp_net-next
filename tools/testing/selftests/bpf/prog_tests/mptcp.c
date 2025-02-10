@@ -990,6 +990,9 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	send_byte(client_fd);
 	recv_byte(accept_fd);
 
+	err = userspace_pm_rm_addr(token, 0);
+	ASSERT_OK(err, "userspace_pm_rm_addr 0");
+
 close_accept:
 	close(accept_fd);
 close_client:

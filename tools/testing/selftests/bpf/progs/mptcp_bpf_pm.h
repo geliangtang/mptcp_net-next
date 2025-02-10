@@ -165,4 +165,29 @@ static __always_inline struct sock *mptcp_pm_find_ssk(struct mptcp_sock *msk,
 	return NULL;
 }
 
+static __always_inline int mptcp_pm_remove_id_zero_address(struct mptcp_sock *msk)
+{
+	struct mptcp_rm_list list = { .nr = 0 };
+	struct mptcp_subflow_context *subflow;
+	bool has_id_0 = false;
+
+	mptcp_for_each_subflow(msk, subflow) {
+		subflow = bpf_core_cast(subflow, struct mptcp_subflow_context);
+		if (subflow->local_id == 0) {
+			has_id_0 = true;
+			break;
+		}
+	}
+	if (!has_id_0)
+		return -EINVAL;
+
+	list.ids[list.nr++] = 0;
+
+	bpf_spin_lock_bh(&msk->pm.lock);
+	mptcp_pm_remove_addr(msk, &list);
+	bpf_spin_unlock_bh(&msk->pm.lock);
+
+	return 0;
+}
+
 #endif
