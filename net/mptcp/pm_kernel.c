@@ -1214,13 +1214,16 @@ static void mptcp_pm_nl_fullmesh(struct mptcp_sock *msk,
 
 static void mptcp_pm_nl_set_flags_all(struct net *net,
 				      struct mptcp_pm_addr_entry *local,
-				      u8 changed)
+				      struct mptcp_pm_addr_entry *remote)
 {
 	u8 is_subflow = !!(local->flags & MPTCP_PM_ADDR_FLAG_SUBFLOW);
 	u8 bkup = !!(local->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
+	u8 changed, mask = MPTCP_PM_ADDR_FLAG_BACKUP |
+			   MPTCP_PM_ADDR_FLAG_FULLMESH;
 	long s_slot = 0, s_num = 0;
 	struct mptcp_sock *msk;
 
+	changed = (local->flags ^ remote->flags) & mask;
 	if (changed == MPTCP_PM_ADDR_FLAG_FULLMESH && !is_subflow)
 		return;
 
@@ -1249,8 +1252,8 @@ int mptcp_pm_nl_set_flags(struct mptcp_pm_addr_entry *local,
 			  struct genl_info *info)
 {
 	struct nlattr *attr = info->attrs[MPTCP_PM_ATTR_ADDR];
-	u8 changed, mask = MPTCP_PM_ADDR_FLAG_BACKUP |
-			   MPTCP_PM_ADDR_FLAG_FULLMESH;
+	u8 mask = MPTCP_PM_ADDR_FLAG_BACKUP |
+		  MPTCP_PM_ADDR_FLAG_FULLMESH;
 	struct net *net = genl_info_net(info);
 	struct mptcp_pm_addr_entry *entry;
 	struct pm_nl_pernet *pernet;
@@ -1283,12 +1286,12 @@ int mptcp_pm_nl_set_flags(struct mptcp_pm_addr_entry *local,
 		return -EINVAL;
 	}
 
-	changed = (local->flags ^ entry->flags) & mask;
+	remote->flags = entry->flags;
 	entry->flags = (entry->flags & ~mask) | (local->flags & mask);
 	*local = *entry;
 	spin_unlock_bh(&pernet->lock);
 
-	mptcp_pm_nl_set_flags_all(net, local, changed);
+	mptcp_pm_nl_set_flags_all(net, local, remote);
 	return 0;
 }
 
