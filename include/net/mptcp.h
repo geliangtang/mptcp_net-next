@@ -150,6 +150,9 @@ struct mptcp_pm_ops {
 				struct mptcp_pm_addr_entry *local);
 	int (*address_remove)(struct mptcp_sock *msk,
 			      struct mptcp_pm_addr_entry *local);
+	int (*subflow_create)(struct mptcp_sock *msk,
+			      struct mptcp_pm_addr_entry *local,
+			      struct mptcp_addr_info *remote);
 
 	char			name[MPTCP_PM_NAME_MAX];
 	struct module		*owner;
