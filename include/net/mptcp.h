@@ -148,6 +148,8 @@ struct mptcp_pm_ops {
 	/* optional */
 	int (*address_announce)(struct mptcp_sock *msk,
 				struct mptcp_pm_addr_entry *local);
+	int (*address_remove)(struct mptcp_sock *msk,
+			      struct mptcp_pm_addr_entry *local);
 
 	char			name[MPTCP_PM_NAME_MAX];
 	struct module		*owner;
