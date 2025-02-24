@@ -659,6 +659,7 @@ static int mptcp_pm_nl_create_listen_socket(struct sock *sk,
 	int addrlen = sizeof(struct sockaddr_in);
 	struct sockaddr_storage addr;
 	struct sock *newsk, *ssk;
+	struct mptcp_sock *msk;
 	int backlog = 1024;
 	int err;
 
@@ -683,8 +684,9 @@ static int mptcp_pm_nl_create_listen_socket(struct sock *sk,
 				      is_ipv6 ? "msk_lock-AF_INET6" : "msk_lock-AF_INET",
 				      &mptcp_keys[is_ipv6]);
 
+	msk = mptcp_sk(newsk);
 	lock_sock(newsk);
-	ssk = __mptcp_nmpc_sk(mptcp_sk(newsk));
+	ssk = __mptcp_nmpc_sk(msk);
 	release_sock(newsk);
 	if (IS_ERR(ssk))
 		return PTR_ERR(ssk);
@@ -715,6 +717,13 @@ static int mptcp_pm_nl_create_listen_socket(struct sock *sk,
 	if (!err)
 		mptcp_event_pm_listener(ssk, MPTCP_EVENT_LISTENER_CREATED);
 	release_sock(ssk);
+
+	if (!err) {
+		lock_sock(newsk);
+		if (msk->pm.ops->listener_created)
+			msk->pm.ops->listener_created(msk);
+		release_sock(newsk);
+	}
 	return err;
 }
 
@@ -1342,6 +1351,16 @@ static struct pernet_operations mptcp_pm_pernet_ops = {
 	.size = sizeof(struct pm_nl_pernet),
 };
 
+static int mptcp_pm_kernel_created(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
+static int mptcp_pm_kernel_closed(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
 static bool mptcp_pm_kernel_accept_new_subflow(struct mptcp_sock *msk,
 					       bool allow)
 {
@@ -1469,6 +1488,16 @@ static int mptcp_pm_kernel_set_priority(struct mptcp_sock *msk,
 	return 0;
 }
 
+static int mptcp_pm_kernel_listener_created(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
+static int mptcp_pm_kernel_listener_closed(struct mptcp_sock *msk)
+{
+	return 0;
+}
+
 static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 {
 	bool subflows_allowed = !!mptcp_pm_get_subflows_max(msk);
@@ -1490,6 +1519,8 @@ static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 }
 
 struct mptcp_pm_ops mptcp_pm_kernel = {
+	.created		= mptcp_pm_kernel_created,
+	.closed			= mptcp_pm_kernel_closed,
 	.get_local_id		= mptcp_pm_kernel_get_local_id,
 	.get_priority		= mptcp_pm_kernel_get_priority,
 	.accept_new_subflow	= mptcp_pm_kernel_accept_new_subflow,
@@ -1502,6 +1533,8 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.del_addr		= mptcp_pm_kernel_del_addr,
 	.flush_addrs		= mptcp_pm_kernel_flush_addrs,
 	.set_priority		= mptcp_pm_kernel_set_priority,
+	.listener_created	= mptcp_pm_kernel_listener_created,
+	.listener_closed	= mptcp_pm_kernel_listener_closed,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,

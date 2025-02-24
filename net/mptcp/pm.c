@@ -479,6 +479,9 @@ void mptcp_pm_new_connection(struct mptcp_sock *msk, const struct sock *ssk, int
 
 	WRITE_ONCE(pm->server_side, server_side);
 	mptcp_event(MPTCP_EVENT_CREATED, msk, ssk, GFP_ATOMIC);
+
+	if (pm->ops->created)
+		pm->ops->created(msk);
 }
 
 bool mptcp_pm_accept_new_subflow(struct mptcp_sock *msk, bool allow)
@@ -552,8 +555,12 @@ void mptcp_pm_connection_closed(struct mptcp_sock *msk)
 {
 	pr_debug("msk=%p\n", msk);
 
-	if (msk->token)
+	if (msk->token) {
 		mptcp_event(MPTCP_EVENT_CLOSED, msk, NULL, GFP_KERNEL);
+
+		if (msk->pm.ops->closed)
+			msk->pm.ops->closed(msk);
+	}
 }
 
 void mptcp_pm_subflow_established(struct mptcp_sock *msk)
@@ -1072,6 +1079,14 @@ int mptcp_pm_validate(struct mptcp_pm_ops *pm_ops)
 	if (!pm_ops->get_local_id || !pm_ops->get_priority ||
 	    !pm_ops->accept_new_subflow || !pm_ops->accept_new_address) {
 		pr_err("%s does not implement required ops\n", pm_ops->name);
+		return -EINVAL;
+	}
+
+	if ((pm_ops->address_announce && pm_ops->add_addr) ||
+	    (pm_ops->subflow_create && pm_ops->add_addr) ||
+	    (pm_ops->address_remove && pm_ops->del_addr) ||
+	    (pm_ops->subflow_destroy && pm_ops->del_addr)) {
+		pr_err("%s implements invalid ops\n", pm_ops->name);
 		return -EINVAL;
 	}
 

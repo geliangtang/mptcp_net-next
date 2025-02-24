@@ -3044,13 +3044,14 @@ static __poll_t mptcp_check_readable(struct sock *sk)
 
 static void mptcp_check_listen_stop(struct sock *sk)
 {
+	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sock *ssk;
 
 	if (inet_sk_state_load(sk) != TCP_LISTEN)
 		return;
 
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
-	ssk = mptcp_sk(sk)->first;
+	ssk = msk->first;
 	if (WARN_ON_ONCE(!ssk || inet_sk_state_load(ssk) != TCP_LISTEN))
 		return;
 
@@ -3060,6 +3061,9 @@ static void mptcp_check_listen_stop(struct sock *sk)
 	inet_csk_listen_stop(ssk);
 	mptcp_event_pm_listener(ssk, MPTCP_EVENT_LISTENER_CLOSED);
 	release_sock(ssk);
+
+	if (msk->pm.ops->listener_closed)
+		msk->pm.ops->listener_closed(msk);
 }
 
 bool __mptcp_close(struct sock *sk, long timeout)
