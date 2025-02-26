@@ -471,12 +471,9 @@ int mptcp_userspace_pm_set_flags(struct mptcp_pm_addr_entry *local,
 				 struct mptcp_pm_addr_entry *remote,
 				 struct genl_info *info)
 {
-	struct mptcp_pm_addr_entry *entry;
 	struct mptcp_sock *msk;
-	struct nlattr *attr;
 	int ret = -EINVAL;
 	struct sock *sk;
-	u8 bkup = 0;
 
 	msk = mptcp_userspace_pm_get_sock(info);
 	if (!msk)
@@ -484,36 +481,15 @@ int mptcp_userspace_pm_set_flags(struct mptcp_pm_addr_entry *local,
 
 	sk = (struct sock *)msk;
 
-	attr = info->attrs[MPTCP_PM_ATTR_ADDR];
-	if (local->addr.family == AF_UNSPEC) {
-		NL_SET_ERR_MSG_ATTR(info->extack, attr,
-				    "invalid local address family");
-		ret = -EINVAL;
-		goto set_flags_err;
-	}
-
-	if (local->flags & MPTCP_PM_ADDR_FLAG_BACKUP)
-		bkup = 1;
-
-	spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_userspace_pm_lookup_addr(msk, &local->addr);
-	if (entry) {
-		if (bkup)
-			entry->flags |= MPTCP_PM_ADDR_FLAG_BACKUP;
-		else
-			entry->flags &= ~MPTCP_PM_ADDR_FLAG_BACKUP;
-	}
-	spin_unlock_bh(&msk->pm.lock);
-
 	lock_sock(sk);
-	ret = mptcp_pm_mp_prio_send_ack(msk, &local->addr, &remote->addr, bkup);
+	if (msk->pm.ops->set_priority)
+	      ret = msk->pm.ops->set_priority(msk, local, remote);
 	release_sock(sk);
 
 	/* mptcp_pm_mp_prio_send_ack() only fails in one case */
 	if (ret < 0)
 		GENL_SET_ERR_MSG(info, "subflow not found");
 
-set_flags_err:
 	sock_put(sk);
 	return ret;
 }
@@ -688,6 +664,32 @@ static int mptcp_pm_userspace_subflow_destroy(struct mptcp_sock *msk,
 	return 0;
 }
 
+static int mptcp_pm_userspace_set_priority(struct mptcp_sock *msk,
+					   struct mptcp_pm_addr_entry *local,
+					   struct mptcp_pm_addr_entry *remote)
+{
+	struct mptcp_pm_addr_entry *entry;
+	u8 bkup = 0;
+
+	if (local->addr.family == AF_UNSPEC)
+		return -EINVAL;
+
+	if (local->flags & MPTCP_PM_ADDR_FLAG_BACKUP)
+		bkup = 1;
+
+	spin_lock_bh(&msk->pm.lock);
+	entry = mptcp_userspace_pm_lookup_addr(msk, &local->addr);
+	if (entry) {
+		if (bkup)
+			entry->flags |= MPTCP_PM_ADDR_FLAG_BACKUP;
+		else
+			entry->flags &= ~MPTCP_PM_ADDR_FLAG_BACKUP;
+	}
+	spin_unlock_bh(&msk->pm.lock);
+
+	return mptcp_pm_mp_prio_send_ack(msk, &local->addr, &remote->addr, bkup);
+}
+
 static void mptcp_pm_userspace_release(struct mptcp_sock *msk)
 {
 	mptcp_userspace_pm_free_local_addr_list(msk);
@@ -702,6 +704,7 @@ static struct mptcp_pm_ops mptcp_pm_userspace = {
 	.address_remove		= mptcp_pm_userspace_address_remove,
 	.subflow_create		= mptcp_pm_userspace_subflow_create,
 	.subflow_destroy	= mptcp_pm_userspace_subflow_destroy,
+	.set_priority		= mptcp_pm_userspace_set_priority,
 	.release		= mptcp_pm_userspace_release,
 	.name			= "userspace",
 	.owner			= THIS_MODULE,

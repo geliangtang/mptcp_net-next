@@ -1216,16 +1216,8 @@ static void mptcp_pm_nl_set_flags_all(struct net *net,
 				      struct mptcp_pm_addr_entry *local,
 				      struct mptcp_pm_addr_entry *remote)
 {
-	u8 is_subflow = !!(local->flags & MPTCP_PM_ADDR_FLAG_SUBFLOW);
-	u8 bkup = !!(local->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
-	u8 changed, mask = MPTCP_PM_ADDR_FLAG_BACKUP |
-			   MPTCP_PM_ADDR_FLAG_FULLMESH;
 	long s_slot = 0, s_num = 0;
 	struct mptcp_sock *msk;
-
-	changed = (local->flags ^ remote->flags) & mask;
-	if (changed == MPTCP_PM_ADDR_FLAG_FULLMESH && !is_subflow)
-		return;
 
 	while ((msk = mptcp_token_iter_next(net, &s_slot, &s_num)) != NULL) {
 		struct sock *sk = (struct sock *)msk;
@@ -1234,11 +1226,8 @@ static void mptcp_pm_nl_set_flags_all(struct net *net,
 			goto next;
 
 		lock_sock(sk);
-		if (changed & MPTCP_PM_ADDR_FLAG_BACKUP)
-			mptcp_pm_mp_prio_send_ack(msk, &local->addr, NULL, bkup);
-		/* Subflows will only be recreated if the SUBFLOW flag is set */
-		if (is_subflow && (changed & MPTCP_PM_ADDR_FLAG_FULLMESH))
-			mptcp_pm_nl_fullmesh(msk, &local->addr);
+		if (msk->pm.ops->set_priority)
+			msk->pm.ops->set_priority(msk, local, remote);
 		release_sock(sk);
 
 next:
@@ -1454,6 +1443,28 @@ static int mptcp_pm_kernel_flush_addrs(struct mptcp_sock *msk,
 	return 0;
 }
 
+static int mptcp_pm_kernel_set_priority(struct mptcp_sock *msk,
+					struct mptcp_pm_addr_entry *local,
+					struct mptcp_pm_addr_entry *remote)
+{
+	u8 is_subflow = !!(local->flags & MPTCP_PM_ADDR_FLAG_SUBFLOW);
+	u8 bkup = !!(local->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
+	u8 changed, mask = MPTCP_PM_ADDR_FLAG_BACKUP |
+			   MPTCP_PM_ADDR_FLAG_FULLMESH;
+
+	changed = (local->flags ^ remote->flags) & mask;
+	if (changed == MPTCP_PM_ADDR_FLAG_FULLMESH && !is_subflow)
+		return 0;
+
+	if (changed & MPTCP_PM_ADDR_FLAG_BACKUP)
+		mptcp_pm_mp_prio_send_ack(msk, &local->addr, NULL, bkup);
+	/* Subflows will only be recreated if the SUBFLOW flag is set */
+	if (is_subflow && (changed & MPTCP_PM_ADDR_FLAG_FULLMESH))
+		mptcp_pm_nl_fullmesh(msk, &local->addr);
+
+	return 0;
+}
+
 static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 {
 	bool subflows_allowed = !!mptcp_pm_get_subflows_max(msk);
@@ -1486,6 +1497,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.add_addr		= mptcp_pm_kernel_add_addr,
 	.del_addr		= mptcp_pm_kernel_del_addr,
 	.flush_addrs		= mptcp_pm_kernel_flush_addrs,
+	.set_priority		= mptcp_pm_kernel_set_priority,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
