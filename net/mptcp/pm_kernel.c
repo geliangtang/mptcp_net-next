@@ -1422,7 +1422,7 @@ static void mptcp_pm_nl_set_flags_all(struct net *net,
 	while ((msk = mptcp_token_iter_next(net, &s_slot, &s_num)) != NULL) {
 		struct sock *sk = (struct sock *)msk;
 
-		if (list_empty(&msk->conn_list) || mptcp_pm_is_userspace(msk))
+		if (list_empty(&msk->conn_list))
 			goto next;
 
 		lock_sock(sk);
@@ -1449,6 +1449,9 @@ int mptcp_pm_nl_set_flags(struct mptcp_pm_addr_entry *local,
 	u8 lookup_by_id = 0;
 
 	pernet = pm_nl_get_pernet(net);
+
+	if (remote->addr.family != AF_UNSPEC)
+		goto set_flags;
 
 	if (local->addr.family == AF_UNSPEC) {
 		lookup_by_id = 1;
@@ -1492,6 +1495,7 @@ int mptcp_pm_nl_set_flags(struct mptcp_pm_addr_entry *local,
 
 	spin_unlock_bh(&pernet->lock);
 
+set_flags:
 	mptcp_pm_nl_set_flags_all(net, local, remote);
 	return 0;
 }

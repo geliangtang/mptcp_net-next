@@ -467,33 +467,6 @@ destroy_err:
 	return err;
 }
 
-int mptcp_userspace_pm_set_flags(struct mptcp_pm_addr_entry *local,
-				 struct mptcp_pm_addr_entry *remote,
-				 struct genl_info *info)
-{
-	struct mptcp_sock *msk;
-	int ret = -EINVAL;
-	struct sock *sk;
-
-	msk = mptcp_userspace_pm_get_sock(info);
-	if (!msk)
-		return ret;
-
-	sk = (struct sock *)msk;
-
-	lock_sock(sk);
-	if (msk->pm.ops->set_priority)
-	      ret = msk->pm.ops->set_priority(msk, local, remote);
-	release_sock(sk);
-
-	/* mptcp_pm_mp_prio_send_ack() only fails in one case */
-	if (ret < 0)
-		GENL_SET_ERR_MSG(info, "subflow not found");
-
-	sock_put(sk);
-	return ret;
-}
-
 int mptcp_userspace_pm_dump_addr(struct sk_buff *msg,
 				 struct netlink_callback *cb)
 {
