@@ -283,7 +283,6 @@ static int mptcp_pm_set_flags(struct genl_info *info)
 					    "invalid remote address family");
 			return -EINVAL;
 		}
-		return mptcp_userspace_pm_set_flags(&loc, &rem, info);
 	}
 	return mptcp_pm_nl_set_flags(&loc, &rem, info);
 }
