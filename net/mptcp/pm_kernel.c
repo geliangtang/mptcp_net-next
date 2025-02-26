@@ -922,42 +922,6 @@ static int mptcp_nl_remove_subflow_and_signal_addr(struct net *net,
 	return 0;
 }
 
-static int mptcp_nl_remove_id_zero_address(struct net *net,
-					   struct mptcp_addr_info *addr)
-{
-	struct mptcp_rm_list list = { .nr = 0 };
-	long s_slot = 0, s_num = 0;
-	struct mptcp_sock *msk;
-
-	list.ids[list.nr++] = 0;
-
-	while ((msk = mptcp_token_iter_next(net, &s_slot, &s_num)) != NULL) {
-		struct sock *sk = (struct sock *)msk;
-		struct mptcp_addr_info msk_local;
-
-		if (list_empty(&msk->conn_list) || mptcp_pm_is_userspace(msk))
-			goto next;
-
-		mptcp_local_address((struct sock_common *)msk, &msk_local);
-		if (!mptcp_addresses_equal(&msk_local, addr, addr->port))
-			goto next;
-
-		lock_sock(sk);
-		spin_lock_bh(&msk->pm.lock);
-		mptcp_pm_remove_addr(msk, &list);
-		mptcp_pm_rm_subflow(msk, &list);
-		__mark_subflow_endp_available(msk, 0);
-		spin_unlock_bh(&msk->pm.lock);
-		release_sock(sk);
-
-next:
-		sock_put(sk);
-		cond_resched();
-	}
-
-	return 0;
-}
-
 /* Remove an MPTCP endpoint */
 int mptcp_pm_nl_del_addr_doit(struct sk_buff *skb, struct genl_info *info)
 {
@@ -980,8 +944,10 @@ int mptcp_pm_nl_del_addr_doit(struct sk_buff *skb, struct genl_info *info)
 	 * id addresses. Additionally zero id is not accounted for in id_bitmap.
 	 * Let's use an 'mptcp_rm_list' instead of the common remove code.
 	 */
-	if (addr.addr.id == 0)
-		return mptcp_nl_remove_id_zero_address(sock_net(skb->sk), &addr.addr);
+	if (addr.addr.id == 0) {
+		entry = &addr;
+		goto del_addr;
+	}
 
 	spin_lock_bh(&pernet->lock);
 	entry = __lookup_addr_by_id(pernet, addr.addr.id);
@@ -1004,9 +970,12 @@ int mptcp_pm_nl_del_addr_doit(struct sk_buff *skb, struct genl_info *info)
 	__clear_bit(entry->addr.id, pernet->id_bitmap);
 	spin_unlock_bh(&pernet->lock);
 
+del_addr:
 	mptcp_nl_remove_subflow_and_signal_addr(sock_net(skb->sk), entry);
-	synchronize_rcu();
-	__mptcp_pm_release_addr_entry(entry);
+	if (entry->addr.id) {
+		synchronize_rcu();
+		__mptcp_pm_release_addr_entry(entry);
+	}
 
 	return ret;
 }
@@ -1416,12 +1385,39 @@ static int mptcp_pm_kernel_add_addr(struct mptcp_sock *msk,
 	return 0;
 }
 
+static void mptcp_pm_kernel_remove_id_zero_address(struct mptcp_sock *msk,
+						   const struct mptcp_addr_info *addr)
+{
+	struct mptcp_rm_list list = { .nr = 0 };
+	struct mptcp_addr_info msk_local;
+
+	if (list_empty(&msk->conn_list))
+		return;
+
+	mptcp_local_address((struct sock_common *)msk, &msk_local);
+	if (!mptcp_addresses_equal(&msk_local, addr, addr->port))
+		return;
+
+	list.ids[list.nr++] = 0;
+
+	spin_lock_bh(&msk->pm.lock);
+	mptcp_pm_remove_addr(msk, &list);
+	mptcp_pm_rm_subflow(msk, &list);
+	__mark_subflow_endp_available(msk, 0);
+	spin_unlock_bh(&msk->pm.lock);
+}
+
 static int mptcp_pm_kernel_del_addr(struct mptcp_sock *msk,
 				    const struct mptcp_pm_addr_entry *entry)
 {
 	const struct mptcp_addr_info *addr = &entry->addr;
 	struct mptcp_rm_list list = { .nr = 1 };
 	bool remove_subflow;
+
+	if (addr->id == 0) {
+		mptcp_pm_kernel_remove_id_zero_address(msk, addr);
+		return 0;
+	}
 
 	remove_subflow = mptcp_lookup_subflow_by_saddr(&msk->conn_list, addr);
 	mptcp_pm_remove_anno_addr(msk, addr, remove_subflow &&
