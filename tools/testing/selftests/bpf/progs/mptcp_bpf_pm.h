@@ -41,7 +41,8 @@ bpf_sock_kfree_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry,
 		     int size) __ksym;
 
 extern bool mptcp_pm_alloc_anno_list(struct mptcp_sock *msk,
-				     const struct mptcp_addr_info *addr) __ksym;
+				     const struct mptcp_addr_info *addr,
+				     bool reissue) __ksym;
 extern int mptcp_pm_announce_addr(struct mptcp_sock *msk,
 				  const struct mptcp_addr_info *addr,
 				  bool echo) __ksym;

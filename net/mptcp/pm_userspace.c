@@ -625,7 +625,7 @@ static int mptcp_pm_userspace_address_announce(struct mptcp_sock *msk,
 
 	spin_lock_bh(&msk->pm.lock);
 
-	if (mptcp_pm_alloc_anno_list(msk, &local->addr)) {
+	if (mptcp_pm_alloc_anno_list(msk, &local->addr, true)) {
 		msk->pm.add_addr_signaled++;
 		mptcp_pm_announce_addr(msk, &local->addr, false);
 		mptcp_pm_addr_send_ack(msk);
