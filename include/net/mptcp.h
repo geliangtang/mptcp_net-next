@@ -162,6 +162,13 @@ struct mptcp_pm_ops {
 			    struct mptcp_pm_addr_entry *local,
 			    struct mptcp_pm_addr_entry *remote);
 
+	/* optional */
+	int (*created)(struct mptcp_sock *msk);
+	int (*closed)(struct mptcp_sock *msk);
+
+	int (*listener_created)(struct mptcp_sock *msk);
+	int (*listener_closed)(struct mptcp_sock *msk);
+
 	char			name[MPTCP_PM_NAME_MAX];
 	struct module		*owner;
 	struct list_head	list;
