@@ -11,8 +11,13 @@ static int mptcp_setsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
 	int *optval = ctx->optval;
+	struct mptcp_sock *msk;
 	__u32 mark;
 	int i = 0;
+
+	msk = bpf_skc_to_mptcp_sock(sk);
+	if (!msk)
+		return 1;
 
 	if (ctx->optval + sizeof(mark) > ctx->optval_end)
 		return 1;
@@ -40,7 +45,12 @@ static int mptcp_setsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 	struct mptcp_subflow_context *subflow;
 	char *optval = ctx->optval;
 	char cc[TCP_CA_NAME_MAX];
+	struct mptcp_sock *msk;
 	int i = 0;
+
+	msk = bpf_skc_to_mptcp_sock(sk);
+	if (!msk)
+		return 1;
 
 	if (ctx->optval + TCP_CA_NAME_MAX > ctx->optval_end)
 		return 1;
@@ -78,16 +88,18 @@ int mptcp_setsockopt(struct bpf_sockopt *ctx)
 	return 1;
 }
 
-static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
+static int mptcp_getsockopt_mark(struct mptcp_sock *msk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
 	int i = 0;
 
-	bpf_for_each(mptcp_subflow, subflow, (struct sock *)sk) {
-		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk;
 
+		ssk = mptcp_subflow_tcp_sock(bpf_core_cast(subflow,
+							   struct mptcp_subflow_context));
 		if (ssk->sk_mark != 1) {
-			ctx->retval = -1;
+			//ctx->retval = -1;
 			break;
 		}
 
@@ -97,19 +109,21 @@ static int mptcp_getsockopt_mark(struct bpf_sock *sk, struct bpf_sockopt *ctx)
 	return 1;
 }
 
-static int mptcp_getsockopt_cc(struct bpf_sock *sk, struct bpf_sockopt *ctx)
+static int mptcp_getsockopt_cc(struct mptcp_sock *msk, struct bpf_sockopt *ctx)
 {
 	struct mptcp_subflow_context *subflow;
 	int i = 0;
 
-	bpf_for_each(mptcp_subflow, subflow, (struct sock *)sk) {
-		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+	mptcp_for_each_subflow(msk, subflow) {
 		struct inet_connection_sock *icsk;
+		struct sock *ssk;
 
+		ssk = mptcp_subflow_tcp_sock(bpf_core_cast(subflow,
+							   struct mptcp_subflow_context));
 		icsk = bpf_core_cast(ssk, struct inet_connection_sock);
 
 		if (__builtin_memcmp(icsk->icsk_ca_ops->name, "reno", TCP_CA_NAME_MAX)) {
-			ctx->retval = -1;
+			//ctx->retval = -1;
 			break;
 		}
 
@@ -123,13 +137,18 @@ SEC("cgroup/getsockopt")
 int mptcp_getsockopt(struct bpf_sockopt *ctx)
 {
 	struct bpf_sock *sk = ctx->sk;
+	struct mptcp_sock *msk;
 
 	if (!sk || sk->protocol != IPPROTO_MPTCP)
 		return 1;
 
+	msk = bpf_core_cast(sk, struct mptcp_sock);
+	if (msk->pm.subflows != 1)
+		return 1;
+
 	if (ctx->level == SOL_SOCKET && ctx->optname == SO_MARK)
-		return mptcp_getsockopt_mark(sk, ctx);
+		return mptcp_getsockopt_mark(msk, ctx);
 	if (ctx->level == SOL_TCP && ctx->optname == TCP_CONGESTION)
-		return mptcp_getsockopt_cc(sk, ctx);
+		return mptcp_getsockopt_cc(msk, ctx);
 	return 1;
 }

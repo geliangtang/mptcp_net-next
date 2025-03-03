@@ -24,7 +24,7 @@ int iters_subflow(struct bpf_sockopt *ctx)
 	if (ctx->level != SOL_TCP || ctx->optname != TCP_IS_MPTCP)
 		return 1;
 
-	msk = bpf_core_cast(sk, struct mptcp_sock);
+	msk = bpf_skc_to_mptcp_sock(sk);
 	if (!msk || msk->pm.server_side || !msk->pm.extra_subflows)
 		return 1;
 
