@@ -3956,6 +3956,21 @@ userspace_tests()
 	if reset_with_events "userspace pm add & remove address" &&
 	   continue_if mptcp_lib_has_file '/proc/sys/net/mptcp/pm_type'; then
 		set_userspace_pm $ns1
+		if continue_if mptcp_lib_has_file '/proc/sys/net/mptcp/path_manager'; then
+			local pm1 pm2
+
+			pm1=$(ip netns exec ${ns1} sysctl -n net.mptcp.path_manager)
+			if [ "$pm1" != "userspace" ]; then
+				mptcp_lib_pr_fail "ns1 path_manager mapping fails"
+				return 1
+			fi
+
+			pm2=$(ip netns exec ${ns2} sysctl -n net.mptcp.path_manager)
+			if [ "$pm2" != "kernel" ]; then
+				mptcp_lib_pr_fail "ns2 path_manager mapping fails"
+				return 1
+			fi
+		fi
 		pm_nl_set_limits $ns2 2 2
 		{ speed=5 \
 			run_tests $ns1 $ns2 10.0.1.1 & } 2>/dev/null
