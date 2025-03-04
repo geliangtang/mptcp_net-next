@@ -4003,7 +4003,26 @@ userspace_tests()
 	# userspace pm create destroy subflow
 	if reset_with_events "userspace pm create destroy subflow" &&
 	   continue_if mptcp_lib_has_file '/proc/sys/net/mptcp/pm_type'; then
-		set_userspace_pm $ns2
+		if [ -f /proc/sys/net/mptcp/path_manager ]; then
+			local pm1 pm2
+
+			mptcp_lib_set_path_manager $ns1 "kernel"
+			mptcp_lib_set_path_manager $ns2 "userspace"
+
+			pm1=$(ip netns exec ${ns1} sysctl -n net.mptcp.pm_type)
+			if [ "$pm1" != "0" ]; then
+				mptcp_lib_pr_fail "ns1 pm_type mapping fails"
+				return 1
+			fi
+
+			pm2=$(ip netns exec ${ns2} sysctl -n net.mptcp.pm_type)
+			if [ "$pm2" != "1" ]; then
+				mptcp_lib_pr_fail "ns2 pm_type mapping fails"
+				return 1
+			fi
+		else
+			set_userspace_pm $ns2
+		fi
 		pm_nl_set_limits $ns1 0 1
 		{ speed=5 \
 			run_tests $ns1 $ns2 10.0.1.1 & } 2>/dev/null
