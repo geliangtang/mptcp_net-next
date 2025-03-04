@@ -89,11 +89,14 @@ path_manager - STRING
 	connection decisions and address advertisements under control of
 	a privileged userspace program, at the cost of more netlink
 	traffic to propagate all of the related events and commands.
+	User-defined BPF-based path managers can also be set via this
+	sysctl.
 
 	This is a per-namespace sysctl.
 
 	* "kernel"          - In-kernel path manager
 	* "userspace"       - Userspace path manager
+	* all other strings - BPF-based path managers
 
 	Default: "kernel"
 
