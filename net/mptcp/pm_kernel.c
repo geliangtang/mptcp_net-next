@@ -78,6 +78,14 @@ unsigned int mptcp_pm_get_local_addr_max(const struct mptcp_sock *msk)
 }
 EXPORT_SYMBOL_GPL(mptcp_pm_get_local_addr_max);
 
+struct list_head *mptcp_pm_get_local_addr_list(const struct mptcp_sock *msk)
+{
+	struct pm_nl_pernet *pernet = pm_nl_get_pernet_from_msk(msk);
+
+	return &pernet->local_addr_list;
+}
+EXPORT_SYMBOL_GPL(mptcp_pm_get_local_addr_list);
+
 static bool lookup_subflow_by_daddr(const struct list_head *list,
 				    const struct mptcp_addr_info *daddr)
 {
