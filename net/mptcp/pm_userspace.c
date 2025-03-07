@@ -156,13 +156,6 @@ static struct mptcp_sock *mptcp_userspace_pm_get_sock(const struct genl_info *in
 		return NULL;
 	}
 
-	if (!mptcp_pm_is_userspace(msk)) {
-		NL_SET_ERR_MSG_ATTR(info->extack, token,
-				    "userspace PM not selected");
-		sock_put((struct sock *)msk);
-		return NULL;
-	}
-
 	return msk;
 }
 
