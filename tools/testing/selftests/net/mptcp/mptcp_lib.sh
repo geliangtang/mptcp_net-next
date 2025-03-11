@@ -693,3 +693,16 @@ mptcp_lib_pm_nl_change_endpoint() {
 		ip netns exec "${ns}" ./pm_nl_ctl set id "${id}" flags "${flags}"
 	fi
 }
+
+mptcp_lib_set_path_manager()
+{
+	local ns=$1
+	local pm=$2
+
+	if ! ip netns exec ${ns} sysctl net.mptcp.available_path_managers |
+	     grep -wq "${pm}"; then
+		test_fail "path manager ${pm} not found"
+		return 1
+	fi
+	ip netns exec ${ns} sysctl -q net.mptcp.path_manager="${pm}"
+}

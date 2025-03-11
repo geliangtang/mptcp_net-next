@@ -148,7 +148,11 @@ if [ -f /proc/sys/net/mptcp/path_manager ]; then
 fi
 
 for i in "$ns1" "$ns2" ;do
-	ip netns exec "$i" sysctl -q net.mptcp.pm_type=1
+	if [ -f /proc/sys/net/mptcp/path_manager ]; then
+		mptcp_lib_set_path_manager "$i" "userspace"
+	else
+		ip netns exec "$i" sysctl -q net.mptcp.pm_type=1
+	fi
 done
 
 #  "$ns1"              ns2
