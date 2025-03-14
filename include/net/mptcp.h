@@ -142,6 +142,8 @@ struct mptcp_pm_ops {
 			struct mptcp_pm_addr_entry *entry);
 	int (*del_addr)(struct mptcp_sock *msk,
 			const struct mptcp_pm_addr_entry *entry);
+	int (*flush_addrs)(struct mptcp_sock *msk,
+			   struct list_head *rm_list);
 
 	char			name[MPTCP_PM_NAME_MAX];
 	struct module		*owner;

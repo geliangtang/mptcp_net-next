@@ -1256,11 +1256,10 @@ static void mptcp_nl_flush_addrs_list(struct net *net,
 	while ((msk = mptcp_token_iter_next(net, &s_slot, &s_num)) != NULL) {
 		struct sock *sk = (struct sock *)msk;
 
-		if (!mptcp_pm_is_userspace(msk)) {
-			lock_sock(sk);
-			mptcp_pm_flush_addrs_and_subflows(msk, rm_list);
-			release_sock(sk);
-		}
+		lock_sock(sk);
+		if (msk->pm.ops->flush_addrs)
+			msk->pm.ops->flush_addrs(msk, rm_list);
+		release_sock(sk);
 
 		sock_put(sk);
 		cond_resched();
@@ -1658,6 +1657,14 @@ static int mptcp_pm_kernel_del_addr(struct mptcp_sock *msk,
 	return 0;
 }
 
+static int mptcp_pm_kernel_flush_addrs(struct mptcp_sock *msk,
+				       struct list_head *rm_list)
+{
+	mptcp_pm_flush_addrs_and_subflows(msk, rm_list);
+
+	return 0;
+}
+
 static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 {
 	bool subflows_allowed = !!mptcp_pm_get_limit_extra_subflows(msk);
@@ -1689,6 +1696,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.rm_addr_received	= mptcp_pm_kernel_rm_addr_received,
 	.add_addr		= mptcp_pm_kernel_add_addr,
 	.del_addr		= mptcp_pm_kernel_del_addr,
+	.flush_addrs		= mptcp_pm_kernel_flush_addrs,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
