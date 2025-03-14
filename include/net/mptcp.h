@@ -140,6 +140,8 @@ struct mptcp_pm_ops {
 	/* optional */
 	int (*add_addr)(struct mptcp_sock *msk,
 			struct mptcp_pm_addr_entry *entry);
+	int (*del_addr)(struct mptcp_sock *msk,
+			const struct mptcp_pm_addr_entry *entry);
 
 	char			name[MPTCP_PM_NAME_MAX];
 	struct module		*owner;
