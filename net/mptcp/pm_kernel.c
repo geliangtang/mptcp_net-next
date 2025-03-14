@@ -902,43 +902,19 @@ static void __mark_subflow_endp_available(struct mptcp_sock *msk, u8 id)
 static int mptcp_nl_remove_subflow_and_signal_addr(struct net *net,
 						   const struct mptcp_pm_addr_entry *entry)
 {
-	const struct mptcp_addr_info *addr = &entry->addr;
-	struct mptcp_rm_list list = { .nr = 1 };
 	long s_slot = 0, s_num = 0;
 	struct mptcp_sock *msk;
 
-	pr_debug("remove_id=%d\n", addr->id);
+	pr_debug("remove_id=%d\n", entry->addr.id);
 
 	while ((msk = mptcp_token_iter_next(net, &s_slot, &s_num)) != NULL) {
 		struct sock *sk = (struct sock *)msk;
-		bool remove_subflow;
-
-		if (mptcp_pm_is_userspace(msk))
-			goto next;
 
 		lock_sock(sk);
-		remove_subflow = mptcp_lookup_subflow_by_saddr(&msk->conn_list, addr);
-		mptcp_pm_remove_anno_addr(msk, addr, remove_subflow &&
-					  !(entry->flags & MPTCP_PM_ADDR_FLAG_IMPLICIT));
-
-		list.ids[0] = mptcp_endp_get_local_id(msk, addr);
-		if (remove_subflow) {
-			spin_lock_bh(&msk->pm.lock);
-			mptcp_pm_rm_subflow(msk, &list);
-			spin_unlock_bh(&msk->pm.lock);
-		}
-
-		if (entry->flags & MPTCP_PM_ADDR_FLAG_SUBFLOW) {
-			spin_lock_bh(&msk->pm.lock);
-			__mark_subflow_endp_available(msk, list.ids[0]);
-			spin_unlock_bh(&msk->pm.lock);
-		}
-
-		if (msk->mpc_endpoint_id == entry->addr.id)
-			msk->mpc_endpoint_id = 0;
+		if (msk->pm.ops->del_addr)
+			msk->pm.ops->del_addr(msk, entry);
 		release_sock(sk);
 
-next:
 		sock_put(sk);
 		cond_resched();
 	}
@@ -1441,6 +1417,36 @@ static int mptcp_pm_kernel_add_addr(struct mptcp_sock *msk,
 	return 0;
 }
 
+static int mptcp_pm_kernel_del_addr(struct mptcp_sock *msk,
+				    const struct mptcp_pm_addr_entry *entry)
+{
+	const struct mptcp_addr_info *addr = &entry->addr;
+	struct mptcp_rm_list list = { .nr = 1 };
+	bool remove_subflow;
+
+	remove_subflow = mptcp_lookup_subflow_by_saddr(&msk->conn_list, addr);
+	mptcp_pm_remove_anno_addr(msk, addr, remove_subflow &&
+				  !(entry->flags & MPTCP_PM_ADDR_FLAG_IMPLICIT));
+
+	list.ids[0] = mptcp_endp_get_local_id(msk, addr);
+	if (remove_subflow) {
+		spin_lock_bh(&msk->pm.lock);
+		mptcp_pm_rm_subflow(msk, &list);
+		spin_unlock_bh(&msk->pm.lock);
+	}
+
+	if (entry->flags & MPTCP_PM_ADDR_FLAG_SUBFLOW) {
+		spin_lock_bh(&msk->pm.lock);
+		__mark_subflow_endp_available(msk, list.ids[0]);
+		spin_unlock_bh(&msk->pm.lock);
+	}
+
+	if (msk->mpc_endpoint_id == addr->id)
+		msk->mpc_endpoint_id = 0;
+
+	return 0;
+}
+
 static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 {
 	bool subflows_allowed = !!mptcp_pm_get_subflows_max(msk);
@@ -1471,6 +1477,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.add_addr_received	= mptcp_pm_kernel_add_addr_received,
 	.rm_addr_received	= mptcp_pm_kernel_rm_addr_received,
 	.add_addr		= mptcp_pm_kernel_add_addr,
+	.del_addr		= mptcp_pm_kernel_del_addr,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
