@@ -763,28 +763,20 @@ static bool mptcp_pm_kernel_get_priority(struct mptcp_sock *msk,
 }
 
 static int mptcp_nl_add_subflow_or_signal_addr(struct net *net,
-					       struct mptcp_addr_info *addr)
+					       struct mptcp_pm_addr_entry *entry)
 {
 	struct mptcp_sock *msk;
 	long s_slot = 0, s_num = 0;
 
 	while ((msk = mptcp_token_iter_next(net, &s_slot, &s_num)) != NULL) {
 		struct sock *sk = (struct sock *)msk;
-		struct mptcp_addr_info mpc_addr;
 
-		if (!READ_ONCE(msk->fully_established) ||
-		    mptcp_pm_is_userspace(msk))
+		if (!READ_ONCE(msk->fully_established))
 			goto next;
 
-		/* if the endp linked to the init sf is re-added with a != ID */
-		mptcp_local_address((struct sock_common *)msk, &mpc_addr);
-
 		lock_sock(sk);
-		spin_lock_bh(&msk->pm.lock);
-		if (mptcp_addresses_equal(addr, &mpc_addr, addr->port))
-			msk->mpc_endpoint_id = addr->id;
-		mptcp_pm_create_subflow_or_signal_addr(msk);
-		spin_unlock_bh(&msk->pm.lock);
+		if (msk->pm.ops->add_addr)
+			msk->pm.ops->add_addr(msk, entry);
 		release_sock(sk);
 
 next:
@@ -863,7 +855,7 @@ int mptcp_pm_nl_add_addr_doit(struct sk_buff *skb, struct genl_info *info)
 		goto out_free;
 	}
 
-	mptcp_nl_add_subflow_or_signal_addr(sock_net(skb->sk), &entry->addr);
+	mptcp_nl_add_subflow_or_signal_addr(sock_net(skb->sk), entry);
 	return 0;
 
 out_free:
@@ -1431,6 +1423,24 @@ static bool mptcp_pm_kernel_accept_new_address(struct mptcp_sock *msk,
 		 msk->pm.status & BIT(MPTCP_PM_ADD_ADDR_RECEIVED));
 }
 
+static int mptcp_pm_kernel_add_addr(struct mptcp_sock *msk,
+				    struct mptcp_pm_addr_entry *entry)
+{
+	struct mptcp_addr_info *addr = &entry->addr;
+	struct mptcp_addr_info mpc_addr;
+
+	/* if the endp linked to the init sf is re-added with a != ID */
+	mptcp_local_address((struct sock_common *)msk, &mpc_addr);
+
+	spin_lock_bh(&msk->pm.lock);
+	if (mptcp_addresses_equal(addr, &mpc_addr, addr->port))
+		msk->mpc_endpoint_id = addr->id;
+	mptcp_pm_create_subflow_or_signal_addr(msk);
+	spin_unlock_bh(&msk->pm.lock);
+
+	return 0;
+}
+
 static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 {
 	bool subflows_allowed = !!mptcp_pm_get_subflows_max(msk);
@@ -1460,6 +1470,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.accept_new_address	= mptcp_pm_kernel_accept_new_address,
 	.add_addr_received	= mptcp_pm_kernel_add_addr_received,
 	.rm_addr_received	= mptcp_pm_kernel_rm_addr_received,
+	.add_addr		= mptcp_pm_kernel_add_addr,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
