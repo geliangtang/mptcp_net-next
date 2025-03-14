@@ -200,26 +200,14 @@ int mptcp_pm_nl_announce_doit(struct sk_buff *skb, struct genl_info *info)
 		goto announce_err;
 	}
 
-	err = mptcp_userspace_pm_append_new_local_addr(msk, &addr_val, false);
-	if (err < 0) {
+	lock_sock(sk);
+	if (msk->pm.ops->address_announce)
+		err = msk->pm.ops->address_announce(msk, &addr_val);
+	release_sock(sk);
+	if (err)
 		NL_SET_ERR_MSG_ATTR(info->extack, addr,
 				    "did not match address and id");
-		goto announce_err;
-	}
 
-	lock_sock(sk);
-	spin_lock_bh(&msk->pm.lock);
-
-	if (mptcp_pm_alloc_anno_list(msk, &addr_val.addr)) {
-		msk->pm.add_addr_signaled++;
-		mptcp_pm_announce_addr(msk, &addr_val.addr, false);
-		mptcp_pm_addr_send_ack(msk);
-	}
-
-	spin_unlock_bh(&msk->pm.lock);
-	release_sock(sk);
-
-	err = 0;
  announce_err:
 	sock_put(sk);
 	return err;
@@ -678,6 +666,28 @@ static bool mptcp_pm_userspace_accept_new_address(struct mptcp_sock *msk,
 	return mptcp_userspace_pm_active(msk);
 }
 
+static int mptcp_pm_userspace_address_announce(struct mptcp_sock *msk,
+					       struct mptcp_pm_addr_entry *local)
+{
+	int err;
+
+	err = mptcp_userspace_pm_append_new_local_addr(msk, local, false);
+	if (err < 0)
+		return err;
+
+	spin_lock_bh(&msk->pm.lock);
+
+	if (mptcp_pm_alloc_anno_list(msk, &local->addr)) {
+		msk->pm.add_addr_signaled++;
+		mptcp_pm_announce_addr(msk, &local->addr, false);
+		mptcp_pm_addr_send_ack(msk);
+	}
+
+	spin_unlock_bh(&msk->pm.lock);
+
+	return 0;
+}
+
 static void mptcp_pm_userspace_release(struct mptcp_sock *msk)
 {
 	mptcp_userspace_pm_free_local_addr_list(msk);
@@ -688,6 +698,7 @@ static struct mptcp_pm_ops mptcp_pm_userspace = {
 	.get_priority		= mptcp_pm_userspace_get_priority,
 	.accept_new_subflow	= mptcp_pm_userspace_accept_new_subflow,
 	.accept_new_address	= mptcp_pm_userspace_accept_new_address,
+	.address_announce	= mptcp_pm_userspace_address_announce,
 	.release		= mptcp_pm_userspace_release,
 	.name			= "userspace",
 	.owner			= THIS_MODULE,

@@ -145,6 +145,10 @@ struct mptcp_pm_ops {
 	int (*flush_addrs)(struct mptcp_sock *msk,
 			   struct list_head *rm_list);
 
+	/* optional */
+	int (*address_announce)(struct mptcp_sock *msk,
+				struct mptcp_pm_addr_entry *local);
+
 	char			name[MPTCP_PM_NAME_MAX];
 	struct module		*owner;
 	struct list_head	list;
