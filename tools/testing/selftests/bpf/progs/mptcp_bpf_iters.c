@@ -57,3 +57,43 @@ int iters_subflow(struct bpf_sockopt *ctx)
 out:
 	return 1;
 }
+
+static int pm_get_local_ids(struct sock *sk, enum mptcp_pm_type pm_type)
+{
+	struct mptcp_pm_addr_entry *entry;
+	int local_ids = 0;
+
+	bpf_for_each(mptcp_pm_addr, entry, sk, pm_type) {
+		/* Here MPTCP-specific path manager kfunc can be called:
+		 * this test is not doing anything really useful, only to
+		 * verify the iteration works.
+		 */
+
+		if (!bpf_ipv4_is_private_10(entry->addr.addr.s_addr))
+			break;
+
+		local_ids += entry->addr.id;
+	}
+
+	return local_ids;
+}
+
+SEC("cgroup/getsockopt")
+int netlink_addr(struct bpf_sockopt *ctx)
+{
+	struct bpf_sock *sk = ctx->sk;
+	struct mptcp_sock *msk;
+
+	if (ctx->level != SOL_TCP || ctx->optname != TCP_IS_MPTCP)
+		return 1;
+
+	msk = bpf_skc_to_mptcp_sock(sk);
+	if (!msk || msk->pm.server_side)
+		return 1;
+
+	bpf_rcu_read_lock();
+	ids = pm_get_local_ids((struct sock *)sk, MPTCP_PM_TYPE_KERNEL);
+	bpf_rcu_read_unlock();
+
+	return 1;
+}

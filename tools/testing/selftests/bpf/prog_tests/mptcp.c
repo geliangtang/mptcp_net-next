@@ -1314,6 +1314,93 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+static void run_iters_netlink_address(void)
+{
+	int server_fd, client_fd, accept_fd;
+	int is_mptcp, err;
+	socklen_t len;
+
+	server_fd = start_mptcp_server(AF_INET, ADDR_1, PORT_1, 0);
+	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
+		goto close_server;
+
+	accept_fd = accept(server_fd, NULL, NULL);
+	if (!ASSERT_OK_FD(accept_fd, "accept"))
+		goto close_client;
+
+	usleep(200000); /* 0.2s */
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+	usleep(200000); /* 0.2s */
+
+	err = netlink_pm_add_subflow(ADDR_2, 20);
+	err = err ?: netlink_pm_add_subflow(ADDR_3, 30);
+	err = err ?: netlink_pm_add_subflow(ADDR_4, 40);
+	if (!ASSERT_OK(err, "netlink_pm_add_subflow"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	len = sizeof(is_mptcp);
+	/* mainly to trigger the BPF program */
+	err = getsockopt(client_fd, SOL_TCP, TCP_IS_MPTCP, &is_mptcp, &len);
+	if (ASSERT_OK(err, "getsockopt(client_fd, TCP_IS_MPTCP)"))
+		ASSERT_EQ(is_mptcp, 1, "is_mptcp");
+
+close_accept:
+	close(accept_fd);
+close_client:
+	close(client_fd);
+close_server:
+	close(server_fd);
+}
+
+static void test_iters_netlink_address(void)
+{
+	struct mptcp_bpf_iters *skel;
+	struct netns_obj *netns;
+	int cgroup_fd;
+	int err;
+
+	cgroup_fd = test__join_cgroup("/iters_nl_address");
+	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: iters_nl_address"))
+		return;
+
+	skel = mptcp_bpf_iters__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "skel_open_load: iters_nl_address"))
+		goto close_cgroup;
+
+	skel->links.netlink_addr = bpf_program__attach_cgroup(skel->progs.netlink_addr,
+							      cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.netlink_addr, "attach getsockopt"))
+		goto skel_destroy;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		goto skel_destroy;
+
+	err = pm_init("kernel");
+	if (!ASSERT_OK(err, "pm_init: iters_nl_address"))
+		goto close_netns;
+
+	run_iters_netlink_address();
+
+	/* 20 + 30 + 40 = 90 */
+	ASSERT_EQ(skel->bss->ids, 90, "nl address ids");
+
+close_netns:
+	netns_free(netns);
+skel_destroy:
+	mptcp_bpf_iters__destroy(skel);
+close_cgroup:
+	close(cgroup_fd);
+}
+
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -1344,4 +1431,6 @@ void test_mptcp(void)
 		test_burst();
 	if (test__start_subtest("iters_subflow"))
 		test_iters_subflow();
+	if (test__start_subtest("iters_netlink_address"))
+		test_iters_netlink_address();
 }
