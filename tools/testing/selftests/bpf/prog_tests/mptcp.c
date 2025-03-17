@@ -753,6 +753,10 @@ static void test_bpf_netlink_pm(void)
 					    BPF_F_SLEEPABLE);
 	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_netlink_rm_addr_received,
 					    BPF_F_SLEEPABLE);
+	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_netlink_add_addr,
+					    BPF_F_SLEEPABLE);
+	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_netlink_del_addr,
+					    BPF_F_SLEEPABLE);
 	if (!ASSERT_OK(err, "set sleepable flags"))
 		goto skel_destroy;
 
