@@ -84,6 +84,7 @@ static struct mptcp_sock *subflow_token_join_request(struct request_sock *req)
 {
 	struct mptcp_subflow_request_sock *subflow_req = mptcp_subflow_rsk(req);
 	struct mptcp_sock *msk;
+	struct sock *sk;
 	int local_id;
 
 	msk = mptcp_token_get_sock(sock_net(req_to_sk(req)), subflow_req->token);
@@ -92,13 +93,18 @@ static struct mptcp_sock *subflow_token_join_request(struct request_sock *req)
 		return NULL;
 	}
 
+	sk = (struct sock *)msk;
+
+	bh_lock_sock(sk);
 	local_id = mptcp_pm_get_local_id(msk, (struct sock_common *)req);
 	if (local_id < 0) {
+		bh_unlock_sock(sk);
 		sock_put((struct sock *)msk);
 		return NULL;
 	}
 	subflow_req->local_id = local_id;
 	subflow_req->request_bkup = mptcp_pm_is_backup(msk, (struct sock_common *)req);
+	bh_unlock_sock(sk);
 
 	return msk;
 }
