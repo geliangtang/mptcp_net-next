@@ -405,6 +405,17 @@ static inline void msk_owned_by_me(const struct mptcp_sock *msk)
 #define mptcp_sk(ptr) container_of_const(ptr, struct mptcp_sock, sk.icsk_inet.sk)
 #endif
 
+#define INDIRECT_CALL_MPTCP(f, msk, ...)		\
+	({						\
+		msk_owned_by_me(msk);			\
+		f(msk, ##__VA_ARGS__);			\
+	})
+
+#define INDIRECT_CALL_MPTCP_NO_LOCK(f, msk, ...)	\
+	({						\
+		f(msk, ##__VA_ARGS__);			\
+	})
+
 static inline int mptcp_win_from_space(const struct sock *sk, int space)
 {
 	return __tcp_win_from_space(mptcp_sk(sk)->scaling_ratio, space);

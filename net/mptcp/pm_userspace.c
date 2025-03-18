@@ -195,7 +195,7 @@ int mptcp_pm_nl_announce_doit(struct sk_buff *skb, struct genl_info *info)
 
 	lock_sock(sk);
 	if (msk->pm.ops->address_announce)
-		err = msk->pm.ops->address_announce(msk, &addr_val);
+		err = INDIRECT_CALL_MPTCP(msk->pm.ops->address_announce, msk, &addr_val);
 	release_sock(sk);
 	if (err)
 		NL_SET_ERR_MSG_ATTR(info->extack, addr,
@@ -273,7 +273,7 @@ int mptcp_pm_nl_remove_doit(struct sk_buff *skb, struct genl_info *info)
 
 	lock_sock(sk);
 	if (msk->pm.ops->address_remove) {
-		err = msk->pm.ops->address_remove(msk, &local);
+		err = INDIRECT_CALL_MPTCP(msk->pm.ops->address_remove, msk, &local);
 		if (!err) {
 			spin_lock_bh(&msk->pm.lock);
 			msk->pm.local_addr_used--;
@@ -334,7 +334,7 @@ int mptcp_pm_nl_subflow_create_doit(struct sk_buff *skb, struct genl_info *info)
 
 	lock_sock(sk);
 	if (msk->pm.ops->subflow_create)
-		err = msk->pm.ops->subflow_create(msk, &entry, &addr_r);
+		err = INDIRECT_CALL_MPTCP(msk->pm.ops->subflow_create, msk, &entry, &addr_r);
 	release_sock(sk);
 
 	if (err) {
@@ -456,7 +456,7 @@ int mptcp_pm_nl_subflow_destroy_doit(struct sk_buff *skb, struct genl_info *info
 
 	lock_sock(sk);
 	if (msk->pm.ops->subflow_destroy)
-		err = msk->pm.ops->subflow_destroy(msk, &addr_l, &addr_r);
+		err = INDIRECT_CALL_MPTCP(msk->pm.ops->subflow_destroy, msk, &addr_l, &addr_r);
 	release_sock(sk);
 	if (err)
 		GENL_SET_ERR_MSG(info, "subflow not found");

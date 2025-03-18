@@ -990,7 +990,7 @@ static int mptcp_nl_add_subflow_or_signal_addr(struct net *net,
 
 		lock_sock(sk);
 		if (msk->pm.ops->add_addr)
-			msk->pm.ops->add_addr(msk, entry);
+			INDIRECT_CALL_MPTCP(msk->pm.ops->add_addr, msk, entry);
 		release_sock(sk);
 
 next:
@@ -1120,7 +1120,7 @@ static int mptcp_nl_remove_subflow_and_signal_addr(struct net *net,
 
 		lock_sock(sk);
 		if (msk->pm.ops->del_addr)
-			msk->pm.ops->del_addr(msk, entry);
+			INDIRECT_CALL_MPTCP(msk->pm.ops->del_addr, msk, entry);
 		release_sock(sk);
 
 		sock_put(sk);
@@ -1244,7 +1244,7 @@ static void mptcp_nl_flush_addrs_list(struct net *net,
 
 		lock_sock(sk);
 		if (msk->pm.ops->flush_addrs)
-			msk->pm.ops->flush_addrs(msk, rm_list);
+			INDIRECT_CALL_MPTCP(msk->pm.ops->flush_addrs, msk, rm_list);
 		release_sock(sk);
 
 		sock_put(sk);
@@ -1444,7 +1444,7 @@ static void mptcp_pm_nl_set_flags_all(struct net *net,
 
 		lock_sock(sk);
 		if (msk->pm.ops->set_priority)
-			msk->pm.ops->set_priority(msk, local, remote);
+			INDIRECT_CALL_MPTCP(msk->pm.ops->set_priority, msk, local, remote);
 		release_sock(sk);
 
 next:

@@ -96,6 +96,8 @@ static struct mptcp_sock *subflow_token_join_request(struct request_sock *req)
 	sk = (struct sock *)msk;
 
 	bh_lock_sock(sk);
+	sock_owned_by_me(sk);
+	msk_owned_by_me(msk);
 	local_id = mptcp_pm_get_local_id(msk, (struct sock_common *)req);
 	if (local_id < 0) {
 		bh_unlock_sock(sk);
@@ -644,6 +646,8 @@ static int subflow_chk_local_id(struct sock *sk)
 
 	if (likely(subflow->local_id >= 0))
 		return 0;
+
+	sock_owned_by_me(sk);
 
 	err = mptcp_pm_get_local_id(msk, (struct sock_common *)sk);
 	if (err < 0)

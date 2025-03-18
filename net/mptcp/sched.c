@@ -189,7 +189,7 @@ int mptcp_sched_get_send(struct mptcp_sock *msk)
 
 	if (msk->sched == &mptcp_sched_default || !msk->sched)
 		return mptcp_sched_default_get_send(msk);
-	return msk->sched->get_send(msk);
+	return INDIRECT_CALL_MPTCP(msk->sched->get_send, msk);
 }
 
 int mptcp_sched_get_retrans(struct mptcp_sock *msk)
@@ -210,6 +210,6 @@ int mptcp_sched_get_retrans(struct mptcp_sock *msk)
 	if (msk->sched == &mptcp_sched_default || !msk->sched)
 		return mptcp_sched_default_get_retrans(msk);
 	if (msk->sched->get_retrans)
-		return msk->sched->get_retrans(msk);
-	return msk->sched->get_send(msk);
+		return INDIRECT_CALL_MPTCP(msk->sched->get_retrans, msk);
+	return INDIRECT_CALL_MPTCP(msk->sched->get_send, msk);
 }

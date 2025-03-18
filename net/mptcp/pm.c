@@ -885,7 +885,7 @@ int mptcp_pm_get_local_id(struct mptcp_sock *msk, struct sock_common *skc)
 	skc_local.addr.id = 0;
 	skc_local.flags = MPTCP_PM_ADDR_FLAG_IMPLICIT;
 
-	return msk->pm.ops->get_local_id(msk, &skc_local);
+	return INDIRECT_CALL_MPTCP_NO_LOCK(msk->pm.ops->get_local_id, msk, &skc_local);
 }
 
 bool mptcp_pm_is_backup(struct mptcp_sock *msk, struct sock_common *skc)
@@ -894,7 +894,7 @@ bool mptcp_pm_is_backup(struct mptcp_sock *msk, struct sock_common *skc)
 
 	mptcp_local_address((struct sock_common *)skc, &skc_local);
 
-	return msk->pm.ops->get_priority(msk, &skc_local);
+	return INDIRECT_CALL_MPTCP_NO_LOCK(msk->pm.ops->get_priority, msk, &skc_local);
 }
 
 static void mptcp_pm_subflows_chk_stale(const struct mptcp_sock *msk, struct sock *ssk)
@@ -980,11 +980,11 @@ void mptcp_pm_worker(struct mptcp_sock *msk)
 		spin_unlock_bh(&pm->lock);
 	}
 	if (status & BIT(MPTCP_PM_ESTABLISHED))
-		pm->ops->established(msk);
+		INDIRECT_CALL_MPTCP(pm->ops->established, msk);
 	if (status & BIT(MPTCP_PM_SUBFLOW_ESTABLISHED))
-		pm->ops->subflow_established(msk);
+		INDIRECT_CALL_MPTCP(pm->ops->subflow_established, msk);
 	if (status & BIT(MPTCP_PM_ADD_ADDR_RECEIVED))
-		pm->ops->add_addr_received(msk);
+		INDIRECT_CALL_MPTCP(pm->ops->add_addr_received, msk);
 }
 
 static void mptcp_pm_ops_init(struct mptcp_sock *msk,
