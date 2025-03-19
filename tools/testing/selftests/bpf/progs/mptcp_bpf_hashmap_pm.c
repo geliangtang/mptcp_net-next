@@ -8,6 +8,7 @@ char _license[] SEC("license") = "GPL";
 
 extern bool CONFIG_MPTCP_IPV6 __kconfig __weak;
 
+extern void bpf_list_del_rcu(struct list_head *entry) __ksym;
 extern void
 mptcp_userspace_pm_free_local_addr_list(struct mptcp_sock *msk) __ksym;
 extern int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
@@ -16,6 +17,8 @@ extern int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
 extern struct mptcp_pm_addr_entry *
 mptcp_userspace_pm_lookup_addr(struct mptcp_sock *msk,
 			       const struct mptcp_addr_info *addr) __ksym;
+extern int mptcp_userspace_pm_delete_local_addr(struct mptcp_sock *msk,
+						struct mptcp_pm_addr_entry *addr) __ksym;
 
 SEC("struct_ops")
 int BPF_PROG(mptcp_pm_hashmap_get_local_id, struct mptcp_sock *msk,
