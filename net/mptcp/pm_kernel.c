@@ -367,6 +367,18 @@ subflow:
 	mptcp_pm_nl_check_work_pending(msk);
 }
 
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc
+static void bpf_mptcp_pm_create_subflow_or_signal_addr(struct mptcp_sock *msk)
+{
+	spin_lock_bh(&msk->pm.lock);
+	mptcp_pm_create_subflow_or_signal_addr(msk);
+	spin_unlock_bh(&msk->pm.lock);
+}
+
+__bpf_kfunc_end_defs();
+
 static void mptcp_pm_kernel_established(struct mptcp_sock *msk)
 {
 	spin_lock_bh(&msk->pm.lock);
@@ -1447,3 +1459,25 @@ void __init mptcp_pm_kernel_register(void)
 
 	mptcp_pm_register(&mptcp_pm_kernel);
 }
+
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc static struct mptcp_pm_addr_entry *
+mptcp_pm_nl_lookup_addr(struct mptcp_sock *msk, const struct mptcp_addr_info *info)
+{
+	struct pm_nl_pernet *pernet = pm_nl_get_pernet_from_msk(msk);
+
+	return __lookup_addr(pernet, info);
+}
+
+__bpf_kfunc static int
+mptcp_pm_nl_append_new_local_addr_msk(struct mptcp_sock *msk,
+				      struct mptcp_pm_addr_entry *entry,
+				      bool needs_id, bool replace)
+{
+	struct pm_nl_pernet *pernet = pm_nl_get_pernet_from_msk(msk);
+
+	return mptcp_pm_nl_append_new_local_addr(pernet, entry, needs_id, replace);
+}
+
+__bpf_kfunc_end_defs();

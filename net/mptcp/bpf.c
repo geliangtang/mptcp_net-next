@@ -535,6 +535,34 @@ bpf_iter_mptcp_subflow_destroy(struct bpf_iter_mptcp_subflow *it)
 {
 }
 
+__bpf_kfunc static struct mptcp_pm_addr_entry *
+bpf_kmemdup_entry(struct mptcp_pm_addr_entry *entry, int size, gfp_t priority)
+{
+	return kmemdup(entry, size, priority);
+}
+
+__bpf_kfunc static void
+bpf_kfree_entry(struct mptcp_pm_addr_entry *entry)
+{
+	kfree(entry);
+}
+
+__bpf_kfunc static void bpf_bitmap_fill(unsigned long *dst__ign, unsigned int nbits)
+{
+	bitmap_fill(dst__ign, nbits);
+}
+
+__bpf_kfunc static bool bpf_mptcp_pm_accept_subflow(struct mptcp_sock *msk)
+{
+	return mptcp_pm_accept_subflow(msk);
+}
+
+__bpf_kfunc static bool bpf_mptcp_pm_accept_address(struct mptcp_sock *msk,
+						    const struct mptcp_addr_info *addr)
+{
+	return mptcp_pm_accept_address(msk, addr);
+}
+
 __bpf_kfunc static bool bpf_mptcp_subflow_queues_empty(struct sock *sk)
 {
 	return tcp_rtx_queue_empty(sk);
@@ -567,6 +595,15 @@ static const struct btf_kfunc_id_set bpf_mptcp_iter_kfunc_set = {
 BTF_KFUNCS_START(bpf_mptcp_common_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_mptcp_subflow_ctx, KF_RET_NULL)
 BTF_ID_FLAGS(func, bpf_mptcp_subflow_tcp_sock, KF_RET_NULL)
+BTF_ID_FLAGS(func, bpf_kmemdup_entry)
+BTF_ID_FLAGS(func, bpf_kfree_entry)
+BTF_ID_FLAGS(func, bpf_bitmap_fill)
+BTF_ID_FLAGS(func, mptcp_pm_nl_lookup_addr)
+BTF_ID_FLAGS(func, mptcp_pm_nl_append_new_local_addr_msk)
+BTF_ID_FLAGS(func, mptcp_pm_is_init_remote_addr)
+BTF_ID_FLAGS(func, bpf_mptcp_pm_create_subflow_or_signal_addr, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_subflow)
+BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_address)
 BTF_ID_FLAGS(func, mptcp_subflow_set_scheduled)
 BTF_ID_FLAGS(func, mptcp_subflow_active)
 BTF_ID_FLAGS(func, mptcp_set_timeout)
