@@ -49,6 +49,9 @@ static int bpf_mptcp_pm_btf_struct_access(struct bpf_verifier_log *log,
 
 	if (id == mptcp_sock_id) {
 		switch (off) {
+		case offsetof(struct mptcp_sock, mpc_endpoint_id):
+			end = offsetofend(struct mptcp_sock, mpc_endpoint_id);
+			break;
 		case offsetof(struct mptcp_sock, pm.remote.id):
 			end = offsetofend(struct mptcp_sock, pm.remote.id);
 			break;
@@ -107,8 +110,17 @@ static int bpf_mptcp_pm_btf_struct_access(struct bpf_verifier_log *log,
 		case offsetof(struct mptcp_pm_addr_entry, addr.id):
 			end = offsetofend(struct mptcp_pm_addr_entry, addr.id);
 			break;
+		case offsetof(struct mptcp_pm_addr_entry, addr.family):
+			end = offsetofend(struct mptcp_pm_addr_entry, addr.family);
+			break;
 		case offsetof(struct mptcp_pm_addr_entry, addr.port):
 			end = offsetofend(struct mptcp_pm_addr_entry, addr.port);
+			break;
+		case offsetof(struct mptcp_pm_addr_entry, flags):
+			end = offsetofend(struct mptcp_pm_addr_entry, flags);
+			break;
+		case offsetof(struct mptcp_pm_addr_entry, ifindex):
+			end = offsetofend(struct mptcp_pm_addr_entry, ifindex);
 			break;
 		default:
 			bpf_log(log, "no write support to mptcp_pm_addr_entry at off %d\n",
@@ -627,6 +639,11 @@ bpf_sock_kfree_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry__ign,
 	sock_krfree_s(sk, entry__ign, size__sz);
 }
 
+__bpf_kfunc static void bpf_list_del_rcu(struct list_head *entry)
+{
+	list_del_rcu(entry);
+}
+
 __bpf_kfunc static void bpf_bitmap_fill(unsigned long *dst__ign, unsigned int nbits)
 {
 	bitmap_fill(dst__ign, nbits);
@@ -658,6 +675,11 @@ __bpf_kfunc static void bpf_spin_unlock_bh(spinlock_t *lock)
 	spin_unlock_bh(lock);
 }
 
+__bpf_kfunc static bool bpf_test_and_set_bit(unsigned long nr, unsigned long *addr__ign)
+{
+	return __test_and_set_bit(nr, addr__ign);
+}
+
 __bpf_kfunc static __u8 bpf_find_next_zero_bit(const unsigned long *addr__ign,
 					       unsigned long size__sz,
 					       unsigned long offset)
@@ -668,6 +690,31 @@ __bpf_kfunc static __u8 bpf_find_next_zero_bit(const unsigned long *addr__ign,
 __bpf_kfunc static bool bpf_ipv4_is_private_10(__be32 addr)
 {
 	return ipv4_is_private_10(addr);
+}
+
+__bpf_kfunc static int
+bpf_mptcp_subflow_connect(struct sock *sk,
+			  const struct mptcp_pm_addr_entry *entry,
+			  const struct mptcp_addr_info *remote)
+{
+	struct mptcp_pm_local local;
+
+	local.addr = entry->addr;
+	local.flags = entry->flags;
+	local.ifindex = entry->ifindex;
+
+	return __mptcp_subflow_connect(sk, &local, remote);
+}
+
+__bpf_kfunc static struct net *bpf_sock_net(const struct sock *sk)
+{
+	return sock_net(sk);
+}
+
+__bpf_kfunc static void BPF_MPTCP_INC_STATS(struct net *net,
+					    enum linux_mptcp_mib_field field)
+{
+	MPTCP_INC_STATS(net, field);
 }
 
 __bpf_kfunc static bool bpf_mptcp_subflow_queues_empty(struct sock *sk)
@@ -715,8 +762,31 @@ BTF_ID_FLAGS(func, bpf_mptcp_pm_create_subflow_or_signal_addr, KF_SLEEPABLE)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_subflow)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_address)
 BTF_ID_FLAGS(func, bpf_sock_kfree_entry)
+BTF_ID_FLAGS(func, mptcp_local_address)
+BTF_ID_FLAGS(func, mptcp_lookup_subflow_by_saddr)
+BTF_ID_FLAGS(func, mptcp_pm_rm_subflow)
+BTF_ID_FLAGS(func, mptcp_remove_anno_list_by_saddr)
+BTF_ID_FLAGS(func, mptcp_pm_flush_addrs_and_subflows)
+BTF_ID_FLAGS(func, mptcp_pm_remove_addr)
+BTF_ID_FLAGS(func, mptcp_pm_remove_addr_entry, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, bpf_list_del_rcu)
+BTF_ID_FLAGS(func, bpf_sock_kfree_entry)
+BTF_ID_FLAGS(func, mptcp_userspace_pm_lookup_addr)
+BTF_ID_FLAGS(func, mptcp_userspace_pm_append_new_local_addr)
+BTF_ID_FLAGS(func, mptcp_userspace_pm_free_local_addr_list)
+BTF_ID_FLAGS(func, mptcp_pm_alloc_anno_list)
+BTF_ID_FLAGS(func, mptcp_pm_announce_addr)
+BTF_ID_FLAGS(func, mptcp_pm_addr_send_ack, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, mptcp_pm_add_addr_send_ack)
+BTF_ID_FLAGS(func, mptcp_pm_mp_prio_send_ack, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, bpf_mptcp_subflow_connect, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, mptcp_subflow_shutdown, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, mptcp_close_ssk, KF_SLEEPABLE)
+BTF_ID_FLAGS(func, bpf_sock_net)
+BTF_ID_FLAGS(func, BPF_MPTCP_INC_STATS)
 BTF_ID_FLAGS(func, mptcp_userspace_pm_active)
 BTF_ID_FLAGS(func, bpf_set_bit)
+BTF_ID_FLAGS(func, bpf_test_and_set_bit)
 BTF_ID_FLAGS(func, bpf_spin_lock_bh)
 BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
 BTF_ID_FLAGS(func, bpf_find_next_zero_bit)

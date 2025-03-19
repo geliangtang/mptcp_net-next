@@ -23,13 +23,46 @@
 #define AF_INET		2
 #define AF_INET6	10
 
+/* shutdown macros from include/net/sock.h */
+#define RCV_SHUTDOWN	1
+#define SEND_SHUTDOWN	2
+
 #define inet_sk(ptr) container_of(ptr, struct inet_sock, sk)
 
 extern void bpf_set_bit(unsigned long nr, unsigned long *addr) __ksym;
 
+extern int mptcp_pm_remove_addr(struct mptcp_sock *msk,
+				const struct mptcp_rm_list *rm_list) __ksym;
+extern void mptcp_pm_remove_addr_entry(struct mptcp_sock *msk,
+				       struct mptcp_pm_addr_entry *entry) __ksym;
+
 extern void
 bpf_sock_kfree_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry,
 		     int size) __ksym;
+
+extern bool mptcp_pm_alloc_anno_list(struct mptcp_sock *msk,
+				     const struct mptcp_addr_info *addr) __ksym;
+extern int mptcp_pm_announce_addr(struct mptcp_sock *msk,
+				  const struct mptcp_addr_info *addr,
+				  bool echo) __ksym;
+extern void mptcp_pm_addr_send_ack(struct mptcp_sock *msk) __ksym;
+extern void mptcp_pm_add_addr_send_ack(struct mptcp_sock *msk) __ksym;
+extern int mptcp_pm_mp_prio_send_ack(struct mptcp_sock *msk,
+				     struct mptcp_addr_info *addr,
+				     struct mptcp_addr_info *rem,
+				     u8 bkup) __ksym;
+
+extern int bpf_mptcp_subflow_connect(struct sock *sk,
+				     const struct mptcp_pm_addr_entry *entry,
+				     const struct mptcp_addr_info *remote) __ksym;
+
+extern void
+mptcp_subflow_shutdown(struct sock *sk, struct sock *ssk, int how) __ksym;
+extern void mptcp_close_ssk(struct sock *sk, struct sock *ssk,
+			    struct mptcp_subflow_context *subflow) __ksym;
+extern struct net *bpf_sock_net(const struct sock *sk) __ksym;
+extern void BPF_MPTCP_INC_STATS(struct net *net,
+				enum linux_mptcp_mib_field field) __ksym;
 
 extern bool mptcp_userspace_pm_active(const struct mptcp_sock *msk) __ksym;
 
@@ -83,6 +116,52 @@ static __always_inline void mptcp_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
 
 	dst->flags = src->flags;
 	dst->ifindex = src->ifindex;
+}
+
+static __always_inline struct sock *mptcp_pm_find_ssk(struct mptcp_sock *msk,
+						      const struct mptcp_addr_info *local,
+						      const struct mptcp_addr_info *remote)
+{
+	struct mptcp_subflow_context *subflow;
+
+	if (local->family != remote->family)
+		return NULL;
+
+	bpf_for_each(mptcp_subflow, subflow, (struct sock *)msk) {
+		const struct inet_sock *issk;
+		struct sock *ssk;
+
+		ssk = bpf_mptcp_subflow_tcp_sock(subflow);
+		if (!ssk)
+			continue;
+
+		if (local->family != ssk->sk_family)
+			continue;
+
+		issk = bpf_core_cast(inet_sk(ssk), struct inet_sock);
+
+		switch (ssk->sk_family) {
+		case AF_INET:
+			if (issk->inet_saddr != local->addr.s_addr ||
+			    issk->inet_daddr != remote->addr.s_addr)
+				continue;
+			break;
+		case AF_INET6: {
+			if (!ipv6_addr_equal(local->addr6, issk->pinet6->saddr) ||
+			    !ipv6_addr_equal(remote->addr6, ssk->sk_v6_daddr))
+				continue;
+			break;
+		}
+		default:
+			continue;
+		}
+
+		if (issk->inet_sport == local->port &&
+		    issk->inet_dport == remote->port)
+			return ssk;
+	}
+
+	return NULL;
 }
 
 #endif

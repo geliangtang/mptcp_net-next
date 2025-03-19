@@ -1043,8 +1043,11 @@ int mptcp_pm_nl_del_addr_doit(struct sk_buff *skb, struct genl_info *info)
 	return ret;
 }
 
-static void mptcp_pm_flush_addrs_and_subflows(struct mptcp_sock *msk,
-					      struct list_head *rm_list)
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc static void
+mptcp_pm_flush_addrs_and_subflows(struct mptcp_sock *msk,
+				  struct list_head *rm_list)
 {
 	struct mptcp_rm_list alist = { .nr = 0 }, slist = { .nr = 0 };
 	struct mptcp_pm_addr_entry *entry;
@@ -1071,6 +1074,8 @@ static void mptcp_pm_flush_addrs_and_subflows(struct mptcp_sock *msk,
 	msk->pm.local_addr_used = 0;
 	spin_unlock_bh(&msk->pm.lock);
 }
+
+__bpf_kfunc_end_defs();
 
 static void mptcp_nl_flush_addrs_list(struct net *net,
 				      struct list_head *rm_list)
