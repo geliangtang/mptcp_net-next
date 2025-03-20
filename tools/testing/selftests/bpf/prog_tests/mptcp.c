@@ -11,6 +11,7 @@
 #include "mptcp_sock.skel.h"
 #include "mptcpify.skel.h"
 #include "mptcp_subflow.skel.h"
+#include "mptcp_bpf_userspace_pm.skel.h"
 #include "mptcp_bpf_first.skel.h"
 #include "mptcp_bpf_bkup.skel.h"
 #include "mptcp_bpf_rr.skel.h"
@@ -769,6 +770,40 @@ fail:
 	netns_free(netns);
 }
 
+static void test_bpf_userspace_pm(void)
+{
+	struct mptcp_bpf_userspace_pm *skel;
+	struct netns_obj *netns;
+	int err;
+
+	skel = mptcp_bpf_userspace_pm__open();
+	if (!ASSERT_OK_PTR(skel, "open: bpf_userspace pm"))
+		return;
+
+	if (!ASSERT_OK(mptcp_bpf_userspace_pm__load(skel), "load: bpf_userspace pm"))
+		goto skel_destroy;
+
+	err = mptcp_bpf_userspace_pm__attach(skel);
+	if (!ASSERT_OK(err, "attach: bpf_userspace pm"))
+		goto skel_destroy;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		goto skel_destroy;
+
+	err = userspace_pm_init("bpf_userspace");
+	if (!ASSERT_OK(err, "userspace_pm_init: bpf_userspace pm"))
+		goto close_netns;
+
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4);
+
+	userspace_pm_cleanup();
+close_netns:
+	netns_free(netns);
+skel_destroy:
+	mptcp_bpf_userspace_pm__destroy(skel);
+}
+
 static int sched_init(char *flags, char *sched)
 {
 	if (endpoint_init(flags, 2) < 0)
@@ -963,6 +998,8 @@ void test_mptcp(void)
 		test_subflow();
 	if (test__start_subtest("userspace_pm"))
 		test_userspace_pm();
+	if (test__start_subtest("bpf_userspace_pm"))
+		test_bpf_userspace_pm();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))

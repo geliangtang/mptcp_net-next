@@ -571,6 +571,28 @@ __bpf_kfunc static bool bpf_mptcp_pm_accept_address(struct mptcp_sock *msk,
 	return mptcp_pm_accept_address(msk, addr);
 }
 
+__bpf_kfunc static void bpf_set_bit(unsigned long nr, unsigned long *addr__ign)
+{
+	__set_bit(nr, addr__ign);
+}
+
+__bpf_kfunc static void bpf_spin_lock_bh(spinlock_t *lock)
+{
+	spin_lock_bh(lock);
+}
+
+__bpf_kfunc static void bpf_spin_unlock_bh(spinlock_t *lock)
+{
+	spin_unlock_bh(lock);
+}
+
+__bpf_kfunc static __u8 bpf_find_next_zero_bit(const unsigned long *addr__ign,
+					       unsigned long size__sz,
+					       unsigned long offset)
+{
+	return find_next_zero_bit(addr__ign, size__sz, offset);
+}
+
 __bpf_kfunc static bool bpf_mptcp_subflow_queues_empty(struct sock *sk)
 {
 	return tcp_rtx_queue_empty(sk);
@@ -614,6 +636,10 @@ BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_subflow)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_address)
 BTF_ID_FLAGS(func, bpf_sock_kfree_entry)
 BTF_ID_FLAGS(func, mptcp_userspace_pm_active)
+BTF_ID_FLAGS(func, bpf_set_bit)
+BTF_ID_FLAGS(func, bpf_spin_lock_bh)
+BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
+BTF_ID_FLAGS(func, bpf_find_next_zero_bit)
 BTF_ID_FLAGS(func, mptcp_subflow_set_scheduled)
 BTF_ID_FLAGS(func, mptcp_subflow_active)
 BTF_ID_FLAGS(func, mptcp_set_timeout)
