@@ -18,6 +18,21 @@
 #define MPTCP_PM_ADDR_FLAG_FULLMESH			(1 << 3)
 #define MPTCP_PM_ADDR_FLAG_IMPLICIT			(1 << 4)
 
+/* address families macros from include/linux/socket.h */
+#define AF_UNSPEC	0
+#define AF_INET		2
+#define AF_INET6	10
+
+#define inet_sk(ptr) container_of(ptr, struct inet_sock, sk)
+
+extern void bpf_set_bit(unsigned long nr, unsigned long *addr) __ksym;
+
+extern void
+bpf_sock_kfree_entry(struct sock *sk, struct mptcp_pm_addr_entry *entry,
+		     int size) __ksym;
+
+extern bool mptcp_userspace_pm_active(const struct mptcp_sock *msk) __ksym;
+
 #define ipv6_addr_equal(a, b)	((a).s6_addr32[0] == (b).s6_addr32[0] &&	\
 				 (a).s6_addr32[1] == (b).s6_addr32[1] &&	\
 				 (a).s6_addr32[2] == (b).s6_addr32[2] &&	\
@@ -59,6 +74,15 @@ static __always_inline void mptcp_pm_copy_addr(struct mptcp_addr_info *dst,
 		dst->addr6.s6_addr32[2] = src->addr6.s6_addr32[2];
 		dst->addr6.s6_addr32[3] = src->addr6.s6_addr32[3];
 	}
+}
+
+static __always_inline void mptcp_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
+						struct mptcp_pm_addr_entry *src)
+{
+	mptcp_pm_copy_addr(&dst->addr, &src->addr);
+
+	dst->flags = src->flags;
+	dst->ifindex = src->ifindex;
 }
 
 #endif

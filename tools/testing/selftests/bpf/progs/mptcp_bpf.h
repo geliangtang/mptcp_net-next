@@ -64,6 +64,9 @@ mptcp_subflow_tcp_sock(const struct mptcp_subflow_context *subflow)
 void bpf_rcu_read_lock(void) __ksym;
 void bpf_rcu_read_unlock(void) __ksym;
 
+extern void bpf_spin_lock_bh(spinlock_t *lock) __ksym;
+extern void bpf_spin_unlock_bh(spinlock_t *lock) __ksym;
+
 extern struct mptcp_subflow_context *
 bpf_mptcp_subflow_ctx(const struct sock *sk) __ksym;
 extern struct sock *
