@@ -625,7 +625,8 @@ static int bpf_mptcp_common_kfunc_filter(const struct bpf_prog *prog, u32 kfunc_
 		return -EACCES;
 
 #ifdef CONFIG_BPF_JIT
-	if (prog->aux->st_ops == &bpf_mptcp_sched_ops)
+	if (prog->aux->st_ops == &bpf_mptcp_pm_ops ||
+	    prog->aux->st_ops == &bpf_mptcp_sched_ops)
 		return 0;
 #endif
 	return -EACCES;
