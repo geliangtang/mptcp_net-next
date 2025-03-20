@@ -658,6 +658,11 @@ __bpf_kfunc static __u8 bpf_find_next_zero_bit(const unsigned long *addr__ign,
 	return find_next_zero_bit(addr__ign, size__sz, offset);
 }
 
+__bpf_kfunc static bool bpf_ipv4_is_private_10(__be32 addr)
+{
+	return ipv4_is_private_10(addr);
+}
+
 __bpf_kfunc static bool bpf_mptcp_subflow_queues_empty(struct sock *sk)
 {
 	return tcp_rtx_queue_empty(sk);
@@ -708,6 +713,7 @@ BTF_ID_FLAGS(func, bpf_set_bit)
 BTF_ID_FLAGS(func, bpf_spin_lock_bh)
 BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
 BTF_ID_FLAGS(func, bpf_find_next_zero_bit)
+BTF_ID_FLAGS(func, bpf_ipv4_is_private_10)
 BTF_ID_FLAGS(func, mptcp_subflow_set_scheduled)
 BTF_ID_FLAGS(func, mptcp_subflow_active)
 BTF_ID_FLAGS(func, mptcp_set_timeout)
