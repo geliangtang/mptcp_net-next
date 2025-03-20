@@ -27,6 +27,8 @@
 #define ADDR6_3	"dead:beef:3::1"
 #define ADDR6_4	"dead:beef:4::1"
 #define PORT_1	10001
+#define PM_CTL		"./mptcp_pm_nl_ctl"
+#define PM_EVENTS	"/tmp/bpf_userspace_pm_events"
 #define WITH_DATA	true
 #define WITHOUT_DATA	false
 
@@ -491,6 +493,282 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+static int recv_byte(int fd)
+{
+	char buf[1];
+	ssize_t n;
+
+	n = recv(fd, buf, sizeof(buf), 0);
+	if (CHECK(n <= 0, "recv_byte", "recv")) {
+		log_err("failed/partial recv");
+		return -1;
+	}
+	return 0;
+}
+
+static int pm_init(const char *pm_name)
+{
+	if (address_init())
+		goto fail;
+
+	SYS(fail, "ip netns exec %s sysctl -qw net.mptcp.path_manager=%s",
+	    NS_TEST, pm_name);
+	SYS(fail, "ip -n %s mptcp limits set add_addr_accepted 4 subflows 4",
+	    NS_TEST);
+
+	return 0;
+fail:
+	return -1;
+}
+
+static int userspace_pm_get_events_line(char *type, char *line)
+{
+	char buf[BUFSIZ], *str;
+	size_t len;
+	int fd;
+
+	fd = open(PM_EVENTS, O_RDONLY);
+	if (fd < 0) {
+		log_err("failed to open pm events\n");
+		return -1;
+	}
+
+	len = read(fd, buf, sizeof(buf));
+	close(fd);
+	if (len <= 0) {
+		log_err("failed to read pm events\n");
+		return -1;
+	}
+
+	str = strstr(buf, type);
+	if (!str) {
+		log_err("failed to get type %s pm event\n", type);
+		return -1;
+	}
+
+	strcpy(line, str);
+	return 0;
+}
+
+static int userspace_pm_get_token(int fd)
+{
+	char line[1024], *str;
+	__u32 token;
+	int i;
+
+	/* Wait max 2 sec for the connection to be established */
+	for (i = 0; i < 10; i++) {
+		usleep(200000); /* 0.2s */
+		send_byte(fd);
+
+		sync();
+		if (userspace_pm_get_events_line("type:2", line))
+			continue;
+		str = strstr(line, "token");
+		if (!str)
+			continue;
+		if (sscanf(str, "token:%u,", &token) != 1)
+			continue;
+		return token;
+	}
+
+	return 0;
+}
+
+static int userspace_pm_add_subflow(__u32 token, char *addr, __u8 id)
+{
+	bool ipv6 = strstr(addr, ":");
+	char line[1024], *str;
+	__u32 sport, dport;
+
+	if (userspace_pm_get_events_line("type:2", line))
+		return -1;
+
+	str = strstr(line, "sport");
+	if (!str || sscanf(str, "sport:%u,dport:%u,", &sport, &dport) != 2) {
+		log_err("add_subflow error, str=%s\n", str);
+		return -1;
+	}
+
+	str = ipv6 ? (strstr(addr, ".") ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	SYS_NOFAIL("ip netns exec %s %s csf lip %s lid %u rip %s rport %u token %u",
+		   NS_TEST, PM_CTL, addr, id, str, dport, token);
+
+	return 0;
+}
+
+static int userspace_pm_rm_subflow(__u32 token, char *addr, __u8 id)
+{
+	bool ipv6 = strstr(addr, ":");
+	char line[1024], *str;
+	__u32 sport, dport;
+
+	if (userspace_pm_get_events_line("type:10", line))
+		return -1;
+
+	str = strstr(line, "sport");
+	if (!str || sscanf(str, "sport:%u,dport:%u,", &sport, &dport) != 2) {
+		log_err("rm_subflow error, str=%s\n", str);
+		return -1;
+	}
+
+	str = ipv6 ? (strstr(addr, ".") ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	return SYS_NOFAIL("ip netns exec %s %s dsf lip %s lport %u rip %s rport %u token %u",
+			  NS_TEST, PM_CTL, addr, sport, str, dport, token);
+}
+
+static int userspace_pm_add_addr(__u32 token, char *addr, __u8 id)
+{
+	return SYS_NOFAIL("ip netns exec %s %s ann %s id %u token %u",
+			  NS_TEST, PM_CTL, addr, id, token);
+}
+
+static int userspace_pm_rm_addr(__u32 token, __u8 id)
+{
+	return SYS_NOFAIL("ip netns exec %s %s rem id %u token %u",
+			  NS_TEST, PM_CTL, id, token);
+}
+
+static int userspace_pm_set_flags(__u32 token, char *addr, char *flags)
+{
+	bool ipv6 = strstr(addr, ":");
+	char line[1024], *str;
+	__u32 sport, dport;
+
+	if (userspace_pm_get_events_line("type:10", line))
+		return -1;
+
+	str = strstr(line, "sport");
+	if (!str || sscanf(str, "sport:%u,dport:%u,", &sport, &dport) != 2) {
+		log_err("set_flags error, str=%s\n", str);
+		return -1;
+	}
+
+	str = ipv6 ? (strstr(addr, ".") ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	return SYS_NOFAIL("ip netns exec %s %s set %s port %u rip %s rport %u flags %s token %u",
+			  NS_TEST, PM_CTL, addr, sport, str, dport, flags, token);
+}
+
+static void run_userspace_pm(enum mptcp_pm_family family)
+{
+	bool ipv4mapped = (family == IPV4MAPPED);
+	bool ipv6 = (family == IPV6 || ipv4mapped);
+	int server_fd, client_fd, accept_fd;
+	__u32 token;
+	char *addr;
+	int err;
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	server_fd = start_mptcp_server(ipv6 ? AF_INET6 : AF_INET, addr, PORT_1, 0);
+	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
+		goto close_server;
+
+	accept_fd = accept(server_fd, NULL, NULL);
+	if (!ASSERT_OK_FD(accept_fd, "accept"))
+		goto close_client;
+
+	token = userspace_pm_get_token(client_fd);
+	if (!token)
+		goto close_client;
+	recv_byte(accept_fd);
+	usleep(200000); /* 0.2s */
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_2 : ADDR6_2) : ADDR_2;
+	err = userspace_pm_add_subflow(token, addr, 100);
+	if (!ASSERT_OK(err, "userspace_pm_add_subflow 100"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	err = userspace_pm_set_flags(token, addr, "backup");
+	if (!ASSERT_OK(err, "userspace_pm_set_flags backup"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	err = userspace_pm_set_flags(token, addr, "nobackup");
+	if (!ASSERT_OK(err, "userspace_pm_set_flags nobackup"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	err = userspace_pm_rm_subflow(token, addr, 100);
+	if (!ASSERT_OK(err, "userspace_pm_rm_subflow 100"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_3 : ADDR6_3) : ADDR_3;
+	err = userspace_pm_add_addr(token, addr, 200);
+	if (!ASSERT_OK(err, "userspace_pm_add_addr 200"))
+		goto close_accept;
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	err = userspace_pm_rm_addr(token, 200);
+	if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))
+		goto close_accept;
+
+	send_byte(client_fd);
+	recv_byte(accept_fd);
+
+close_accept:
+	close(accept_fd);
+close_client:
+	close(client_fd);
+close_server:
+	close(server_fd);
+}
+
+static int userspace_pm_init(const char *pm_name)
+{
+	if (pm_init(pm_name))
+		goto fail;
+
+	SYS(fail, "ip netns exec %s %s events >> %s 2>&1 &",
+	    NS_TEST, PM_CTL, PM_EVENTS);
+
+	return 0;
+fail:
+	return -1;
+}
+
+static void userspace_pm_cleanup(void)
+{
+	SYS_NOFAIL("ip netns exec %s killall %s > /dev/null 2>&1",
+		   NS_TEST, PM_CTL);
+	SYS_NOFAIL("ip netns exec %s rm -rf %s", NS_TEST, PM_EVENTS);
+}
+
+static void test_userspace_pm(void)
+{
+	struct netns_obj *netns;
+	int err;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		return;
+
+	err = userspace_pm_init("userspace");
+	if (!ASSERT_OK(err, "userspace_pm_init: userspace pm"))
+		goto fail;
+
+	run_userspace_pm(IPV4MAPPED);
+
+	userspace_pm_cleanup();
+fail:
+	netns_free(netns);
+}
+
 static int sched_init(char *flags, char *sched)
 {
 	if (endpoint_init(flags, 2) < 0)
@@ -683,6 +961,8 @@ void test_mptcp(void)
 		test_mptcpify();
 	if (test__start_subtest("subflow"))
 		test_subflow();
+	if (test__start_subtest("userspace_pm"))
+		test_userspace_pm();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))
