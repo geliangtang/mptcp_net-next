@@ -8,6 +8,8 @@ char _license[] SEC("license") = "GPL";
 
 extern bool CONFIG_MPTCP_IPV6 __kconfig __weak;
 
+#define private(name) SEC(".bss." #name) __hidden __attribute__((aligned(8)))
+
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, MPTCP_PM_MAX_ADDR_ID);
@@ -15,8 +17,9 @@ struct {
 	__type(value, struct mptcp_pm_addr_entry);
 } mptcp_pm_addr_map SEC(".maps");
 
+private(A) struct bpf_spin_lock mptcp_pm_addr_lock;
+
 struct callback_ctx {
-	struct mptcp_sock *msk;
 	struct sk_buff *msg;
 	struct netlink_callback *cb;
 	unsigned long *bitmap;
@@ -25,28 +28,48 @@ struct callback_ctx {
 extern u8 bpf_find_next_zero_bit(const unsigned long *addr,
 				 unsigned long size, unsigned long offset) __ksym;
 
-extern int mptcp_userspace_pm_delete_local_addr(struct mptcp_sock *msk,
-						struct mptcp_pm_addr_entry *addr) __ksym;
-
-static struct mptcp_pm_addr_entry *
-mptcp_pm_userspace_lookup_addr_by_id(struct mptcp_sock *msk, unsigned int id)
+static int mptcp_pm_userspace_lookup_dup_addr_by_id(unsigned int id,
+						    struct mptcp_pm_addr_entry *new)
 {
 	struct mptcp_pm_addr_entry *entry;
 
 	entry = bpf_map_lookup_elem(&mptcp_pm_addr_map, &id);
-	if (entry)
-		return bpf_core_cast(entry, struct mptcp_pm_addr_entry);
-	return NULL;
+	if (!entry)
+		return -EINVAL;
+
+	bpf_spin_lock(&mptcp_pm_addr_lock);
+	mptcp_pm_copy_entry(new, entry);
+	bpf_spin_unlock(&mptcp_pm_addr_lock);
+	return 0;
+}
+
+static int mptcp_pm_userspace_lookup_dup_addr(const struct mptcp_addr_info *addr,
+					      struct mptcp_pm_addr_entry *entry)
+{
+	unsigned int id;
+
+	bpf_for(id, 0, MPTCP_PM_MAX_ADDR_ID) {
+		if (!mptcp_pm_userspace_lookup_dup_addr_by_id(id++, entry))
+			if (mptcp_addresses_equal(&entry->addr, addr, false))
+				return 0;
+	}
+	return -EINVAL;
 }
 
 static struct mptcp_pm_addr_entry *
-mptcp_pm_userspace_lookup_addr(struct mptcp_sock *msk, const struct mptcp_addr_info *addr)
+mptcp_pm_userspace_lookup_addr_by_id(unsigned int id)
+{
+	return bpf_map_lookup_elem(&mptcp_pm_addr_map, &id);
+}
+
+static struct mptcp_pm_addr_entry *
+mptcp_pm_userspace_lookup_addr(const struct mptcp_addr_info *addr)
 {
 	struct mptcp_pm_addr_entry *entry;
 	unsigned int id;
 
 	bpf_for(id, 0, MPTCP_PM_MAX_ADDR_ID) {
-		entry = mptcp_pm_userspace_lookup_addr_by_id(msk, id++);
+		entry = mptcp_pm_userspace_lookup_addr_by_id(id++);
 		if (entry && mptcp_addresses_equal(&entry->addr, addr, false))
 			return entry;
 	}
@@ -73,30 +96,31 @@ static int mptcp_pm_userspace_append_new_local_addr(struct mptcp_sock *msk,
 						    bool needs_id)
 {
 	unsigned long id_bitmap[4] = { 0 };
-	struct mptcp_pm_addr_entry *e;
+	struct mptcp_pm_addr_entry e;
 	bool addr_match = false;
 	bool id_match = false;
 	int ret = -EINVAL;
 	unsigned int id;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
 	bpf_for(id, 0, MPTCP_PM_MAX_ADDR_ID) {
-		e = mptcp_pm_userspace_lookup_addr_by_id(msk, id++);
-		if (e) {
-			addr_match = mptcp_addresses_equal(&e->addr, &entry->addr, true);
+		if (!mptcp_pm_userspace_lookup_dup_addr_by_id(id++, &e)) {
+			bpf_printk("mptcp_pm_hashmap_append_new_local_addr id=%u", e.addr.id);
+			addr_match = mptcp_addresses_equal(&e.addr, &entry->addr, true);
 			if (addr_match && entry->addr.id == 0 && needs_id)
-				entry->addr.id = e->addr.id;
-			id_match = (e->addr.id == entry->addr.id);
+				entry->addr.id = e.addr.id;
+			id_match = (e.addr.id == entry->addr.id);
 			if (addr_match || id_match)
 				break;
-			bpf_set_bit(e->addr.id, id_bitmap);
+			bpf_set_bit(e.addr.id, id_bitmap);
 		}
 	}
 
 	if (!addr_match && !id_match) {
 		struct mptcp_pm_addr_entry new_entry;
 
+		bpf_spin_lock(&mptcp_pm_addr_lock);
 		mptcp_pm_copy_entry(&new_entry, entry);
+		bpf_spin_unlock(&mptcp_pm_addr_lock);
 		if (!new_entry.addr.id && needs_id)
 			new_entry.addr.id = bpf_find_next_zero_bit(id_bitmap,
 								   MPTCP_PM_MAX_ADDR_ID + 1,
@@ -108,7 +132,6 @@ static int mptcp_pm_userspace_append_new_local_addr(struct mptcp_sock *msk,
 		ret = entry->addr.id;
 	}
 
-	bpf_spin_unlock_bh(&msk->pm.lock);
 	return ret;
 }
 
@@ -118,15 +141,12 @@ int BPF_PROG(mptcp_pm_userspace_get_local_id, struct mptcp_sock *msk,
 {
 	__be16 msk_sport = bpf_core_cast(inet_sk((struct sock *)msk),
 					 struct inet_sock)->inet_sport;
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry entry;
 
 	bpf_printk("5 mptcp_pm_get_local_id");
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_pm_userspace_lookup_addr(msk, &skc->addr);
-	bpf_spin_unlock_bh(&msk->pm.lock);
-	if (entry)
-		return entry->addr.id;
+	if (!mptcp_pm_userspace_lookup_dup_addr(&skc->addr, &entry))
+		return entry.addr.id;
 
 	if (skc->addr.port == msk_sport)
 		skc->addr.port = 0;
@@ -138,13 +158,12 @@ SEC("struct_ops")
 bool BPF_PROG(mptcp_pm_userspace_get_priority, struct mptcp_sock *msk,
 	      struct mptcp_addr_info *skc)
 {
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry entry;
 	bool backup;
+	int ret;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_pm_userspace_lookup_addr(msk, skc);
-	backup = entry && !!(entry->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
-	bpf_spin_unlock_bh(&msk->pm.lock);
+	ret = mptcp_pm_userspace_lookup_dup_addr(skc, &entry);
+	backup = !ret && !!(entry.flags & MPTCP_PM_ADDR_FLAG_BACKUP);
 
 	bpf_printk("6 mptcp_pm_get_priority done");
 
@@ -152,7 +171,7 @@ bool BPF_PROG(mptcp_pm_userspace_get_priority, struct mptcp_sock *msk,
 }
 
 SEC("struct_ops")
-bool BPF_PROG(mptcp_pm_userspace_accept_new_subflow, const struct mptcp_sock *msk,
+bool BPF_PROG(mptcp_pm_userspace_accept_new_subflow, struct mptcp_sock *msk,
 	      bool allow)
 {
 	return mptcp_userspace_pm_active(msk);
@@ -171,7 +190,7 @@ int BPF_PROG(mptcp_pm_userspace_address_announce, struct mptcp_sock *msk,
 {
 	int err;
 
-	err = mptcp_userspace_pm_append_new_local_addr(msk, local, false);
+	err = mptcp_pm_userspace_append_new_local_addr(msk, local, false);
 	if (err < 0)
 		return err;
 
@@ -194,25 +213,18 @@ SEC("struct_ops")
 int BPF_PROG(mptcp_pm_userspace_address_remove, struct mptcp_sock *msk,
 	     struct mptcp_pm_addr_entry *local)
 {
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry entry;
 	u8 id = local->addr.id;
 
 	if (id == 0)
 		return mptcp_pm_remove_id_zero_address(msk);
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_pm_userspace_lookup_addr_by_id(msk, id);
-	if (!entry) {
-		bpf_spin_unlock_bh(&msk->pm.lock);
+	if (mptcp_pm_userspace_lookup_dup_addr_by_id(id, &entry))
 		return -EINVAL;
-	}
 
-	mptcp_pm_userspace_delete_entry(entry);
-	bpf_spin_unlock_bh(&msk->pm.lock);
+	mptcp_pm_userspace_delete_entry(&entry);
 
-	mptcp_pm_remove_addr_entry(msk, entry);
-
-	bpf_sock_kfree_entry((struct sock *)msk, entry, sizeof(*entry));
+	mptcp_pm_remove_addr_entry(msk, &entry);
 
 	bpf_printk("2 mptcp_pm_address_removed done");
 
@@ -226,21 +238,13 @@ int BPF_PROG(mptcp_pm_userspace_subflow_create, struct mptcp_sock *msk,
 	struct sock *sk = (struct sock *)msk;
 	int err;
 
-	err = mptcp_userspace_pm_append_new_local_addr(msk, local, false);
+	err = mptcp_pm_userspace_append_new_local_addr(msk, local, false);
 	if (err < 0)
 		return err;
 
-	err = bpf_mptcp_subflow_connect(sk, local, remote);
-	bpf_spin_lock_bh(&msk->pm.lock);
-	if (err)
-		mptcp_userspace_pm_delete_local_addr(msk, local);
-	else
-		msk->pm.extra_subflows++;
-	bpf_spin_unlock_bh(&msk->pm.lock);
-
 	bpf_printk("3 mptcp_pm_subflow_established err=%d", err);
 
-	return err;
+	return bpf_mptcp_subflow_connect(sk, local, remote);
 }
 
 SEC("struct_ops")
@@ -258,9 +262,6 @@ int BPF_PROG(mptcp_pm_userspace_subflow_destroy, struct mptcp_sock *msk,
 	if (!subflow)
 		return -EINVAL;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	mptcp_userspace_pm_delete_local_addr(msk, local);
-	bpf_spin_unlock_bh(&msk->pm.lock);
 	mptcp_subflow_shutdown(sk, ssk, RCV_SHUTDOWN | SEND_SHUTDOWN);
 	mptcp_close_ssk(sk, ssk, subflow);
 	BPF_MPTCP_INC_STATS(bpf_sock_net(sk), MPTCP_MIB_RMSUBFLOW);
@@ -286,16 +287,16 @@ int BPF_PROG(mptcp_pm_userspace_set_priority, struct mptcp_sock *msk,
 	if (local->flags & MPTCP_PM_ADDR_FLAG_BACKUP)
 		bkup = 1;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = lookup_by_id ? mptcp_pm_userspace_lookup_addr_by_id(msk, local->addr.id) :
-			       mptcp_pm_userspace_lookup_addr(msk, &local->addr);
+	entry = lookup_by_id ? mptcp_pm_userspace_lookup_addr_by_id(local->addr.id) :
+			       mptcp_pm_userspace_lookup_addr(&local->addr);
 	if (entry) {
+		bpf_spin_lock(&mptcp_pm_addr_lock);
 		if (bkup)
 			entry->flags |= MPTCP_PM_ADDR_FLAG_BACKUP;
 		else
 			entry->flags &= ~MPTCP_PM_ADDR_FLAG_BACKUP;
+		bpf_spin_unlock(&mptcp_pm_addr_lock);
 	}
-	bpf_spin_unlock_bh(&msk->pm.lock);
 
 	return mptcp_pm_mp_prio_send_ack(msk, entry ? &entry->addr : &local->addr,
 					 &remote->addr, bkup);
@@ -311,11 +312,10 @@ void BPF_PROG(mptcp_pm_userspace_init, struct mptcp_sock *msk)
 static int release_callback(struct bpf_map *map, __u32 *key, void *val,
 			    struct callback_ctx *data)
 {
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry entry;
 
-	entry = mptcp_pm_userspace_lookup_addr_by_id(data->msk, *key);
-	if (entry)
-		mptcp_pm_userspace_delete_entry(entry);
+	if (!mptcp_pm_userspace_lookup_dup_addr_by_id(*key, &entry))
+		mptcp_pm_userspace_delete_entry(&entry);
 
 	return 0;
 }
@@ -323,14 +323,8 @@ static int release_callback(struct bpf_map *map, __u32 *key, void *val,
 SEC("struct_ops")
 void BPF_PROG(mptcp_pm_userspace_release, struct mptcp_sock *msk)
 {
-	struct callback_ctx data;
-
-	data.msk = msk;
-
-	bpf_spin_lock_bh(&msk->pm.lock);
 	bpf_for_each_map_elem(&mptcp_pm_addr_map,
-			      release_callback, &data, 0);
-	bpf_spin_unlock_bh(&msk->pm.lock);
+			      release_callback, NULL, 0);
 }
 
 SEC(".struct_ops.link")
@@ -353,16 +347,15 @@ extern void bpf_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
 			      struct mptcp_pm_addr_entry *src) __ksym;
 
 SEC("fexit/mptcp_pm_userspace_get_addr_msk")
-int BPF_PROG(mptcp_pm_hashmap_get_addr, struct mptcp_sock *msk, u8 id,
+int BPF_PROG(mptcp_pm_userspace_get_addr, struct mptcp_sock *msk, u8 id,
 	     struct mptcp_pm_addr_entry *addr)
 {
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry entry;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_pm_hashmap_lookup_addr_by_id(msk, id);
-	if (entry)
-		bpf_pm_copy_entry(addr, entry);
-	bpf_spin_unlock_bh(&msk->pm.lock);
+	bpf_printk("8 mptcp_hashmap_pm_get_addr");
+
+	if (!mptcp_pm_userspace_lookup_dup_addr_by_id(id, &entry))
+		bpf_pm_copy_entry(addr, &entry);
 
 	return 0;
 }
@@ -375,38 +368,127 @@ extern int mptcp_pm_genl_fill_addr(struct sk_buff *msg,
 static int dump_addr_callback(struct bpf_map *map, __u32 *key, void *val,
 			      struct callback_ctx *data)
 {
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry entry;
 
-	entry = mptcp_pm_hashmap_lookup_addr_by_id(data->msk, *key);
-	if (entry) {
-		if (bpf_test_bit(entry->addr.id, data->bitmap))
+	if (!mptcp_pm_userspace_lookup_dup_addr_by_id(*key, &entry)) {
+		if (bpf_test_bit(entry.addr.id, data->bitmap))
 			return 0;
 
-		if (mptcp_pm_genl_fill_addr(data->msg, data->cb, entry) < 0)
+		bpf_printk("9 mptcp_hashmap_pm_dump_addr id=%d", entry.addr.id);
+
+		if (mptcp_pm_genl_fill_addr(data->msg, data->cb, &entry) < 0)
 			return 1;
 
-		bpf_set_bit(entry->addr.id, data->bitmap);
+		bpf_set_bit(entry.addr.id, data->bitmap);
 	}
 
 	return 0;
 }
 
 SEC("fmod_ret/mptcp_pm_userspace_dump_addr_msk")
-int BPF_PROG(mptcp_pm_hashmap_dump_addr, struct mptcp_sock *msk,
+int BPF_PROG(mptcp_pm_userspace_dump_addr, struct mptcp_sock *msk,
 	     struct sk_buff *msg, struct netlink_callback *cb)
 {
 	unsigned long bitmap[4] = { 0 };
 	struct callback_ctx data;
 
-	data.msk = msk;
+	bpf_printk("9 mptcp_hashmap_pm_dump_addr");
+
 	data.msg = msg;
 	data.cb = cb;
 	data.bitmap = bitmap;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
 	bpf_for_each_map_elem(&mptcp_pm_addr_map,
 			      dump_addr_callback, &data, 0);
-	bpf_spin_unlock_bh(&msk->pm.lock);
 
 	return msg->len;
+}
+
+static int mptcp_getsockopt_pm_get_addr(struct bpf_sock *sk, struct bpf_sockopt *ctx)
+{
+	struct mptcp_pm_addr_entry entry;
+	u8 id = 100;
+
+	if (!mptcp_pm_userspace_lookup_dup_addr_by_id(id, &entry))
+		bpf_printk("10 mptcp_getsockopt_pm_get_addr id=%u", entry.addr.id);
+	return 1;
+}
+
+static int pm_dump_addr_callback(struct bpf_map *map, __u32 *key, void *val,
+				 struct callback_ctx *data)
+{
+	struct mptcp_pm_addr_entry entry;
+
+	if (!mptcp_pm_userspace_lookup_dup_addr_by_id(*key, &entry))
+		bpf_printk("11 mptcp_getsockopt_pm_dump_addr id=%d", entry.addr.id);
+
+	return 0;
+}
+
+static int mptcp_getsockopt_pm_dump_addr(struct bpf_sock *sk, struct bpf_sockopt *ctx)
+{
+	bpf_printk("11 mptcp_getsockopt_pm_dump_addr");
+
+	bpf_for_each_map_elem(&mptcp_pm_addr_map,
+			      pm_dump_addr_callback, NULL, 0);
+
+	return 1;
+}
+
+SEC("cgroup/getsockopt")
+int pm_getsockopt(struct bpf_sockopt *ctx)
+{
+	struct bpf_sock *sk = ctx->sk;
+
+	if (!sk || sk->protocol != IPPROTO_MPTCP)
+		return 1;
+
+	if (ctx->level == SOL_SOCKET && ctx->optname == SO_MARK) {
+		mptcp_getsockopt_pm_get_addr(sk, ctx);
+		return mptcp_getsockopt_pm_dump_addr(sk, ctx);
+	}
+
+	return 1;
+}
+
+static int mptcp_setsockopt_address_remove(struct bpf_sock *sk, struct bpf_sockopt *ctx)
+{
+	struct mptcp_pm_addr_entry entry;
+	int *optval = ctx->optval;
+	struct mptcp_sock *msk;
+	__u32 mark;
+
+	msk = bpf_skc_to_mptcp_sock(sk);
+	if (!msk)
+		return 1;
+
+	if (ctx->optval + sizeof(mark) > ctx->optval_end)
+		return 1;
+
+	mark = *optval;
+
+	if (mptcp_pm_userspace_lookup_dup_addr_by_id(mark, &entry))
+		return 1;
+
+	mptcp_pm_userspace_delete_entry(&entry);
+
+	//mptcp_pm_remove_addr_entry(msk, &entry);
+
+	bpf_printk("12 mptcp_setsockopt_address_remove done");
+
+	return 1;
+}
+
+SEC("cgroup/setsockopt")
+int pm_setsockopt(struct bpf_sockopt *ctx)
+{
+	struct bpf_sock *sk = ctx->sk;
+
+	if (!sk || sk->protocol != IPPROTO_MPTCP)
+		return 1;
+
+	if (ctx->level == SOL_SOCKET && ctx->optname == SO_MARK) {
+		return mptcp_setsockopt_address_remove(sk, ctx);
+	}
+	return 1;
 }

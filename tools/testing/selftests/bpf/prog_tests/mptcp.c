@@ -1240,7 +1240,7 @@ static void test_bpf_userspace_pm(void)
 	if (!ASSERT_OK(err, "userspace_pm_init: bpf_userspace pm"))
 		goto close_netns;
 
-	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4, false);
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4, true);
 
 	userspace_pm_cleanup();
 close_netns:
@@ -1257,15 +1257,10 @@ static void test_bpf_hashmap_pm(void)
 	struct netns_obj *netns;
 	struct bpf_link *link;
 	int err;
-	int cgroup_fd;
-
-	cgroup_fd = test__join_cgroup("/bpf_sockopt");
-	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: bpf_sockopt"))
-		return;
 
 	skel = mptcp_bpf_hashmap_pm__open();
 	if (!ASSERT_OK_PTR(skel, "open: bpf_hashmap pm"))
-		goto close_cgroup;
+		return;
 
 	err = bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_address_announce,
 				     BPF_F_SLEEPABLE);
@@ -1277,8 +1272,6 @@ static void test_bpf_hashmap_pm(void)
 					    BPF_F_SLEEPABLE);
 	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_set_priority,
 					    BPF_F_SLEEPABLE);
-	//err = err ?: bpf_program__set_flags(skel->progs.pm_setsockopt,
-	//				    BPF_F_SLEEPABLE);
 	if (!ASSERT_OK(err, "set sleepable flags"))
 		goto skel_destroy;
 
@@ -1297,7 +1290,7 @@ static void test_bpf_hashmap_pm(void)
 	if (!ASSERT_OK(err, "userspace_pm_init: bpf_hashmap pm"))
 		goto close_netns;
 
-	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4, true);
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4, false);
 
 	userspace_pm_cleanup();
 close_netns:
@@ -1306,8 +1299,6 @@ link_destroy:
 	bpf_link__destroy(link);
 skel_destroy:
 	mptcp_bpf_hashmap_pm__destroy(skel);
-close_cgroup:
-	close(cgroup_fd);
 }
 
 static void run_sockopt(void)
