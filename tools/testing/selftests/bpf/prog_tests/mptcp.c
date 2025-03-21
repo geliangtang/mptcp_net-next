@@ -1001,7 +1001,7 @@ static int userspace_pm_set_flags_by_id(__u32 token, __u8 id, char *flags)
 			  NS_TEST, PM_CTL, id, str, dport, flags, token);
 }
 
-static void run_userspace_pm(enum mptcp_pm_family family)
+static void run_userspace_pm(enum mptcp_pm_family family, bool sockops)
 {
 	bool ipv4mapped = (family == IPV4MAPPED);
 	bool ipv6 = (family == IPV6 || ipv4mapped);
@@ -1044,6 +1044,16 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	if (!ASSERT_OK(err, "userspace_pm_get_addr 100") ||
 	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "get_addr"))
 		goto close_accept;
+
+	if (sockops) {
+		unsigned int mark;
+		socklen_t len;
+
+		len = sizeof(mark);
+		err = getsockopt(client_fd, SOL_SOCKET, SO_MARK, &mark, &len);
+		if (ASSERT_OK(err, "getsockopt(client_fd, SO_MARK)"))
+			ASSERT_EQ(mark, 0, "mark");
+	}
 
 	err = userspace_pm_set_flags(token, addr, "backup");
 	if (!ASSERT_OK(err, "userspace_pm_set_flags backup"))
@@ -1097,12 +1107,28 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	    !ASSERT_STRNEQ(output, expect, sizeof(expect), "dump_addr"))
 		goto close_accept;
 
-	err = userspace_pm_rm_addr(token, 200);
-	if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))
-		goto close_accept;
+	if (sockops) {
+		unsigned int mark;
+		socklen_t len;
+
+		mark = 200;
+		len = sizeof(mark);
+		err = setsockopt(client_fd, SOL_SOCKET, SO_MARK, &mark, len);
+		if (!ASSERT_OK(err, "setsockopt(client_fd, SO_MARK)"))
+			goto close_accept;
+	} else {
+		err = userspace_pm_rm_addr(token, 200);
+		if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))
+			goto close_accept;
+	}
 
 	send_byte(client_fd);
 	recv_byte(accept_fd);
+
+	err = userspace_pm_dump_addr(token, output);
+	if (!ASSERT_OK(err, "userspace_pm_dump_addr") ||
+	    !ASSERT_STRNEQ(output, "", sizeof(output), "dump_addr"))
+		goto close_accept;
 
 	err = userspace_pm_rm_addr(token, 0);
 	ASSERT_OK(err, "userspace_pm_rm_addr 0");
@@ -1152,7 +1178,7 @@ static void test_userspace_pm(void)
 	if (!ASSERT_OK(err, "userspace_pm_init: userspace pm"))
 		goto fail;
 
-	run_userspace_pm(IPV4MAPPED);
+	run_userspace_pm(IPV4MAPPED, false);
 
 	userspace_pm_cleanup();
 fail:
@@ -1214,7 +1240,7 @@ static void test_bpf_userspace_pm(void)
 	if (!ASSERT_OK(err, "userspace_pm_init: bpf_userspace pm"))
 		goto close_netns;
 
-	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4);
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4, false);
 
 	userspace_pm_cleanup();
 close_netns:
@@ -1231,10 +1257,15 @@ static void test_bpf_hashmap_pm(void)
 	struct netns_obj *netns;
 	struct bpf_link *link;
 	int err;
+	int cgroup_fd;
+
+	cgroup_fd = test__join_cgroup("/bpf_sockopt");
+	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: bpf_sockopt"))
+		return;
 
 	skel = mptcp_bpf_hashmap_pm__open();
 	if (!ASSERT_OK_PTR(skel, "open: bpf_hashmap pm"))
-		return;
+		goto close_cgroup;
 
 	err = bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_address_announce,
 				     BPF_F_SLEEPABLE);
@@ -1246,6 +1277,8 @@ static void test_bpf_hashmap_pm(void)
 					    BPF_F_SLEEPABLE);
 	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_hashmap_set_priority,
 					    BPF_F_SLEEPABLE);
+	//err = err ?: bpf_program__set_flags(skel->progs.pm_setsockopt,
+	//				    BPF_F_SLEEPABLE);
 	if (!ASSERT_OK(err, "set sleepable flags"))
 		goto skel_destroy;
 
@@ -1264,7 +1297,7 @@ static void test_bpf_hashmap_pm(void)
 	if (!ASSERT_OK(err, "userspace_pm_init: bpf_hashmap pm"))
 		goto close_netns;
 
-	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4);
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4, true);
 
 	userspace_pm_cleanup();
 close_netns:
@@ -1273,6 +1306,8 @@ link_destroy:
 	bpf_link__destroy(link);
 skel_destroy:
 	mptcp_bpf_hashmap_pm__destroy(skel);
+close_cgroup:
+	close(cgroup_fd);
 }
 
 static void run_sockopt(void)

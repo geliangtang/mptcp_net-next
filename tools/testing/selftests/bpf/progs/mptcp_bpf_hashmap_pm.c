@@ -6,6 +6,10 @@
 
 char _license[] SEC("license") = "GPL";
 
+#ifndef TCP_IS_MPTCP
+#define TCP_IS_MPTCP		43	/* Is MPTCP being used? */
+#endif
+
 extern bool CONFIG_MPTCP_IPV6 __kconfig __weak;
 
 extern void bpf_list_del_rcu(struct list_head *entry) __ksym;
