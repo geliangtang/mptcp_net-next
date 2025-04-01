@@ -1405,6 +1405,13 @@ static bool mptcp_pm_kernel_accept_new_subflow(struct mptcp_sock *msk,
 	return ret;
 }
 
+static bool mptcp_pm_kernel_accept_new_address(struct mptcp_sock *msk,
+					       const struct mptcp_addr_info *addr)
+{
+	return !(mptcp_pm_accept_address(msk, addr) &&
+		 msk->pm.status & BIT(MPTCP_PM_ADD_ADDR_RECEIVED));
+}
+
 static void mptcp_pm_kernel_init(struct mptcp_sock *msk)
 {
 	bool subflows_allowed = !!mptcp_pm_get_subflows_max(msk);
@@ -1431,6 +1438,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.accept_new_subflow	= mptcp_pm_kernel_accept_new_subflow,
 	.established		= mptcp_pm_kernel_established,
 	.subflow_established	= mptcp_pm_kernel_subflow_established,
+	.accept_new_address	= mptcp_pm_kernel_accept_new_address,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
