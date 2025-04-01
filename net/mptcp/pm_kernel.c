@@ -633,7 +633,7 @@ fill_local_addresses_vec(struct mptcp_sock *msk, struct mptcp_addr_info *remote,
 	return fill_local_address_any(msk, remote, &locals[0]);
 }
 
-static void mptcp_pm_nl_add_addr_received(struct mptcp_sock *msk)
+static void mptcp_pm_kernel_add_addr_received(struct mptcp_sock *msk)
 {
 	u8 limit_add_addr_accepted = mptcp_pm_get_limit_add_addr_accepted(msk);
 	u8 limit_extra_subflows = mptcp_pm_get_limit_extra_subflows(msk);
@@ -647,13 +647,12 @@ static void mptcp_pm_nl_add_addr_received(struct mptcp_sock *msk)
 		 msk->pm.add_addr_accepted, limit_add_addr_accepted,
 		 msk->pm.remote.family);
 
+	spin_lock_bh(&msk->pm.lock);
 	remote = msk->pm.remote;
-	mptcp_pm_announce_addr(msk, &remote, true);
-	mptcp_pm_addr_send_ack(msk);
 	mptcp_mpc_endpoint_setup(msk);
 
 	if (lookup_subflow_by_daddr(&msk->conn_list, &remote))
-		return;
+		goto out;
 
 	/* pick id 0 port, if none is provided the remote address */
 	if (!remote.port)
@@ -664,7 +663,7 @@ static void mptcp_pm_nl_add_addr_received(struct mptcp_sock *msk)
 	 */
 	nr = fill_local_addresses_vec(msk, &remote, locals);
 	if (nr == 0)
-		return;
+		goto out;
 
 	spin_unlock_bh(&msk->pm.lock);
 	for (i = 0; i < nr; i++)
@@ -680,6 +679,8 @@ static void mptcp_pm_nl_add_addr_received(struct mptcp_sock *msk)
 		    msk->pm.extra_subflows >= limit_extra_subflows)
 			WRITE_ONCE(msk->pm.accept_addr, false);
 	}
+out:
+	spin_unlock_bh(&msk->pm.lock);
 }
 
 void mptcp_pm_nl_rm_addr(struct mptcp_sock *msk, u8 rm_id)
@@ -1554,13 +1555,6 @@ bool mptcp_pm_nl_check_work_pending(struct mptcp_sock *msk)
 	return true;
 }
 
-/* Called under PM lock */
-void __mptcp_pm_kernel_worker(struct mptcp_sock *msk, u8 status)
-{
-	if (status & BIT(MPTCP_PM_ADD_ADDR_RECEIVED))
-		mptcp_pm_nl_add_addr_received(msk);
-}
-
 static int __net_init pm_nl_init_net(struct net *net)
 {
 	struct pm_nl_pernet *pernet = pm_nl_get_pernet(net);
@@ -1650,6 +1644,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.established		= mptcp_pm_kernel_established,
 	.subflow_established	= mptcp_pm_kernel_subflow_established,
 	.accept_new_address	= mptcp_pm_kernel_accept_new_address,
+	.add_addr_received	= mptcp_pm_kernel_add_addr_received,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
