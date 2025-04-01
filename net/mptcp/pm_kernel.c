@@ -683,7 +683,7 @@ out:
 	spin_unlock_bh(&msk->pm.lock);
 }
 
-void mptcp_pm_nl_rm_addr(struct mptcp_sock *msk, u8 rm_id)
+static void mptcp_pm_kernel_rm_addr_received(struct mptcp_sock *msk, u8 rm_id)
 {
 	if (rm_id && WARN_ON_ONCE(msk->pm.add_addr_accepted == 0)) {
 		u8 limit_add_addr_accepted =
@@ -1645,6 +1645,7 @@ struct mptcp_pm_ops mptcp_pm_kernel = {
 	.subflow_established	= mptcp_pm_kernel_subflow_established,
 	.accept_new_address	= mptcp_pm_kernel_accept_new_address,
 	.add_addr_received	= mptcp_pm_kernel_add_addr_received,
+	.rm_addr_received	= mptcp_pm_kernel_rm_addr_received,
 	.init			= mptcp_pm_kernel_init,
 	.name			= "kernel",
 	.owner			= THIS_MODULE,
