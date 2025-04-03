@@ -806,15 +806,6 @@ pm_nl_set_endpoint()
 			pm_nl_flush_endpoint ${listener_ns}
 		elif [ $rm_nr_ns1 -eq 9 ]; then
 			pm_nl_del_endpoint ${listener_ns} 0 ${connect_addr}
-		elif [ $rm_nr_ns1 -eq 10 ]; then
-			echo "del endpoint 1"
-			pm_nl_del_endpoint ${listener_ns} 1
-			sleep 1
-			echo "add endpoint 3"
-			pm_nl_add_endpoint ${listener_ns} 10.0.3.1 flags signal
-			sleep 1
-			echo "add endpoint 4"
-			pm_nl_add_endpoint ${listener_ns} 10.0.4.1 flags signal
 		fi
 	fi
 
@@ -2558,19 +2549,6 @@ add_addr_timeout_tests()
 
 remove_tests()
 {
-	# single address, remove
-	if reset "remove single address"; then
-		pm_nl_set_limits $ns1 0 1
-		pm_nl_add_endpoint $ns1 10.0.2.1 flags signal
-		pm_nl_set_limits $ns2 1 1
-		addr_nr_ns1=-10 test_linkfail=4 speed=20 \
-			run_tests $ns1 $ns2 10.0.1.1
-		chk_join_nr 1 1 1
-		chk_add_nr 3 3
-		chk_rm_nr 1 1 invert
-		chk_rst_nr 0 0
-	fi
-
 	# single subflow, remove
 	if reset "remove single subflow"; then
 		pm_nl_set_limits $ns1 0 1

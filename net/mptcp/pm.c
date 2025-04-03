@@ -601,9 +601,6 @@ void mptcp_pm_add_addr_received(const struct sock *ssk,
 	pr_debug("msk=%p remote_id=%d accept=%d\n", msk, addr->id,
 		 READ_ONCE(pm->accept_addr));
 
-	WRITE_ONCE(msk->pm.work_pending, true);
-	pr_info("%s work_pending=%u\n", __func__, READ_ONCE(msk->pm.work_pending));
-
 	mptcp_event_addr_announced(ssk, addr);
 
 	if (!pm->ops->accept_new_address(msk, addr)) {
