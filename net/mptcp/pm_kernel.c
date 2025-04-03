@@ -668,6 +668,11 @@ static void mptcp_pm_kernel_add_addr_received(struct mptcp_sock *msk)
 	bool sf_created = false;
 	int i, nr;
 
+	limit_add_addr_accepted = mptcp_pm_get_limit_add_addr_accepted(msk);
+	limit_extra_subflows = mptcp_pm_get_limit_extra_subflows(msk);
+
+	pr_info("%s\n", __func__);
+
 	pr_debug("accepted %d:%d remote family %d\n",
 		 msk->pm.add_addr_accepted, limit_add_addr_accepted,
 		 msk->pm.remote.family);
@@ -1109,6 +1114,9 @@ static int mptcp_nl_remove_subflow_and_signal_addr(struct net *net,
 		lock_sock(sk);
 		if (msk->pm.ops->del_addr)
 			msk->pm.ops->del_addr(msk, entry);
+		spin_lock_bh(&msk->pm.lock);
+		mptcp_pm_nl_check_work_pending(msk);
+		spin_unlock_bh(&msk->pm.lock);
 		release_sock(sk);
 
 		sock_put(sk);
@@ -1507,14 +1515,18 @@ set_flags:
 
 bool mptcp_pm_nl_check_work_pending(struct mptcp_sock *msk)
 {
-	struct pm_nl_pernet *pernet = pm_nl_get_pernet_from_msk(msk);
+	//struct pm_nl_pernet *pernet = pm_nl_get_pernet_from_msk(msk);
 
-	if (msk->pm.extra_subflows == mptcp_pm_get_limit_extra_subflows(msk) ||
-	    (find_next_and_bit(pernet->id_bitmap, msk->pm.id_avail_bitmap,
-			       MPTCP_PM_MAX_ADDR_ID + 1, 0) == MPTCP_PM_MAX_ADDR_ID + 1)) {
-		WRITE_ONCE(msk->pm.work_pending, false);
+	//if (msk->pm.extra_subflows == mptcp_pm_get_limit_extra_subflows(msk) ||
+	//    (find_next_and_bit(pernet->id_bitmap, msk->pm.id_avail_bitmap,
+	//		       MPTCP_PM_MAX_ADDR_ID + 1, 0) == MPTCP_PM_MAX_ADDR_ID + 1)) {
+	if (msk->pm.extra_subflows == mptcp_pm_get_limit_extra_subflows(msk)) {
+		//WRITE_ONCE(msk->pm.work_pending, false);
+		pr_info("%s return false subflows=%u max=%u\n", __func__, msk->pm.extra_subflows, mptcp_pm_get_limit_extra_subflows(msk));
 		return false;
 	}
+	WRITE_ONCE(msk->pm.work_pending, true);
+	pr_info("%s return true, work_pending=%u\n", __func__, READ_ONCE(msk->pm.work_pending));
 	return true;
 }
 
