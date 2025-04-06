@@ -1648,7 +1648,7 @@ int __mptcp_subflow_connect(struct sock *sk, const struct mptcp_pm_local *local,
 		if (!local->addr.addr.s_addr)
 			local_id = -1;
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
-	} else if (sk->sk_family == AF_INET6) {
+	} else if (local->addr.family == AF_INET6) {
 		if (ipv6_addr_any(&local->addr.addr6))
 			local_id = -1;
 #endif
