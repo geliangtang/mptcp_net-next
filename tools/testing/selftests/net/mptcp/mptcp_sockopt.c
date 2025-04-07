@@ -68,6 +68,11 @@ struct mptcp_info {
 	__u64	mptcpi_bytes_sent;
 	__u64	mptcpi_bytes_received;
 	__u64	mptcpi_bytes_acked;
+	__u8	mptcpi_subflows_total;
+	__u8	reserved[3];
+	__u32	mptcpi_last_data_sent;
+	__u32	mptcpi_last_data_recv;
+	__u32	mptcpi_last_ack_recv;
 };
 
 struct mptcp_subflow_data {
@@ -782,6 +787,11 @@ static void do_getsockopt_mptcp_full_info(struct so_state *s, int fd)
 	assert(mfi.mptcp_info.mptcpi_subflows == 0);
 	assert(mfi.mptcp_info.mptcpi_bytes_sent == s->last_sample.mptcpi_bytes_sent);
 	assert(mfi.mptcp_info.mptcpi_bytes_received == s->last_sample.mptcpi_bytes_received);
+
+	assert(mfi.mptcp_info.mptcpi_subflows_total == 1);
+	assert(mfi.mptcp_info.mptcpi_last_data_sent >= s->last_sample.mptcpi_last_data_sent);
+	assert(mfi.mptcp_info.mptcpi_last_data_recv >= s->last_sample.mptcpi_last_data_recv);
+	assert(mfi.mptcp_info.mptcpi_last_ack_recv >= s->last_sample.mptcpi_last_ack_recv);
 
 	assert(sfinfo[0].id == 1);
 	assert(tcp_info[0].tcpi_bytes_sent == s->tcp_info.tcpi_bytes_sent);
