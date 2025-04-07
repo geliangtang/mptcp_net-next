@@ -1645,7 +1645,7 @@ int __mptcp_subflow_connect(struct sock *sk, const struct mptcp_pm_local *local,
 
 	/* if 'IPADDRANY', the ID will be set later, after the routing */
 	if (local->addr.family == AF_INET) {
-		if (!local->addr.addr.s_addr)
+		if (local->addr.addr.s_addr == htonl(INADDR_ANY))
 			local_id = -1;
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
 	} else if (local->addr.family == AF_INET6) {
