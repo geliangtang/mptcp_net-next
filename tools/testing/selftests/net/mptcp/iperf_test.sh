@@ -196,6 +196,26 @@ iperf_tests()
 		chk_join_nr 3 3 3
 	fi
 
+	if reset "iperf mptcp test, rate 100mbit -R"; then
+		tc -n $ns1 qdisc add dev ns1eth1 root netem rate 100mbit
+		tc -n $ns1 qdisc add dev ns1eth2 root netem rate 100mbit
+		tc -n $ns1 qdisc add dev ns1eth3 root netem rate 100mbit
+		tc -n $ns1 qdisc add dev ns1eth4 root netem rate 100mbit
+		mptcp_lib_pm_nl_set_limits $ns1 8 8
+		mptcp_lib_pm_nl_set_limits $ns2 8 8
+		mptcp_lib_pm_nl_add_endpoint $ns2 10.0.2.2 dev ns2eth2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint $ns2 10.0.3.2 dev ns2eth3 flags subflow
+		mptcp_lib_pm_nl_add_endpoint $ns2 10.0.4.2 dev ns2eth4 flags subflow
+		ip netns exec $ns1 iperf3 -m -s &
+		local tests_pid=$!
+		sleep 1
+		ip netns exec $ns2 iperf3 -m -c 10.0.1.1 -R
+		mptcp_lib_kill_wait $tests_pid
+		chk_join_nr 3 3 3
+	fi
+
+	exit
+
 	if reset "iperf tcp test, delay 1ms"; then
 		tc -n $ns2 qdisc add dev ns2eth1 root netem rate 1mbit delay 1ms
 		ip netns exec $ns1 iperf3 -s &
