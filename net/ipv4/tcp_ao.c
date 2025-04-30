@@ -1280,8 +1280,7 @@ free_and_exit:
 	hlist_for_each_entry_safe(key, key_head, &new_ao->head, node) {
 		hlist_del(&key->node);
 		tcp_sigpool_release(key->tcp_sigpool_id);
-		atomic_sub(tcp_ao_sizeof_key(key), &newsk->sk_omem_alloc);
-		kfree_sensitive(key);
+		sock_kzfree_s(newsk, key, tcp_ao_sizeof_key(key));
 	}
 free_ao:
 	kfree(new_ao);
@@ -1751,9 +1750,8 @@ static int tcp_ao_add_cmd(struct sock *sk, unsigned short int family,
 	return 0;
 
 err_free_sock:
-	atomic_sub(tcp_ao_sizeof_key(key), &sk->sk_omem_alloc);
 	tcp_sigpool_release(key->tcp_sigpool_id);
-	kfree_sensitive(key);
+	sock_kzfree_s(sk, key, tcp_ao_sizeof_key(key));
 err_free_ao:
 	if (first)
 		kfree(ao_info);
