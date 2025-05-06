@@ -480,39 +480,25 @@ void mptcp_pm_new_connection(struct mptcp_sock *msk, const struct sock *ssk, int
 	mptcp_event(MPTCP_EVENT_CREATED, msk, ssk, GFP_ATOMIC);
 }
 
+bool mptcp_pm_accept_new_subflow(struct mptcp_sock *msk, bool allow)
+{
+	return msk->pm.ops->accept_new_subflow(msk, allow);
+}
+
 bool mptcp_pm_allow_new_subflow(struct mptcp_sock *msk)
 {
 	struct mptcp_pm_data *pm = &msk->pm;
-	unsigned int limit_extra_subflows;
 	int ret = 0;
 
-	if (mptcp_pm_is_userspace(msk)) {
-		if (mptcp_userspace_pm_active(msk)) {
-			spin_lock_bh(&pm->lock);
-			pm->extra_subflows++;
-			spin_unlock_bh(&pm->lock);
-			return true;
-		}
-		return false;
-	}
-
-	limit_extra_subflows = mptcp_pm_get_limit_extra_subflows(msk);
-
-	pr_debug("msk=%p subflows=%d max=%d allow=%d\n", msk,
-		 pm->extra_subflows, limit_extra_subflows,
-		 READ_ONCE(pm->accept_subflow));
-
-	/* try to avoid acquiring the lock below */
-	if (!READ_ONCE(pm->accept_subflow))
+	if (!mptcp_pm_accept_new_subflow(msk, true))
 		return false;
 
-	spin_lock_bh(&pm->lock);
-	if (READ_ONCE(pm->accept_subflow)) {
-		ret = pm->extra_subflows < limit_extra_subflows;
-		if (ret && ++pm->extra_subflows == limit_extra_subflows)
-			WRITE_ONCE(pm->accept_subflow, false);
+	ret = mptcp_pm_accept_new_subflow(msk, false);
+	if (ret) {
+		spin_lock_bh(&pm->lock);
+		pm->extra_subflows++;
+		spin_unlock_bh(&pm->lock);
 	}
-	spin_unlock_bh(&pm->lock);
 
 	return ret;
 }
@@ -1094,7 +1080,8 @@ struct mptcp_pm_ops *mptcp_pm_find(const char *name)
 
 int mptcp_pm_validate(struct mptcp_pm_ops *pm_ops)
 {
-	if (!pm_ops->get_local_id || !pm_ops->get_priority) {
+	if (!pm_ops->get_local_id || !pm_ops->get_priority ||
+	    !pm_ops->accept_new_subflow) {
 		pr_err("%s does not implement required ops\n", pm_ops->name);
 		return -EINVAL;
 	}

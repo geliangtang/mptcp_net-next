@@ -1022,6 +1022,7 @@ bool mptcp_pm_addr_families_match(const struct sock *sk,
 void mptcp_pm_subflow_chk_stale(const struct mptcp_sock *msk, struct sock *ssk);
 void mptcp_pm_new_connection(struct mptcp_sock *msk, const struct sock *ssk, int server_side);
 void mptcp_pm_fully_established(struct mptcp_sock *msk, const struct sock *ssk);
+bool mptcp_pm_accept_new_subflow(struct mptcp_sock *msk, bool allow);
 bool mptcp_pm_allow_new_subflow(struct mptcp_sock *msk);
 void mptcp_pm_connection_closed(struct mptcp_sock *msk);
 void mptcp_pm_subflow_established(struct mptcp_sock *msk);
@@ -1206,6 +1207,32 @@ static inline bool mptcp_pm_add_addr_c_flag_case(struct mptcp_sock *msk)
 	       msk->pm.local_addr_used == 0 &&
 	       mptcp_pm_get_limit_add_addr_accepted(msk) == 0 &&
 	       msk->pm.extra_subflows < mptcp_pm_get_limit_extra_subflows(msk);
+}
+
+static inline bool __mptcp_pm_accept_subflow(struct mptcp_sock *msk)
+{
+	struct mptcp_pm_data *pm = &msk->pm;
+	unsigned int limit_extra_subflows;
+	bool ret;
+
+	limit_extra_subflows = mptcp_pm_get_limit_extra_subflows(msk);
+
+	ret = pm->extra_subflows < limit_extra_subflows;
+	if (ret && pm->extra_subflows + 1 == limit_extra_subflows)
+		WRITE_ONCE(pm->accept_subflow, false);
+
+	return ret;
+}
+
+static inline bool mptcp_pm_accept_subflow(struct mptcp_sock *msk)
+{
+	bool ret;
+
+	spin_lock_bh(&msk->pm.lock);
+	ret = __mptcp_pm_accept_subflow(msk);
+	spin_unlock_bh(&msk->pm.lock);
+
+	return ret;
 }
 
 void mptcp_sockopt_sync_locked(struct mptcp_sock *msk, struct sock *ssk);
