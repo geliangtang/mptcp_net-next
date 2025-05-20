@@ -4192,6 +4192,8 @@ static int mptcp_stream_accept(struct socket *sock, struct socket *newsock,
 		mptcp_graft_subflows(newsk);
 		mptcp_rps_record_subflows(msk);
 
+		__mptcp_propagate_sndbuf(newsk, ssk);
+
 		/* Do late cleanup for the first subflow as necessary. Also
 		 * deal with bad peers not doing a complete shutdown.
 		 */
