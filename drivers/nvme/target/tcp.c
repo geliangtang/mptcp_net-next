@@ -656,6 +656,9 @@ static int nvmet_try_send_data(struct nvmet_tcp_cmd *cmd, bool last_in_batch)
 		    queue->data_digest || !queue->nvme_sq.sqhd_disabled)
 			msg.msg_flags |= MSG_MORE;
 
+		if (cmd->queue->sock->sk->sk_protocol == IPPROTO_MPTCP)
+			msg.msg_flags &= ~MSG_DONTWAIT;
+
 		bvec_set_page(&bvec, page, left, cmd->offset);
 		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, left);
 		ret = sock_sendmsg(cmd->queue->sock, &msg);
@@ -704,6 +707,9 @@ static int nvmet_try_send_response(struct nvmet_tcp_cmd *cmd,
 		msg.msg_flags |= MSG_MORE;
 	else
 		msg.msg_flags |= MSG_EOR;
+
+	if (cmd->queue->sock->sk->sk_protocol == IPPROTO_MPTCP)
+		msg.msg_flags &= ~MSG_DONTWAIT;
 
 	bvec_set_virt(&bvec, (void *)cmd->rsp_pdu + cmd->offset, left);
 	iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, left);
