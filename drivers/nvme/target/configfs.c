@@ -202,7 +202,8 @@ static ssize_t nvmet_addr_treq_store(struct config_item *item,
 	return -EINVAL;
 
 found:
-	if (port->disc_addr.trtype == NVMF_TRTYPE_TCP &&
+	if ((port->disc_addr.trtype == NVMF_TRTYPE_TCP ||
+	     port->disc_addr.trtype == NVMF_TRTYPE_MPTCP) &&
 	    port->disc_addr.tsas.tcp.sectype == NVMF_TCP_SECTYPE_TLS13) {
 		switch (nvmet_addr_treq[i].type) {
 		case NVMF_TREQ_NOT_SPECIFIED:
@@ -404,7 +405,8 @@ found:
 	port->disc_addr.trtype = nvmet_transport[i].type;
 	if (port->disc_addr.trtype == NVMF_TRTYPE_RDMA)
 		nvmet_port_init_tsas_rdma(port);
-	else if (port->disc_addr.trtype == NVMF_TRTYPE_TCP)
+	else if (port->disc_addr.trtype == NVMF_TRTYPE_TCP ||
+		 port->disc_addr.trtype == NVMF_TRTYPE_MPTCP)
 		nvmet_port_init_tsas_tcp(port, NVMF_TCP_SECTYPE_NONE);
 	return count;
 }
@@ -427,7 +429,8 @@ static ssize_t nvmet_addr_tsas_show(struct config_item *item,
 	struct nvmet_port *port = to_nvmet_port(item);
 	int i;
 
-	if (port->disc_addr.trtype == NVMF_TRTYPE_TCP) {
+	if (port->disc_addr.trtype == NVMF_TRTYPE_TCP ||
+	    port->disc_addr.trtype == NVMF_TRTYPE_MPTCP) {
 		for (i = 0; i < ARRAY_SIZE(nvmet_addr_tsas_tcp); i++) {
 			if (port->disc_addr.tsas.tcp.sectype == nvmet_addr_tsas_tcp[i].type)
 				return sprintf(page, "%s\n", nvmet_addr_tsas_tcp[i].name);
@@ -477,7 +480,8 @@ static ssize_t nvmet_addr_tsas_store(struct config_item *item,
 		qptype = nvmet_addr_tsas_rdma_store(page);
 		if (qptype == port->disc_addr.tsas.rdma.qptype)
 			return count;
-	} else if (port->disc_addr.trtype == NVMF_TRTYPE_TCP) {
+	} else if (port->disc_addr.trtype == NVMF_TRTYPE_TCP ||
+		   port->disc_addr.trtype == NVMF_TRTYPE_MPTCP) {
 		sectype = nvmet_addr_tsas_tcp_store(page);
 		if (sectype != NVMF_TCP_SECTYPE_INVALID)
 			goto found;
