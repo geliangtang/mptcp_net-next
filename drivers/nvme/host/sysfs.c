@@ -912,7 +912,8 @@ static umode_t nvme_tls_attrs_are_visible(struct kobject *kobj,
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
 
-	if (!ctrl->opts || strcmp(ctrl->opts->transport, "tcp"))
+	if (!ctrl->opts || (strcmp(ctrl->opts->transport, "tcp") &&
+			    strcmp(ctrl->opts->transport, "mptcp")))
 		return 0;
 
 	if (a == &dev_attr_tls_key.attr &&
