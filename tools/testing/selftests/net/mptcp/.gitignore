@@ -2,5 +2,6 @@
 mptcp_connect
 mptcp_diag
 mptcp_sockopt
+mptcp_splice
 pm_nl_ctl
 *.pcap
