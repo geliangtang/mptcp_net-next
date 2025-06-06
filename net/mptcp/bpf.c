@@ -913,11 +913,15 @@ static int bpf_mptcp_common_kfunc_filter(const struct bpf_prog *prog, u32 kfunc_
 	if (!btf_id_set8_contains(&bpf_mptcp_common_kfunc_ids, kfunc_id))
 		return 0;
 
+	if (prog->type == BPF_PROG_TYPE_CGROUP_SOCKOPT)
+		return 0;
+
 	if (prog->type != BPF_PROG_TYPE_STRUCT_OPS)
 		return -EACCES;
 
 #ifdef CONFIG_BPF_JIT
-	if (prog->aux->st_ops == &bpf_mptcp_sched_ops)
+	if (prog->aux->st_ops == &bpf_mptcp_pm_ops ||
+	    prog->aux->st_ops == &bpf_mptcp_sched_ops)
 		return 0;
 #endif
 	return -EACCES;
@@ -949,6 +953,8 @@ static int __init bpf_mptcp_kfunc_init(void)
 					       &bpf_mptcp_iter_kfunc_set);
 	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
 					       &bpf_mptcp_common_kfunc_set);
+	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_CGROUP_SOCKOPT,
+					       &bpf_mptcp_iter_kfunc_set);
 	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_CGROUP_SOCKOPT,
 					       &bpf_mptcp_common_kfunc_set);
 	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_TRACING,
