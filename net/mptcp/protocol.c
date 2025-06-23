@@ -1978,6 +1978,8 @@ wait_for_memory:
 
 out:
 	release_sock(sk);
+	if (copied == -EAGAIN)
+		pr_info("%s EAGAIN\n", __func__);
 	return copied;
 
 do_error:

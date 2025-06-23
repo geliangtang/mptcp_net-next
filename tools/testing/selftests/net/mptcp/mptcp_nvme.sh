@@ -1,6 +1,9 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
+#modprobe nvme_core nvme-fabrics nvme_tcp
+#modprobe nvmet nvmet_tcp
+
 trtype="${1:-mptcp}"
 traddr="${2:-127.0.0.1}"
 ns=1

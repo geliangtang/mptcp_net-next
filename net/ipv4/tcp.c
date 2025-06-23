@@ -1337,8 +1337,11 @@ wait_for_space:
 				 TCP_NAGLE_PUSH, size_goal);
 
 		err = sk_stream_wait_memory(sk, &timeo);
-		if (err != 0)
+		if (err != 0) {
+			if (err == -EAGAIN)
+				pr_info("%s EAGAIN\n", __func__);
 			goto do_error;
+		}
 
 		mss_now = tcp_send_mss(sk, &size_goal, flags);
 	}
