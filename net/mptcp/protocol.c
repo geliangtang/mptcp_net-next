@@ -594,6 +594,7 @@ static bool __mptcp_move_skbs_from_subflow(struct mptcp_sock *msk,
 	struct sock *sk = (struct sock *)msk;
 	bool more_data_avail;
 	struct tcp_sock *tp;
+	bool first = true;
 	bool ret = false;
 
 	pr_debug("msk=%p ssk=%p\n", msk, ssk);
@@ -604,8 +605,12 @@ static bool __mptcp_move_skbs_from_subflow(struct mptcp_sock *msk,
 		struct sk_buff *skb;
 		bool fin;
 
-		if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf)
-			break;
+		if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf) {
+			if (first)
+				first = false;
+			else
+				break;
+		}
 
 		/* try to move as much data as available */
 		map_remaining = subflow->map_data_len -
