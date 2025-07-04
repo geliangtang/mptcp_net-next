@@ -659,8 +659,10 @@ static int nvmet_try_send_data(struct nvmet_tcp_cmd *cmd, bool last_in_batch)
 		bvec_set_page(&bvec, page, left, cmd->offset);
 		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, left);
 		ret = sock_sendmsg(cmd->queue->sock, &msg);
-		if (ret <= 0)
+		if (ret <= 0) {
+			pr_info("%s ret=%d\n", __func__, ret);
 			return ret;
+		}
 
 		cmd->offset += ret;
 		cmd->wbytes_done += ret;
@@ -708,8 +710,10 @@ static int nvmet_try_send_response(struct nvmet_tcp_cmd *cmd,
 	bvec_set_virt(&bvec, (void *)cmd->rsp_pdu + cmd->offset, left);
 	iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, left);
 	ret = sock_sendmsg(cmd->queue->sock, &msg);
-	if (ret <= 0)
+	if (ret <= 0) {
+		pr_info("%s ret=%d\n", __func__, ret);
 		return ret;
+	}
 	cmd->offset += ret;
 	left -= ret;
 
@@ -825,13 +829,7 @@ static int nvmet_tcp_try_send_one(struct nvmet_tcp_queue *queue,
 		ret = nvmet_try_send_response(cmd, last_in_batch);
 
 done_send:
-	if (ret < 0) {
-		if (ret == -EAGAIN)
-			return 0;
-		return ret;
-	}
-
-	return 1;
+	return ret;
 }
 
 static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
@@ -841,11 +839,11 @@ static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
 
 	for (i = 0; i < budget; i++) {
 		ret = nvmet_tcp_try_send_one(queue, i == budget - 1);
-		if (unlikely(ret < 0)) {
+		if (unlikely(ret <= 0)) {
+			if (ret == 0 || ret == -EAGAIN)
+				break;
 			nvmet_tcp_socket_error(queue, ret);
 			goto done;
-		} else if (ret == 0) {
-			break;
 		}
 		(*sends)++;
 	}
@@ -1402,6 +1400,7 @@ static void nvmet_tcp_io_work(struct work_struct *w)
 		container_of(w, struct nvmet_tcp_queue, io_work);
 	bool pending;
 	int ret, ops = 0;
+	int retry = 0;
 
 	do {
 		pending = false;
@@ -1415,8 +1414,14 @@ static void nvmet_tcp_io_work(struct work_struct *w)
 		ret = nvmet_tcp_try_send(queue, NVMET_TCP_SEND_BUDGET, &ops);
 		if (ret > 0)
 			pending = true;
-		else if (ret < 0)
+		else if (ret < 0) {
+			if (ret == -EAGAIN && retry++ < 100) {
+				pr_info("%s retry=%d\n", __func__, retry);
+				pending = true;
+				continue;
+			}
 			return;
+		}
 
 	} while (pending && ops < NVMET_TCP_IO_WORK_BUDGET);
 
