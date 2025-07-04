@@ -42,13 +42,22 @@ sleep 0.5
 echo "nvme list"
 nvme list
 
+echo "lsof 1"
+lsof /dev/${devname}n1
+
 fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio --thread=1 --blocksize=4k --runtime=10 --time_based --rw=randread --numjobs=4 --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randread --filename=/dev/${devname}n1
 
 fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio --thread=1 --blocksize=4k --runtime=10 --time_based --rw=randwrite --numjobs=4 --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randread --filename=/dev/${devname}n1
 
 sleep 0.5
+
+echo "lsof 2"
+lsof /dev/${devname}n1
+
 echo "nvme disconnect"
 nvme disconnect -n ${nqn}
+echo "nvme list"
+nvme list
 
 rm -rf /sys/kernel/config/nvmet/ports/${port}/subsystems/${trtype}subsys
 rmdir /sys/kernel/config/nvmet/ports/${port}
