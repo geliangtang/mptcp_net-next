@@ -829,7 +829,13 @@ static int nvmet_tcp_try_send_one(struct nvmet_tcp_queue *queue,
 		ret = nvmet_try_send_response(cmd, last_in_batch);
 
 done_send:
-	return ret;
+	if (ret < 0) {
+		if (ret == -EAGAIN)
+			return 0;
+		return ret;
+	}
+
+	return 1;
 }
 
 static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
@@ -839,11 +845,11 @@ static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
 
 	for (i = 0; i < budget; i++) {
 		ret = nvmet_tcp_try_send_one(queue, i == budget - 1);
-		if (unlikely(ret <= 0)) {
-			if (ret == 0 || ret == -EAGAIN)
-				break;
+		if (unlikely(ret < 0)) {
 			nvmet_tcp_socket_error(queue, ret);
 			goto done;
+		} else if (ret == 0) {
+			break;
 		}
 		(*sends)++;
 	}
@@ -1400,7 +1406,6 @@ static void nvmet_tcp_io_work(struct work_struct *w)
 		container_of(w, struct nvmet_tcp_queue, io_work);
 	bool pending;
 	int ret, ops = 0;
-	int retry = 0;
 
 	do {
 		pending = false;
@@ -1414,14 +1419,8 @@ static void nvmet_tcp_io_work(struct work_struct *w)
 		ret = nvmet_tcp_try_send(queue, NVMET_TCP_SEND_BUDGET, &ops);
 		if (ret > 0)
 			pending = true;
-		else if (ret < 0) {
-			if (ret == -EAGAIN && retry++ < 100) {
-				pr_info("%s retry=%d\n", __func__, retry);
-				pending = true;
-				continue;
-			}
+		else if (ret < 0)
 			return;
-		}
 
 	} while (pending && ops < NVMET_TCP_IO_WORK_BUDGET);
 

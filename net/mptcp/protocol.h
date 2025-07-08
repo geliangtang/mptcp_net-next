@@ -958,6 +958,7 @@ static inline void __mptcp_sync_sndbuf(struct sock *sk)
 	struct mptcp_subflow_context *subflow;
 	int ssk_sndbuf, new_sndbuf;
 
+	//pr_info("%s 1 msk=%p sk->sk_sndbuf=%u\n", __func__, mptcp_sk(sk), sk->sk_sndbuf);
 	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
 		return;
 
@@ -970,6 +971,10 @@ static inline void __mptcp_sync_sndbuf(struct sock *sk)
 	}
 
 	/* the msk max wmem limit is <nr_subflows> * tcp wmem[2] */
+	//if (new_sndbuf <= 20480) {
+		//new_sndbuf *= 30;
+		//pr_info("%s msk=%p sk->sk_sndbuf=%u\n", __func__, mptcp_sk(sk), sk->sk_sndbuf);
+	//}
 	WRITE_ONCE(sk->sk_sndbuf, new_sndbuf);
 	mptcp_write_space(sk);
 }
