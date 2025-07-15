@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_RDMA_RXE) += rdma_rxe.o
+# ccflags-y += -DDEBUG
 
 rdma_rxe-y := \
 	rxe.o \
