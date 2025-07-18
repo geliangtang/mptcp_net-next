@@ -2088,6 +2088,8 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 		goto err_sock;
 	}
 
+	pr_info("%s nport->max_queue_size=%u\n", __func__, nport->max_queue_size);
+
 	nport->priv = port;
 	pr_info("enabling port %d (%pISpc)\n",
 		le16_to_cpu(nport->disc_addr.portid), &port->addr);
@@ -2200,6 +2202,11 @@ static ssize_t nvmet_tcp_host_port_addr(struct nvmet_ctrl *ctrl,
 			(struct sockaddr *)&queue->sockaddr_peer);
 }
 
+static u16 nvmet_tcp_get_max_queue_size(const struct nvmet_ctrl *ctrl)
+{
+	return 1024;
+}
+
 static const struct nvmet_fabrics_ops nvmet_tcp_ops = {
 	.owner			= THIS_MODULE,
 	.type			= NVMF_TRTYPE_TCP,
@@ -2211,6 +2218,7 @@ static const struct nvmet_fabrics_ops nvmet_tcp_ops = {
 	.install_queue		= nvmet_tcp_install_queue,
 	.disc_traddr		= nvmet_tcp_disc_port_addr,
 	.host_traddr		= nvmet_tcp_host_port_addr,
+	.get_max_queue_size	= nvmet_tcp_get_max_queue_size,
 };
 
 static const struct nvmet_fabrics_ops nvmet_mptcp_ops = {

@@ -1451,6 +1451,8 @@ static void nvmet_init_cap(struct nvmet_ctrl *ctrl)
 	else
 		ctrl->cap |= ctrl->port->max_queue_size - 1;
 
+	pr_info("%s ctrl->port->max_queue_size=%d\n", __func__, ctrl->port->max_queue_size);
+
 	if (nvmet_is_passthru_subsys(ctrl->subsys))
 		nvmet_passthrough_override_cap(ctrl);
 }

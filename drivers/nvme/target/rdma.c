@@ -1963,6 +1963,8 @@ static int nvmet_rdma_add_port(struct nvmet_port *nport)
 		nport->max_queue_size = NVME_RDMA_MAX_QUEUE_SIZE;
 	}
 
+	pr_info("%s nport->max_queue_size=%u\n", __func__, nport->max_queue_size);
+
 	ret = inet_pton_with_scope(&init_net, af, nport->disc_addr.traddr,
 			nport->disc_addr.trsvcid, &port->addr);
 	if (ret) {
