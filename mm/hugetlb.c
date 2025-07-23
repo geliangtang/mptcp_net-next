@@ -7,7 +7,6 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/seq_file.h>
-#include <linux/sysctl.h>
 #include <linux/highmem.h>
 #include <linux/mmu_notifier.h>
 #include <linux/nodemask.h>
@@ -19,7 +18,6 @@
 #include <linux/mutex.h>
 #include <linux/memblock.h>
 #include <linux/minmax.h>
-#include <linux/sysfs.h>
 #include <linux/slab.h>
 #include <linux/sched/mm.h>
 #include <linux/mmdebug.h>
@@ -53,6 +51,8 @@
 #include "internal.h"
 #include "hugetlb_vmemmap.h"
 #include "hugetlb_cma.h"
+#include "hugetlb_folio.h"
+#include "hugetlb_sys.h"
 #include <linux/page-isolation.h>
 
 int hugetlb_max_hstate __read_mostly;
@@ -1275,7 +1275,7 @@ void clear_vma_resv_huge_pages(struct vm_area_struct *vma)
 	hugetlb_dup_vma_private(vma);
 }
 
-static void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio)
+void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio)
 {
 	int nid = folio_nid(folio);
 
@@ -1428,8 +1428,8 @@ static int get_valid_node_allowed(int nid, nodemask_t *nodes_allowed)
  * next node from which to allocate, handling wrap at end of node
  * mask.
  */
-static int hstate_next_node_to_alloc(int *next_node,
-					nodemask_t *nodes_allowed)
+int hstate_next_node_to_alloc(int *next_node,
+			      nodemask_t *nodes_allowed)
 {
 	int nid;
 
@@ -1447,7 +1447,7 @@ static int hstate_next_node_to_alloc(int *next_node,
  * next node id whether or not we find a free huge page to free so
  * that the next attempt to free addresses the next node.
  */
-static int hstate_next_node_to_free(struct hstate *h, nodemask_t *nodes_allowed)
+int hstate_next_node_to_free(struct hstate *h, nodemask_t *nodes_allowed)
 {
 	int nid;
 
@@ -1458,18 +1458,6 @@ static int hstate_next_node_to_free(struct hstate *h, nodemask_t *nodes_allowed)
 
 	return nid;
 }
-
-#define for_each_node_mask_to_alloc(next_node, nr_nodes, node, mask)		\
-	for (nr_nodes = nodes_weight(*mask);				\
-		nr_nodes > 0 &&						\
-		((node = hstate_next_node_to_alloc(next_node, mask)) || 1);	\
-		nr_nodes--)
-
-#define for_each_node_mask_to_free(hs, nr_nodes, node, mask)		\
-	for (nr_nodes = nodes_weight(*mask);				\
-		nr_nodes > 0 &&						\
-		((node = hstate_next_node_to_free(hs, mask)) || 1);	\
-		nr_nodes--)
 
 #ifdef CONFIG_ARCH_HAS_GIGANTIC_PAGE
 #ifdef CONFIG_CONTIG_ALLOC
@@ -1526,8 +1514,8 @@ static struct folio *alloc_gigantic_folio(int order, gfp_t gfp_mask, int nid,
  *
  * Must be called with hugetlb lock held.
  */
-static void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
-							bool adjust_surplus)
+void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
+			  bool adjust_surplus)
 {
 	int nid = folio_nid(folio);
 
@@ -1562,8 +1550,8 @@ static void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
 	h->nr_huge_pages_node[nid]--;
 }
 
-static void add_hugetlb_folio(struct hstate *h, struct folio *folio,
-			     bool adjust_surplus)
+void add_hugetlb_folio(struct hstate *h, struct folio *folio,
+		       bool adjust_surplus)
 {
 	int nid = folio_nid(folio);
 
@@ -1688,13 +1676,13 @@ static void free_hpage_workfn(struct work_struct *work)
 }
 static DECLARE_WORK(free_hpage_work, free_hpage_workfn);
 
-static inline void flush_free_hpage_work(struct hstate *h)
+void flush_free_hpage_work(struct hstate *h)
 {
 	if (hugetlb_vmemmap_optimizable(h))
 		flush_work(&free_hpage_work);
 }
 
-static void update_and_free_hugetlb_folio(struct hstate *h, struct folio *folio,
+void update_and_free_hugetlb_folio(struct hstate *h, struct folio *folio,
 				 bool atomic)
 {
 	if (!folio_test_hugetlb_vmemmap_optimized(folio) || !atomic) {
@@ -1713,59 +1701,8 @@ static void update_and_free_hugetlb_folio(struct hstate *h, struct folio *folio,
 		schedule_work(&free_hpage_work);
 }
 
-static void bulk_vmemmap_restore_error(struct hstate *h,
-					struct list_head *folio_list,
-					struct list_head *non_hvo_folios)
-{
-	struct folio *folio, *t_folio;
-
-	if (!list_empty(non_hvo_folios)) {
-		/*
-		 * Free any restored hugetlb pages so that restore of the
-		 * entire list can be retried.
-		 * The idea is that in the common case of ENOMEM errors freeing
-		 * hugetlb pages with vmemmap we will free up memory so that we
-		 * can allocate vmemmap for more hugetlb pages.
-		 */
-		list_for_each_entry_safe(folio, t_folio, non_hvo_folios, lru) {
-			list_del(&folio->lru);
-			spin_lock_irq(&hugetlb_lock);
-			__folio_clear_hugetlb(folio);
-			spin_unlock_irq(&hugetlb_lock);
-			update_and_free_hugetlb_folio(h, folio, false);
-			cond_resched();
-		}
-	} else {
-		/*
-		 * In the case where there are no folios which can be
-		 * immediately freed, we loop through the list trying to restore
-		 * vmemmap individually in the hope that someone elsewhere may
-		 * have done something to cause success (such as freeing some
-		 * memory).  If unable to restore a hugetlb page, the hugetlb
-		 * page is made a surplus page and removed from the list.
-		 * If are able to restore vmemmap and free one hugetlb page, we
-		 * quit processing the list to retry the bulk operation.
-		 */
-		list_for_each_entry_safe(folio, t_folio, folio_list, lru)
-			if (hugetlb_vmemmap_restore_folio(h, folio)) {
-				list_del(&folio->lru);
-				spin_lock_irq(&hugetlb_lock);
-				add_hugetlb_folio(h, folio, true);
-				spin_unlock_irq(&hugetlb_lock);
-			} else {
-				list_del(&folio->lru);
-				spin_lock_irq(&hugetlb_lock);
-				__folio_clear_hugetlb(folio);
-				spin_unlock_irq(&hugetlb_lock);
-				update_and_free_hugetlb_folio(h, folio, false);
-				cond_resched();
-				break;
-			}
-	}
-}
-
-static void update_and_free_pages_bulk(struct hstate *h,
-						struct list_head *folio_list)
+void update_and_free_pages_bulk(struct hstate *h,
+				struct list_head *folio_list)
 {
 	long ret;
 	struct folio *folio, *t_folio;
@@ -1894,7 +1831,7 @@ static void account_new_hugetlb_folio(struct hstate *h, struct folio *folio)
 	h->nr_huge_pages_node[folio_nid(folio)]++;
 }
 
-static void init_new_hugetlb_folio(struct folio *folio)
+void init_new_hugetlb_folio(struct folio *folio)
 {
 	__folio_set_hugetlb(folio);
 	INIT_LIST_HEAD(&folio->lru);
@@ -2006,8 +1943,8 @@ static struct folio *alloc_fresh_hugetlb_folio(struct hstate *h,
 	return folio;
 }
 
-static void prep_and_add_allocated_folios(struct hstate *h,
-					struct list_head *folio_list)
+void prep_and_add_allocated_folios(struct hstate *h,
+				   struct list_head *folio_list)
 {
 	unsigned long flags;
 	struct folio *folio, *tmp_f;
@@ -2028,10 +1965,10 @@ static void prep_and_add_allocated_folios(struct hstate *h,
  * Allocates a fresh hugetlb page in a node interleaved manner.  The page
  * will later be added to the appropriate hugetlb pool.
  */
-static struct folio *alloc_pool_huge_folio(struct hstate *h,
-					nodemask_t *nodes_allowed,
-					nodemask_t *node_alloc_noretry,
-					int *next_node)
+struct folio *alloc_pool_huge_folio(struct hstate *h,
+				nodemask_t *nodes_allowed,
+				nodemask_t *node_alloc_noretry,
+				int *next_node)
 {
 	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE;
 	int nr_nodes, node;
@@ -2055,7 +1992,7 @@ static struct folio *alloc_pool_huge_folio(struct hstate *h,
  * an additional call to free the page to low level allocators.
  * Called with hugetlb_lock locked.
  */
-static struct folio *remove_pool_hugetlb_folio(struct hstate *h,
+struct folio *remove_pool_hugetlb_folio(struct hstate *h,
 		nodemask_t *nodes_allowed, bool acct_surplus)
 {
 	int nr_nodes, node;
@@ -3741,6 +3678,7 @@ static void __init report_hugepages(void)
 	}
 }
 
+<<<<<<< HEAD
 #ifdef CONFIG_HIGHMEM
 static void try_to_free_low(struct hstate *h, unsigned long count,
 						nodemask_t *nodes_allowed)
@@ -5091,131 +5029,6 @@ static unsigned int allowed_mems_nr(struct hstate *h)
 
 	return nr;
 }
-
-#ifdef CONFIG_SYSCTL
-static int proc_hugetlb_doulongvec_minmax(const struct ctl_table *table, int write,
-					  void *buffer, size_t *length,
-					  loff_t *ppos, unsigned long *out)
-{
-	struct ctl_table dup_table;
-
-	/*
-	 * In order to avoid races with __do_proc_doulongvec_minmax(), we
-	 * can duplicate the @table and alter the duplicate of it.
-	 */
-	dup_table = *table;
-	dup_table.data = out;
-
-	return proc_doulongvec_minmax(&dup_table, write, buffer, length, ppos);
-}
-
-static int hugetlb_sysctl_handler_common(bool obey_mempolicy,
-			 const struct ctl_table *table, int write,
-			 void *buffer, size_t *length, loff_t *ppos)
-{
-	struct hstate *h = &default_hstate;
-	unsigned long tmp = h->max_huge_pages;
-	int ret;
-
-	if (!hugepages_supported())
-		return -EOPNOTSUPP;
-
-	ret = proc_hugetlb_doulongvec_minmax(table, write, buffer, length, ppos,
-					     &tmp);
-	if (ret)
-		goto out;
-
-	if (write)
-		ret = __nr_hugepages_store_common(obey_mempolicy, h,
-						  NUMA_NO_NODE, tmp, *length);
-out:
-	return ret;
-}
-
-static int hugetlb_sysctl_handler(const struct ctl_table *table, int write,
-			  void *buffer, size_t *length, loff_t *ppos)
-{
-
-	return hugetlb_sysctl_handler_common(false, table, write,
-							buffer, length, ppos);
-}
-
-#ifdef CONFIG_NUMA
-static int hugetlb_mempolicy_sysctl_handler(const struct ctl_table *table, int write,
-			  void *buffer, size_t *length, loff_t *ppos)
-{
-	return hugetlb_sysctl_handler_common(true, table, write,
-							buffer, length, ppos);
-}
-#endif /* CONFIG_NUMA */
-
-static int hugetlb_overcommit_handler(const struct ctl_table *table, int write,
-		void *buffer, size_t *length, loff_t *ppos)
-{
-	struct hstate *h = &default_hstate;
-	unsigned long tmp;
-	int ret;
-
-	if (!hugepages_supported())
-		return -EOPNOTSUPP;
-
-	tmp = h->nr_overcommit_huge_pages;
-
-	if (write && hstate_is_gigantic(h))
-		return -EINVAL;
-
-	ret = proc_hugetlb_doulongvec_minmax(table, write, buffer, length, ppos,
-					     &tmp);
-	if (ret)
-		goto out;
-
-	if (write) {
-		spin_lock_irq(&hugetlb_lock);
-		h->nr_overcommit_huge_pages = tmp;
-		spin_unlock_irq(&hugetlb_lock);
-	}
-out:
-	return ret;
-}
-
-static const struct ctl_table hugetlb_table[] = {
-	{
-		.procname	= "nr_hugepages",
-		.data		= NULL,
-		.maxlen		= sizeof(unsigned long),
-		.mode		= 0644,
-		.proc_handler	= hugetlb_sysctl_handler,
-	},
-#ifdef CONFIG_NUMA
-	{
-		.procname       = "nr_hugepages_mempolicy",
-		.data           = NULL,
-		.maxlen         = sizeof(unsigned long),
-		.mode           = 0644,
-		.proc_handler   = &hugetlb_mempolicy_sysctl_handler,
-	},
-#endif
-	{
-		.procname	= "hugetlb_shm_group",
-		.data		= &sysctl_hugetlb_shm_group,
-		.maxlen		= sizeof(gid_t),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
-	{
-		.procname	= "nr_overcommit_hugepages",
-		.data		= NULL,
-		.maxlen		= sizeof(unsigned long),
-		.mode		= 0644,
-		.proc_handler	= hugetlb_overcommit_handler,
-	},
-};
-
-static void __init hugetlb_sysctl_init(void)
-{
-	register_sysctl_init("vm", hugetlb_table);
-}
-#endif /* CONFIG_SYSCTL */
 
 void hugetlb_report_meminfo(struct seq_file *m)
 {
