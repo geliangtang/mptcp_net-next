@@ -572,8 +572,10 @@ struct page * __meminit __populate_section_memmap(unsigned long pfn,
 
 	if (vmemmap_can_optimize(altmap, pgmap))
 		r = vmemmap_populate_compound_pages(pfn, start, end, nid, pgmap);
-	else
+	else {
+		pr_info("%s call vmemmap_populate\n", __func__);
 		r = vmemmap_populate(start, end, nid, altmap);
+	}
 
 	if (r < 0)
 		return NULL;

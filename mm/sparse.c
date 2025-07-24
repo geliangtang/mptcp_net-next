@@ -536,6 +536,7 @@ static void __init sparse_init_nid(int nid, unsigned long pnum_begin,
 	unsigned long pnum;
 	struct page *map;
 	struct mem_section *ms;
+	int i = 0;
 
 	if (sparse_usage_init(nid, map_count)) {
 		pr_err("%s: node[%d] usemap allocation failed", __func__, nid);
@@ -554,6 +555,8 @@ static void __init sparse_init_nid(int nid, unsigned long pnum_begin,
 
 		ms = __nr_to_section(pnum);
 		if (!preinited_vmemmap_section(ms)) {
+			pr_info("%s call __populate_section_memmap %d pfn=%lu(0x%lx) nr_pages=%lu(0x%lx) nid=%d\n",
+				 __func__, i++, pfn, pfn, PAGES_PER_SECTION, PAGES_PER_SECTION, nid);
 			map = __populate_section_memmap(pfn, PAGES_PER_SECTION,
 					nid, NULL, NULL);
 			if (!map) {

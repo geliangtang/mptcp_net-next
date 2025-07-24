@@ -1014,7 +1014,7 @@ static bool mptcp_frag_can_collapse_to(const struct mptcp_sock *msk,
 				       const struct page_frag *pfrag,
 				       const struct mptcp_data_frag *df)
 {
-	return df && pfrag->page == df->page &&
+	return df && pfrag->page == folio_page(df->folio, 0) &&
 		pfrag->size - pfrag->offset > 0 &&
 		pfrag->offset == (df->offset + df->data_len) &&
 		df->data_seq + df->data_len == msk->write_seq;
@@ -1032,7 +1032,7 @@ static void dfrag_clear(struct sock *sk, struct mptcp_data_frag *dfrag)
 
 	list_del(&dfrag->list);
 	dfrag_uncharge(sk, len);
-	put_page(dfrag->page);
+	folio_put(dfrag->folio);
 }
 
 /* called under both the msk socket lock and the data lock */
@@ -1141,12 +1141,23 @@ static bool mptcp_page_frag_refill(struct sock *sk, struct page_frag *pfrag)
 	return false;
 }
 
+// __page_to_pfn page=ffffea0000490200 vmemmap=ffffea0000000000 pfn=12408
+// 490200 / 12408
+#define ___page_to_pfn(page)		\
+({					\
+	(unsigned long)((page) - vmemmap); \
+})
+
+//_printk("__page_to_pfn page=%lx vmemmap=%lx pfn=%lx\n", (unsigned long)(page), (unsigned long)vmemmap, (unsigned long)((page) - vmemmap)); 
+
 static struct mptcp_data_frag *
 mptcp_carve_data_frag(const struct mptcp_sock *msk, struct page_frag *pfrag)
 {
 	int orig_offset = pfrag->offset;
 	int offset = ALIGN(orig_offset, sizeof(long));
 	struct mptcp_data_frag *dfrag;
+	phys_addr_t phys_addr;
+	unsigned long pfn;
 
 	dfrag = (struct mptcp_data_frag *)(page_to_virt(pfrag->page) + offset);
 	dfrag->data_len = 0;
@@ -1154,7 +1165,34 @@ mptcp_carve_data_frag(const struct mptcp_sock *msk, struct page_frag *pfrag)
 	dfrag->overhead = offset - orig_offset + sizeof(struct mptcp_data_frag);
 	dfrag->offset = offset + sizeof(struct mptcp_data_frag);
 	dfrag->already_sent = 0;
-	dfrag->page = pfrag->page;
+	dfrag->folio = page_folio(pfrag->page);
+
+	//for (int i = 0; i < folio_nr_pages(dfrag->folio); i++)
+	//	pr_info("%s folio_page(%d)=%px\n", __func__, i, folio_page(dfrag->folio, i));
+
+	//int nid = page_to_nid(pfrag->page);
+	//pfn = page_to_pfn(pfrag->page);
+	pfn = ___page_to_pfn(pfrag->page);
+	phys_addr = PFN_PHYS(pfn);
+	// #define __VMEMMAP_BASE_L4       0xffffea0000000000UL
+	// BITS_PER_LONG=64,
+	// PGDIR_SHIFT=39, P4D_SHIFT=39, PUD_SHIFT=30, PMD_SHIFT=21, PAGE_SHIFT=12
+	// |   | PGD | PUD | PMD | PTE | Offset  |
+	// | 16   9    9      9    9   |    12   |
+	// |                     |          21   |
+	// |               |                30   |
+	// |         |                      39   |
+	// |         |                      39   |
+	// |   |                            48   |
+	// |                                64   |
+	// VIRTUAL_MASK_SHIFT=47, PHYSICAL_MASK_SHIFT=52
+	// # cat /proc/cpuinfo | grep "address sizes"
+	// address sizes	: 42 bits physical, 48 bits virtual
+	//pr_info("BITS_PER_LONG=%u, PGDIR_SHIFT=%u, P4D_SHIFT=%u, PUD_SHIFT=%u, PMD_SHIFT=%u, PAGE_SHIFT=%u, VIRTUAL_MASK_SHIFT=%u, PHYSICAL_MASK_SHIFT=%u\n",
+	//	BITS_PER_LONG, PGDIR_SHIFT, P4D_SHIFT, PUD_SHIFT, PMD_SHIFT, PAGE_SHIFT, __VIRTUAL_MASK_SHIFT, __PHYSICAL_MASK_SHIFT);
+	//pr_info("PGDIR_SIZE=%lu, P4D_SIZE=%lu, PUD_SIZE=%lu, PMD_SIZE=%lu, PAGE_SIZE=%lu\n",
+	//	PGDIR_SIZE, P4D_SIZE, PUD_SIZE, PMD_SIZE, PAGE_SIZE);
+	//pr_info("page=%px flags=%lu nid=%d pfn=%lx phys_addr=0x%llx\n", pfrag->page, pfrag->page->flags, nid, pfn, (u64)phys_addr);
 
 	return dfrag;
 }
@@ -1321,7 +1359,7 @@ static int mptcp_sendmsg_frag(struct sock *sk, struct sock *ssk,
 		}
 
 		i = skb_shinfo(skb)->nr_frags;
-		can_coalesce = skb_can_coalesce(skb, i, dfrag->page, offset);
+		can_coalesce = skb_can_coalesce(skb, i, &dfrag->folio->page, offset);
 		if (!can_coalesce && i >= READ_ONCE(net_hotdata.sysctl_max_skb_frags)) {
 			tcp_mark_push(tcp_sk(ssk), skb);
 			goto alloc_skb;
@@ -1363,8 +1401,8 @@ alloc_skb:
 	if (can_coalesce) {
 		skb_frag_size_add(&skb_shinfo(skb)->frags[i - 1], copy);
 	} else {
-		get_page(dfrag->page);
-		skb_fill_page_desc(skb, i, dfrag->page, offset, copy);
+		folio_get(dfrag->folio);
+		skb_fill_page_desc(skb, i, &dfrag->folio->page, offset, copy);
 	}
 
 	skb->len += copy;
@@ -1937,7 +1975,7 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 			goto wait_for_memory;
 
 		ret = do_copy_data_nocache(sk, psize, &msg->msg_iter,
-					   page_address(dfrag->page) + offset);
+					   page_address(&dfrag->folio->page) + offset);
 		if (ret)
 			goto do_error;
 
@@ -1954,7 +1992,7 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 		 */
 		sk_wmem_queued_add(sk, frag_truesize);
 		if (!dfrag_collapsed) {
-			get_page(dfrag->page);
+			folio_get(dfrag->folio);
 			list_add_tail(&dfrag->list, &msk->rtx_queue);
 			if (!msk->first_pending)
 				WRITE_ONCE(msk->first_pending, dfrag);
