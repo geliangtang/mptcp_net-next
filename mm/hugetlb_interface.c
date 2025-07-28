@@ -228,6 +228,50 @@ static const struct attribute_group hugetlb_node_group = {
 	.attrs = hugetlb_node_attrs,
 };
 
+static ssize_t demote_size_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf)
+{
+	struct hstate *hstate = hstate_kobject_to_hstate(kobj);
+	unsigned long demote_size = (PAGE_SIZE << hstate->demote_order) / SZ_1K;
+
+	return sysfs_emit(buf, "%lukB\n", demote_size);
+}
+
+static ssize_t demote_size_store(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 const char *buf, size_t len)
+{
+	struct hstate *demote_hstate;
+	struct hstate *hstate = hstate_kobject_to_hstate(kobj);
+
+	demote_hstate = size_to_hstate(memparse(buf, NULL));
+	if (!demote_hstate)
+		return -EINVAL;
+
+	if (demote_hstate->order < HUGETLB_PAGE_ORDER)
+		return -EINVAL;
+
+	if (demote_hstate->order >= hstate->order)
+		return -EINVAL;
+
+	/* resize_lock synchronizes access to demote size and writes */
+	mutex_lock(&hstate->resize_lock);
+	hstate->demote_order = demote_hstate->order;
+	mutex_unlock(&hstate->resize_lock);
+
+	return len;
+}
+HUGETLB_ATTR_RW(demote_size);
+
+static struct attribute *hugetlb_demote_attrs[] = {
+	&demote_size_attr.attr,
+	NULL,
+};
+
+static const struct attribute_group hugetlb_demote_group = {
+	.attrs = hugetlb_demote_attrs,
+};
+
 static struct kobject *hugetlb_create_group(struct hstate *hstate,
 					    struct kobject *hugepages_kobj,
 					    const struct attribute_group *group)
@@ -239,7 +283,12 @@ static struct kobject *hugetlb_create_group(struct hstate *hstate,
 		return NULL;
 	if (sysfs_create_group(hstate_kobj, group))
 		goto put_kobj;
+	if (hstate->demote_order && sysfs_create_group(hstate_kobj,
+						       &hugetlb_demote_group))
+		goto remove_group;
 	return hstate_kobj;
+remove_group:
+	sysfs_remove_group(hstate_kobj, group);
 put_kobj:
 	kobject_put(hstate_kobj);
 	return NULL;
@@ -249,6 +298,8 @@ static void hugetlb_remove_group(struct hstate *hstate,
 				 struct kobject *hstate_kobj,
 				 const struct attribute_group *group)
 {
+	if (hstate->demote_order)
+		sysfs_remove_group(hstate_kobj, &hugetlb_demote_group);
 	sysfs_remove_group(hstate_kobj, group);
 	kobject_put(hstate_kobj);
 }
