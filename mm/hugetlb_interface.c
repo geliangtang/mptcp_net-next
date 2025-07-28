@@ -56,6 +56,20 @@ static struct hugetlb_sysfs *sysfs_node[MAX_NUMNODES];
 	HUGETLB_DEFINE_METADATA_NODE_SHOW(_name, member)		\
 	HUGETLB_ATTR_RW(_name)
 
+#define HUGETLB_DEFINE_METADATA_SHOW(_name, member)			\
+	static ssize_t _name##_show(struct kobject *kobj,		\
+				    struct kobj_attribute *attr,	\
+				    char *buf)				\
+	{								\
+		struct hstate *hstate = hstate_kobject_to_hstate(kobj);	\
+									\
+		return sysfs_emit(buf, "%lu\n", hstate->member);	\
+	}
+
+#define HUGETLB_METADATA_ATTR_RW(_name, member)				\
+	HUGETLB_DEFINE_METADATA_SHOW(_name, member)			\
+	HUGETLB_ATTR_RW(_name)
+
 static struct hstate *hstate_kobject_to_hstate(struct kobject *hstate_kobj)
 {
 	struct hstate *hstate;
@@ -131,8 +145,30 @@ static ssize_t nr_hugepages_store(struct kobject *kobj,
 }
 HUGETLB_METADATA_NODE_ATTR_RW(nr_hugepages, nr_huge_pages);
 
+static ssize_t nr_overcommit_hugepages_store(struct kobject *kobj,
+					     struct kobj_attribute *attr,
+					     const char *buf, size_t len)
+{
+	unsigned long nr_pages;
+	struct hstate *hstate = hstate_kobject_to_hstate(kobj);
+
+	if (hstate_is_gigantic(hstate))
+		return -EPERM;
+
+	if (kstrtoul(buf, 10, &nr_pages))
+		return -EINVAL;
+
+	spin_lock_irq(&hugetlb_lock);
+	hstate->nr_overcommit_huge_pages = nr_pages;
+	spin_unlock_irq(&hugetlb_lock);
+
+	return len;
+}
+HUGETLB_METADATA_ATTR_RW(nr_overcommit_hugepages, nr_overcommit_huge_pages);
+
 static struct attribute *hugetlb_attrs[] = {
 	&nr_hugepages_attr.attr,
+	&nr_overcommit_hugepages_attr.attr,
 	NULL,
 };
 
