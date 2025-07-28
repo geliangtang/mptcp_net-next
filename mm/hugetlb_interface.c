@@ -18,11 +18,14 @@
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
 #include <linux/module.h>
+#include <linux/memory.h>
 
 struct hugetlb_sysfs {
 	struct kobject *hugepages_kobj;			/* "hugepages" */
 	struct kobject *hstate_kobjs[HUGE_MAX_HSTATE];	/* "hugepages-<size>kB" */
 };
+
+static struct hugetlb_sysfs *sysfs_node[MAX_NUMNODES];
 
 static struct attribute *hugetlb_attrs[] = {
 	NULL,
@@ -104,9 +107,61 @@ err:
 
 static int hugetlb_create_node_sysfs(struct node *node)
 {
-	struct hugetlb_sysfs sysfs;
+	struct hugetlb_sysfs *sysfs = sysfs_node[node->dev.id];
 
-	return hugetlb_create_sysfs(&node->dev.kobj, &hugetlb_node_group, &sysfs);
+	if (sysfs)
+		return 0;
+
+	sysfs = kzalloc(sizeof(*sysfs), GFP_KERNEL);
+	if (!sysfs)
+		return -ENOMEM;
+
+	if (hugetlb_create_sysfs(&node->dev.kobj, &hugetlb_node_group, sysfs))
+		goto out;
+
+	sysfs_node[node->dev.id] = sysfs;
+	return 0;
+out:
+	kfree(sysfs);
+	return -ENOMEM;
+}
+
+static void hugetlb_remove_node_sysfs(struct node *node)
+{
+	struct hstate *hstate;
+	struct hugetlb_sysfs *sysfs = sysfs_node[node->dev.id];
+
+	if (!sysfs)
+		return;
+
+	for_each_hstate(hstate) {
+		struct kobject *hstate_kobj;
+
+		hstate_kobj = sysfs->hstate_kobjs[hstate_index(hstate)];
+		hugetlb_remove_group(hstate, hstate_kobj, &hugetlb_node_group);
+		sysfs->hstate_kobjs[hstate_index(hstate)] = NULL;
+	}
+	kobject_put(sysfs->hugepages_kobj);
+	kfree(sysfs);
+	sysfs_node[node->dev.id] = NULL;
+}
+
+static int __meminit hugetlb_memory_callback(struct notifier_block *self,
+					     unsigned long action, void *arg)
+{
+	int ret = 0;
+	struct memory_notify *mnb = arg;
+	int nid = mnb->status_change_nid;
+
+	if (nid == NUMA_NO_NODE)
+		return NOTIFY_DONE;
+
+	if (action == MEM_GOING_ONLINE)
+		ret = hugetlb_create_node_sysfs(node_devices[nid]);
+	else if (action == MEM_CANCEL_ONLINE || action == MEM_OFFLINE)
+		hugetlb_remove_node_sysfs(node_devices[nid]);
+
+	return notifier_from_errno(ret);
 }
 
 static int __init hugetlb_sysfs_init(void)
@@ -123,6 +178,7 @@ static int __init hugetlb_sysfs_init(void)
 		int nid;
 
 		get_online_mems();
+		hotplug_memory_notifier(hugetlb_memory_callback, 0);
 		for_each_node_state(nid, N_MEMORY)
 			hugetlb_create_node_sysfs(node_devices[nid]);
 		put_online_mems();
