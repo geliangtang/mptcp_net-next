@@ -166,9 +166,35 @@ static ssize_t nr_overcommit_hugepages_store(struct kobject *kobj,
 }
 HUGETLB_METADATA_ATTR_RW(nr_overcommit_hugepages, nr_overcommit_huge_pages);
 
+#ifdef CONFIG_NUMA
+static ssize_t nr_hugepages_mempolicy_show(struct kobject *kobj,
+					   struct kobj_attribute *attr,
+					   char *buf)
+{
+	return nr_hugepages_show(kobj, attr, buf);
+}
+
+static ssize_t nr_hugepages_mempolicy_store(struct kobject *kobj,
+					    struct kobj_attribute *attr,
+					    const char *buf, size_t len)
+{
+	struct hstate *hstate = hstate_kobject_to_hstate(kobj);
+	nodemask_t *allowed = &node_states[N_MEMORY], nodes;
+
+	if (init_nodemask_of_mempolicy(&nodes))
+		allowed = &nodes;
+
+	return nr_hugepages_store_policy(hstate, buf, len, NUMA_NO_NODE, allowed);
+}
+HUGETLB_ATTR_RW(nr_hugepages_mempolicy);
+#endif
+
 static struct attribute *hugetlb_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&nr_overcommit_hugepages_attr.attr,
+#ifdef CONFIG_NUMA
+	&nr_hugepages_mempolicy_attr.attr,
+#endif
 	NULL,
 };
 
