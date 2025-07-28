@@ -199,6 +199,7 @@ HUGETLB_ATTR_RW(nr_hugepages_mempolicy);
 
 HUGETLB_METADATA_ATTR_RO(resv_hugepages, resv_huge_pages);
 HUGETLB_METADATA_NODE_ATTR_RO(free_hugepages, free_huge_pages);
+HUGETLB_METADATA_NODE_ATTR_RO(surplus_hugepages, surplus_huge_pages);
 
 static struct attribute *hugetlb_attrs[] = {
 	&nr_hugepages_attr.attr,
@@ -208,6 +209,7 @@ static struct attribute *hugetlb_attrs[] = {
 #endif
 	&resv_hugepages_attr.attr,
 	&free_hugepages_attr.attr,
+	&surplus_hugepages_attr.attr,
 	NULL,
 };
 
@@ -218,6 +220,7 @@ static const struct attribute_group hugetlb_group = {
 static struct attribute *hugetlb_node_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&free_hugepages_attr.attr,
+	&surplus_hugepages_attr.attr,
 	NULL,
 };
 
