@@ -66,6 +66,10 @@ static struct hugetlb_sysfs *sysfs_node[MAX_NUMNODES];
 		return sysfs_emit(buf, "%lu\n", hstate->member);	\
 	}
 
+#define HUGETLB_METADATA_ATTR_RO(_name, member)				\
+	HUGETLB_DEFINE_METADATA_SHOW(_name, member)			\
+	HUGETLB_ATTR_RO(_name)
+
 #define HUGETLB_METADATA_ATTR_RW(_name, member)				\
 	HUGETLB_DEFINE_METADATA_SHOW(_name, member)			\
 	HUGETLB_ATTR_RW(_name)
@@ -189,12 +193,15 @@ static ssize_t nr_hugepages_mempolicy_store(struct kobject *kobj,
 HUGETLB_ATTR_RW(nr_hugepages_mempolicy);
 #endif
 
+HUGETLB_METADATA_ATTR_RO(resv_hugepages, resv_huge_pages);
+
 static struct attribute *hugetlb_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&nr_overcommit_hugepages_attr.attr,
 #ifdef CONFIG_NUMA
 	&nr_hugepages_mempolicy_attr.attr,
 #endif
+	&resv_hugepages_attr.attr,
 	NULL,
 };
 
