@@ -20,6 +20,8 @@
 #include <linux/module.h>
 #include <linux/memory.h>
 
+#include "hugetlb.h"
+
 struct hugetlb_sysfs {
 	struct kobject *hugepages_kobj;			/* "hugepages" */
 	struct kobject *hstate_kobjs[HUGE_MAX_HSTATE];	/* "hugepages-<size>kB" */
@@ -27,7 +29,110 @@ struct hugetlb_sysfs {
 
 static struct hugetlb_sysfs *sysfs_node[MAX_NUMNODES];
 
+#define HUGETLB_ATTR_RO(_name)	\
+	static struct kobj_attribute _name##_attr = __ATTR_RO(_name)
+#define HUGETLB_ATTR_WO(_name)	\
+	static struct kobj_attribute _name##_attr = __ATTR_WO(_name)
+#define HUGETLB_ATTR_RW(_name)	\
+	static struct kobj_attribute _name##_attr = __ATTR_RW(_name)
+
+#define HUGETLB_DEFINE_METADATA_NODE_SHOW(_name, member)		\
+	static ssize_t _name##_show(struct kobject *kobj,		\
+				    struct kobj_attribute *attr,	\
+				    char *buf)				\
+	{								\
+		int nid = hstate_kobject_to_nid(kobj);			\
+		struct hstate *hstate = hstate_kobject_to_hstate(kobj);	\
+		unsigned long nr_pages;					\
+									\
+		if (nid == NUMA_NO_NODE)				\
+			nr_pages = hstate->member;			\
+		else							\
+			nr_pages = hstate->member##_node[nid];		\
+		return sysfs_emit(buf, "%lu\n", nr_pages);		\
+	}
+
+#define HUGETLB_METADATA_NODE_ATTR_RW(_name, member)			\
+	HUGETLB_DEFINE_METADATA_NODE_SHOW(_name, member)		\
+	HUGETLB_ATTR_RW(_name)
+
+static struct hstate *hstate_kobject_to_hstate(struct kobject *hstate_kobj)
+{
+	struct hstate *hstate;
+
+	for_each_hstate(hstate) {
+		int offset = sizeof("hugepages-");
+		const char *name = kobject_name(hstate_kobj);
+
+		/*
+		 * It is more efficient to start the comparison from the @offset
+		 * of the hstate name since hstate name is always prefixed with
+		 * "hugepages-".
+		 */
+		if (!strcmp(hstate->name + offset, name + offset))
+			return hstate;
+	}
+	return NULL;
+}
+
+static inline int hstate_kobject_to_nid(struct kobject *hstate_kobj)
+{
+	struct kobject *root = hstate_kobj->parent->parent;
+
+	/*
+	 * The hugepages-<size>kB represented by @hstate_kobj directory could
+	 * be found in the following two different types of path.
+	 *
+	 *	1) /sys/kernel/mm/hugepages
+	 *	2) /sys/devices/system/node/node<ID>/hugepages
+	 *
+	 * So @root represents "mm" or "node<ID>" kobject. Note that 2) only
+	 * exists when CONFIG_NUMA is configured.
+	 */
+	if (!IS_ENABLED(CONFIG_NUMA) || root == mm_kobj)
+		return NUMA_NO_NODE;
+
+	/* @root represents "node<ID>" kobject if the code reaches here. */
+	return kobj_to_dev(root)->id;
+}
+
+static ssize_t nr_hugepages_store_policy(struct hstate *hstate,
+					 const char *buf, size_t len,
+					 int nid, nodemask_t *allowed)
+{
+	int ret;
+	unsigned long nr;
+
+	if (hstate_is_gigantic(hstate) && !gigantic_page_runtime_supported())
+		return -EPERM;
+
+	if (kstrtoul(buf, 10, &nr))
+		return -EINVAL;
+
+	ret = hugetlb_set_max_huge_pages(hstate, nr, nid, allowed);
+
+	return ret < 0 ? ret : len;
+}
+
+static ssize_t nr_hugepages_store(struct kobject *kobj,
+				  struct kobj_attribute *attr,
+				  const char *buf, size_t len)
+{
+	int nid = hstate_kobject_to_nid(kobj);
+	struct hstate *hstate = hstate_kobject_to_hstate(kobj);
+	nodemask_t *allowed = &node_states[N_MEMORY], nodes;
+
+	if (nid != NUMA_NO_NODE) {
+		init_nodemask_of_node(&nodes, nid);
+		allowed = &nodes;
+	}
+
+	return nr_hugepages_store_policy(hstate, buf, len, nid, allowed);
+}
+HUGETLB_METADATA_NODE_ATTR_RW(nr_hugepages, nr_huge_pages);
+
 static struct attribute *hugetlb_attrs[] = {
+	&nr_hugepages_attr.attr,
 	NULL,
 };
 
@@ -36,6 +141,7 @@ static const struct attribute_group hugetlb_group = {
 };
 
 static struct attribute *hugetlb_node_attrs[] = {
+	&nr_hugepages_attr.attr,
 	NULL,
 };
 

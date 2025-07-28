@@ -51,6 +51,7 @@
 #include <linux/node.h>
 #include <linux/page_owner.h>
 #include "internal.h"
+#include "hugetlb.h"
 #include "hugetlb_vmemmap.h"
 #include "hugetlb_cma.h"
 #include <linux/page-isolation.h>
@@ -3802,8 +3803,8 @@ found:
 }
 
 #define persistent_huge_pages(h) (h->nr_huge_pages - h->surplus_huge_pages)
-static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
-			      nodemask_t *nodes_allowed)
+int hugetlb_set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
+			       nodemask_t *nodes_allowed)
 {
 	unsigned long persistent_free_count;
 	unsigned long min_count;
@@ -4003,7 +4004,7 @@ static long demote_free_hugetlb_folios(struct hstate *src, struct hstate *dst,
 	list_splice_init(&ret_list, src_list);
 
 	/*
-	 * Taking target hstate mutex synchronizes with set_max_huge_pages.
+	 * Taking target hstate mutex synchronizes with hugetlb_set_max_huge_pages.
 	 * Without the mutex, pages added to target hstate could be marked
 	 * as surplus.
 	 *
@@ -4185,13 +4186,13 @@ static ssize_t __nr_hugepages_store_common(bool obey_mempolicy,
 	} else {
 		/*
 		 * Node specific request.  count adjustment happens in
-		 * set_max_huge_pages() after acquiring hugetlb_lock.
+		 * hugetlb_set_max_huge_pages() after acquiring hugetlb_lock.
 		 */
 		init_nodemask_of_node(&nodes_allowed, nid);
 		n_mask = &nodes_allowed;
 	}
 
-	err = set_max_huge_pages(h, count, nid, n_mask);
+	err = hugetlb_set_max_huge_pages(h, count, nid, n_mask);
 
 	return err ? err : len;
 }
