@@ -46,7 +46,7 @@ int BPF_PROG(simple_select, struct nvme_bpf_iter *iter, sector_t sector)
 SEC(".struct_ops")
 struct nvme_bpf_ops bpf_nvme_simple = {
 	.uuid = { 0x86, 0xee, 0x41, 0xd5, 0x25, 0x6b, 0x45, 0xd0, 0xa4, 0x81, 0x5e, 0x35, 0xf6, 0x02, 0xf5, 0x11 },
-	.subsysnqn = "blktests-subsystem-1",
+	.subsysnqn = "nqn.2025-05.com.UMIS:nvm-subsystem-sn-SS1Q24313Z2CD54R50B8",
 	.nsid = 1,
 	.select_path = (void *)simple_select,
 };
