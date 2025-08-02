@@ -414,6 +414,34 @@ static int mptcp_setsockopt_v6_set_tclass(struct mptcp_sock *msk, int optname,
 	return 0;
 }
 
+static int mptcp_setsockopt_v6_set_hops(struct mptcp_sock *msk, int optname,
+					sockptr_t optval, unsigned int optlen)
+{
+#if IS_ENABLED(CONFIG_MPTCP_IPV6)
+	struct mptcp_subflow_context *subflow;
+	struct sock *sk = (struct sock *)msk;
+	int err, val;
+
+	err = ipv6_setsockopt(sk, SOL_IPV6, optname, optval, optlen);
+	if (err)
+		return err;
+
+	lock_sock(sk);
+	sockopt_seq_inc(msk);
+	val = READ_ONCE(inet6_sk(sk)->hop_limit);
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+		bool slow;
+
+		slow = lock_sock_fast(ssk);
+		WRITE_ONCE(inet6_sk(ssk)->hop_limit, val);
+		unlock_sock_fast(ssk, slow);
+	}
+	release_sock(sk);
+#endif
+
+	return 0;
+}
 static int mptcp_setsockopt_v6(struct mptcp_sock *msk, int optname,
 			       sockptr_t optval, unsigned int optlen)
 {
@@ -458,6 +486,8 @@ static int mptcp_setsockopt_v6(struct mptcp_sock *msk, int optname,
 		break;
 	case IPV6_TCLASS:
 		return mptcp_setsockopt_v6_set_tclass(msk, optname, optval, optlen);
+	case IPV6_UNICAST_HOPS:
+		return mptcp_setsockopt_v6_set_hops(msk, optname, optval, optlen);
 	}
 
 	return ret;
@@ -1552,6 +1582,15 @@ static int mptcp_getsockopt_v6(struct mptcp_sock *msk, int optname,
 	case IPV6_TCLASS:
 		return mptcp_put_int_option(msk, optval, optlen,
 					    inet6_sk(sk)->tclass);
+	case IPV6_UNICAST_HOPS:
+#if IS_ENABLED(CONFIG_MPTCP_IPV6)
+		int val;
+
+		val = READ_ONCE(inet6_sk(sk)->hop_limit);
+		if (val < 0)
+			val = READ_ONCE(sock_net(sk)->ipv6.devconf_all->hop_limit);
+		return mptcp_put_int_option(msk, optval, optlen, val);
+#endif
 	}
 
 	return -EOPNOTSUPP;
@@ -1661,8 +1700,10 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 	inet_assign_bit(BIND_ADDRESS_NO_PORT, ssk, inet_test_bit(BIND_ADDRESS_NO_PORT, sk));
 	WRITE_ONCE(inet_sk(ssk)->local_port_range, READ_ONCE(inet_sk(sk)->local_port_range));
 	WRITE_ONCE(inet_sk(ssk)->uc_ttl, READ_ONCE(inet_sk(sk)->uc_ttl));
-	if (ssk->sk_family == AF_INET6)
+	if (ssk->sk_family == AF_INET6) {
 		WRITE_ONCE(inet6_sk(ssk)->tclass, READ_ONCE(inet6_sk(sk)->tclass));
+		WRITE_ONCE(inet6_sk(ssk)->hop_limit, READ_ONCE(inet6_sk(sk)->hop_limit));
+	}
 }
 
 void mptcp_sockopt_sync_locked(struct mptcp_sock *msk, struct sock *ssk)
