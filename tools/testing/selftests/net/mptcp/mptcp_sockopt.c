@@ -1238,7 +1238,7 @@ static void test_ip_tos_sockopt(int fd)
 	int r;
 
 	tos_in = rand() & 0xfc;
-	r = setsockopt(fd, SOL_IP, IP_TOS, &tos_in, sizeof(tos_out));
+	r = setsockopt(fd, SOL_IP, IP_TOS, &tos_in, sizeof(tos_in));
 	if (r != 0)
 		die_perror("setsockopt IP_TOS");
 
