@@ -858,6 +858,64 @@ static void connect_one_server_inq(int fd, int unixfd)
 	close(unixfd);
 }
 
+static void connect_one_server_md5(int fd, int pipefd)
+{
+	char buf[4096], buf2[4096];
+	size_t len, i, total;
+	bool eof = false;
+	ssize_t ret;
+
+	len = rand() % (sizeof(buf) - 1);
+
+	if (len < 128)
+		len = 128;
+
+	for (i = 0; i < len ; i++) {
+		buf[i] = rand() % 26;
+		buf[i] += 'A';
+	}
+
+	buf[i] = '\n';
+
+	/* un-block server */
+	ret = read(pipefd, buf2, 4);
+	assert(ret == 4);
+	close(pipefd);
+
+	assert(strncmp(buf2, "xmit", 4) == 0);
+
+	ret = write(fd, buf, len);
+	if (ret < 0)
+		die_perror("write");
+
+	if (ret != (ssize_t)len)
+		xerror("short write");
+
+	total = 0;
+	do {
+		ret = read(fd, buf2 + total, sizeof(buf2) - total);
+		if (ret < 0)
+			die_perror("read");
+		if (ret == 0) {
+			eof = true;
+			break;
+		}
+
+		total += ret;
+	} while (total < len);
+
+	if (total != len)
+		xerror("total %lu, len %lu eof %d\n", total, len, eof);
+
+	if (memcmp(buf, buf2, len))
+		xerror("data corruption");
+
+	if (eof)
+		total += 1; /* sequence advances due to FIN */
+
+	close(fd);
+}
+
 static void process_one_client(int fd, int pipefd)
 {
 	ssize_t ret, ret2, ret3;
@@ -1173,6 +1231,8 @@ static int client(int ipcfd)
 
 	if (inq)
 		connect_one_server_inq(fd, ipcfd);
+	else if (md5)
+		connect_one_server_md5(fd, ipcfd);
 	else
 		connect_one_server(fd, ipcfd);
 
