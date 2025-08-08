@@ -335,10 +335,15 @@ static void do_setsockopt_tos(int fd)
 {
 	int optname = IP_TOS;
 	int level = SOL_IP;
-	uint8_t tos = 200;
+	int tos = 200;
+
+	if (pf == AF_INET6) {
+		optname = IPV6_TCLASS;
+		level = SOL_IPV6;
+	}
 
 	if (setsockopt(fd, level, optname, &tos, sizeof(tos)))
-		perror("setsockopt(IP_TOS)");
+		perror("setsockopt(IP_TOS/IPV6_TCLASS)");
 }
 
 static void do_setsockopts(int fd)
@@ -880,26 +885,31 @@ static void do_getsockopt_tos(int fd)
 	int optname = IP_TOS;
 	int level = SOL_IP;
 	socklen_t len;
-	uint8_t tos;
+	int tos;
 	int ret;
+
+	if (pf == AF_INET6) {
+		optname = IPV6_TCLASS;
+		level = SOL_IPV6;
+	}
 
 	tos = 0;
 	len = sizeof(tos);
 	if (getsockopt(fd, level, optname, &tos, &len))
-		die_perror("getsockopt(IP_TOS)");
+		die_perror("getsockopt(IP_TOS/IPV6_TCLASS)");
 
 	assert(tos == 200);
-	assert(len == 1);
+	assert(len == 4);
 
 	len = 0;
 	if (getsockopt(fd, level, optname, &tos, &len))
-		die_perror("getsockopt IP_TOS 0");
+		die_perror("getsockopt IP_TOS/IPV6_TCLASS 0");
 	assert(len == 0);
 
 	len = -1;
 	ret = getsockopt(fd, level, optname, &tos, &len);
 	if (ret != -1 && errno != EINVAL)
-		die_perror("getsockopt IP_TOS did not indicate -EINVAL");
+		die_perror("getsockopt IP_TOS/IPV6_TCLASS did not indicate -EINVAL");
 	assert(len == -1);
 }
 
