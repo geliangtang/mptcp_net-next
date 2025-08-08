@@ -135,6 +135,15 @@ struct so_state {
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+struct tcp_md5sig_ext {
+	struct __kernel_sockaddr_storage tcpm_addr;
+	unsigned short	__tcpm_pad1;
+	unsigned short	tcpm_keylen;
+	unsigned char	tcpm_key[TCP_MD5SIG_MAXKEYLEN];
+	unsigned int	tcpm_flags;
+	unsigned int	tcpm_ifindex;
+};
+
 static void die_perror(const char *msg)
 {
 	perror(msg);
@@ -215,6 +224,35 @@ static void do_setsockopt_md5sig(int fd)
 		die_perror("setsockopt(TCP_MD5SIG) failed");
 }
 
+static void do_setsockopt_md5sig_ext(int fd)
+{
+	const char *peer_ip = (pf == AF_INET) ? "127.0.0.1" : "::1";
+	const char *key = "0123456789";
+	size_t key_len = strlen(key);
+	struct tcp_md5sig_ext md5ext;
+	struct sockaddr_in *addr;
+	int ifindex = 2;
+
+	memset(&md5ext, 0, sizeof(md5ext));
+	addr = (struct sockaddr_in *)&md5ext.tcpm_addr;
+	addr->sin_family = pf;
+
+	if (inet_pton(pf, peer_ip, &addr->sin_addr) != 1)
+		die_perror("inet_pton failed");
+
+	if (key_len > TCP_MD5SIG_MAXKEYLEN)
+		die_perror("Key too long\n");
+
+	memcpy(md5ext.tcpm_key, key, key_len);
+	md5ext.tcpm_keylen = key_len;
+
+	md5ext.tcpm_ifindex = ifindex;
+	md5ext.tcpm_flags = TCP_MD5SIG_FLAG_IFINDEX;
+
+	if (setsockopt(fd, IPPROTO_TCP, TCP_MD5SIG_EXT, &md5ext, sizeof(md5ext)))
+		die_perror("setsockopt(TCP_MD5SIG_EXT) failed");
+}
+
 static void do_setsockopt_reuseaddr(int fd)
 {
 	int one = 1;
@@ -229,8 +267,10 @@ static void do_setsockopts(int fd, bool server)
 	if (server)
 		do_setsockopt_reuseaddr(fd);
 
-	if (md5)
+	if (md5) {
 		do_setsockopt_md5sig(fd);
+		do_setsockopt_md5sig_ext(fd);
+	}
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
