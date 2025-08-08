@@ -1116,6 +1116,30 @@ static void process_one_client_inq(int fd, int unixfd)
 	close(fd);
 }
 
+static void process_one_client_md5(int fd, int pipefd)
+{
+	ssize_t ret, ret2, ret3;
+	char buf[4096];
+
+	ret = write(pipefd, "xmit", 4);
+	assert(ret == 4);
+
+	ret = read(fd, buf, sizeof(buf));
+	if (ret < 0)
+		die_perror("read");
+
+	ret2 = write(fd, buf, ret);
+	if (ret2 < 0)
+		die_perror("write");
+
+	/* wait for hangup */
+	ret3 = read(fd, buf, 1);
+	if (ret3 != 0)
+		xerror("expected EOF, got %lu", ret3);
+
+	close(fd);
+}
+
 static void do_setsockopt_inq(int fd)
 {
 	int on = 1;
@@ -1166,6 +1190,8 @@ static int server(int ipcfd)
 
 	if (inq)
 		process_one_client_inq(r, ipcfd);
+	else if (md5)
+		process_one_client_md5(r, ipcfd);
 	else
 		process_one_client(r, ipcfd);
 
