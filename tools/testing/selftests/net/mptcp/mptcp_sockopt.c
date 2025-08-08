@@ -29,6 +29,7 @@
 
 #include <linux/tcp.h>
 #include <linux/sockios.h>
+#include <arpa/inet.h>
 
 static int pf = AF_INET;
 static int proto_tx = IPPROTO_MPTCP;
@@ -292,6 +293,44 @@ static void do_setsockopt_v6only(int fd)
 		perror("setsockopt(IPV6_V6ONLY)");
 }
 
+static void do_setsockopt_md5sig(int fd)
+{
+	const char *addr_str = (pf == AF_INET) ? "127.0.0.1" : "::1";
+	size_t key_len = strlen(key);
+	struct tcp_md5sig md5sig;
+	struct sockaddr_in *addr;
+	int opt = TCP_MD5SIG;
+
+	memset(&md5sig, 0, sizeof(md5sig));
+	addr = (struct sockaddr_in *)&md5sig.tcpm_addr;
+	addr->sin_family = pf;
+
+	if (inet_pton(pf, addr_str, &addr->sin_addr) != 1)
+		perror("inet_pton failed");
+
+	if (key_len > sizeof(md5sig.tcpm_key))
+		perror("Key too long\n");
+
+	memcpy(md5sig.tcpm_key, key, key_len);
+	md5sig.tcpm_keylen = key_len;
+
+	if (prefixlen || ifindex)
+		opt = TCP_MD5SIG_EXT;
+
+	if (prefixlen) {
+		md5sig.tcpm_flags |= TCP_MD5SIG_FLAG_PREFIX;
+		md5sig.tcpm_prefixlen = prefixlen;
+	}
+
+	if (ifindex) {
+		md5sig.tcpm_flags |= TCP_MD5SIG_FLAG_IFINDEX;
+		md5sig.tcpm_ifindex = (uint8_t)ifindex;
+	}
+
+	if (setsockopt(fd, IPPROTO_TCP, opt, &md5sig, sizeof(md5sig)))
+		perror("setsockopt(TCP_MD5SIG)");
+}
+
 static void do_setsockopts(int fd)
 {
 	do_setsockopt_reuseaddr(fd);
@@ -303,6 +342,9 @@ static void do_setsockopts(int fd)
 	do_setsockopt_bind_address_no_port(fd);
 	do_setsockopt_local_port_range(fd);
 	do_setsockopt_v6only(fd);
+
+	if (md5)
+		do_setsockopt_md5sig(fd);
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
