@@ -277,6 +277,47 @@ static void do_setsockopt_reuseaddr(int fd)
 		perror("setsockopt(SO_REUSEADDR)");
 }
 
+static void do_setsockopt_tos(int fd)
+{
+	uint8_t tos_in, tos_out;
+	socklen_t s;
+	int r;
+
+	if (inq || md5)
+		return;
+
+	tos_in = rand() & 0xfc;
+	r = setsockopt(fd, SOL_IP, IP_TOS, &tos_in, sizeof(tos_in));
+	if (r != 0)
+		die_perror("setsockopt IP_TOS");
+
+	tos_out = 0;
+	s = sizeof(tos_out);
+	r = getsockopt(fd, SOL_IP, IP_TOS, &tos_out, &s);
+	if (r != 0)
+		die_perror("getsockopt IP_TOS");
+
+	if (tos_in != tos_out)
+		xerror("tos %x != %x socklen_t %d\n", tos_in, tos_out, s);
+
+	if (s != 1)
+		xerror("tos should be 1 byte");
+
+	s = 0;
+	r = getsockopt(fd, SOL_IP, IP_TOS, &tos_out, &s);
+	if (r != 0)
+		die_perror("getsockopt IP_TOS 0");
+	if (s != 0)
+		xerror("expect socklen_t == 0");
+
+	s = -1;
+	r = getsockopt(fd, SOL_IP, IP_TOS, &tos_out, &s);
+	if (r != -1 && errno != EINVAL)
+		die_perror("getsockopt IP_TOS did not indicate -EINVAL");
+	if (s != -1)
+		xerror("expect socklen_t == -1");
+}
+
 static void do_setsockopts(int fd, bool server)
 {
 	if (server)
@@ -288,6 +329,7 @@ static void do_setsockopts(int fd, bool server)
 	}
 
 	do_setsockopt_maxseg(fd);
+	do_setsockopt_tos(fd);
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
@@ -1231,44 +1273,6 @@ static int server(int ipcfd)
 	return 0;
 }
 
-static void test_ip_tos_sockopt(int fd)
-{
-	uint8_t tos_in, tos_out;
-	socklen_t s;
-	int r;
-
-	tos_in = rand() & 0xfc;
-	r = setsockopt(fd, SOL_IP, IP_TOS, &tos_in, sizeof(tos_in));
-	if (r != 0)
-		die_perror("setsockopt IP_TOS");
-
-	tos_out = 0;
-	s = sizeof(tos_out);
-	r = getsockopt(fd, SOL_IP, IP_TOS, &tos_out, &s);
-	if (r != 0)
-		die_perror("getsockopt IP_TOS");
-
-	if (tos_in != tos_out)
-		xerror("tos %x != %x socklen_t %d\n", tos_in, tos_out, s);
-
-	if (s != 1)
-		xerror("tos should be 1 byte");
-
-	s = 0;
-	r = getsockopt(fd, SOL_IP, IP_TOS, &tos_out, &s);
-	if (r != 0)
-		die_perror("getsockopt IP_TOS 0");
-	if (s != 0)
-		xerror("expect socklen_t == 0");
-
-	s = -1;
-	r = getsockopt(fd, SOL_IP, IP_TOS, &tos_out, &s);
-	if (r != -1 && errno != EINVAL)
-		die_perror("getsockopt IP_TOS did not indicate -EINVAL");
-	if (s != -1)
-		xerror("expect socklen_t == -1");
-}
-
 static int client(int ipcfd)
 {
 	int fd = -1;
@@ -1285,8 +1289,6 @@ static int client(int ipcfd)
 	default:
 		xerror("Unknown pf %d\n", pf);
 	}
-
-	test_ip_tos_sockopt(fd);
 
 	if (inq)
 		connect_one_server_inq(fd, ipcfd);
