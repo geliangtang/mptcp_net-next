@@ -253,6 +253,21 @@ static void do_setsockopt_md5sig_ext(int fd)
 		die_perror("setsockopt(TCP_MD5SIG_EXT) failed");
 }
 
+static void do_setsockopt_maxseg(int fd)
+{
+	int maxseg = 1000;
+	socklen_t s;
+	int r;
+
+	if (inq || md5)
+		return;
+
+	s = sizeof(maxseg);
+	r = setsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &maxseg, s);
+	if (r != 0)
+		die_perror("setsockopt TCP_MAXSEG");
+}
+
 static void do_setsockopt_reuseaddr(int fd)
 {
 	int one = 1;
@@ -271,6 +286,8 @@ static void do_setsockopts(int fd, bool server)
 		do_setsockopt_md5sig(fd);
 		do_setsockopt_md5sig_ext(fd);
 	}
+
+	do_setsockopt_maxseg(fd);
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
@@ -667,6 +684,20 @@ static void do_getsockopt_mptcp_full_info(struct so_state *s, int fd)
 	assert(!memcmp(&sfinfo->addrs, &s->addrs, sizeof(struct mptcp_subflow_addrs)));
 }
 
+static void do_getsockopt_maxseg(int fd)
+{
+	int maxseg = 0;
+	socklen_t len;
+	int ret;
+
+	len = sizeof(maxseg);
+	ret = getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &maxseg, &len);
+	if (ret != -1 && errno != EINVAL)
+		die_perror("getsockopt TCP_MAXSEG did not indicate -EINVAL");
+
+	assert(maxseg == 988);
+}
+
 static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 {
 	do_getsockopt_mptcp_info(s, fd, w);
@@ -677,6 +708,8 @@ static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 
 	if (r)
 		do_getsockopt_mptcp_full_info(s, fd);
+
+	do_getsockopt_maxseg(fd);
 }
 
 static void connect_one_server(int fd, int pipefd)
