@@ -30,6 +30,7 @@
 static int pf = AF_INET;
 static int proto_tx = IPPROTO_MPTCP;
 static int proto_rx = IPPROTO_MPTCP;
+static bool inq;
 
 #ifndef IPPROTO_MPTCP
 #define IPPROTO_MPTCP 262
@@ -138,7 +139,7 @@ static void die_perror(const char *msg)
 
 static void die_usage(int r)
 {
-	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp]\n");
+	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i]\n");
 	exit(r);
 }
 
@@ -277,7 +278,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:i")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -290,6 +291,9 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'r':
 			proto_rx = protostr_to_num(optarg);
+			break;
+		case 'i':
+			inq = true;
 			break;
 		default:
 			die_usage(1);
@@ -627,34 +631,36 @@ static void connect_one_server(int fd, int pipefd)
 	if (ret != (ssize_t)len)
 		xerror("short write");
 
-	total = 0;
-	do {
-		ret = read(fd, buf2 + total, sizeof(buf2) - total);
-		if (ret < 0)
-			die_perror("read");
-		if (ret == 0) {
-			eof = true;
-			break;
-		}
+	if (!inq) {
+		total = 0;
+		do {
+			ret = read(fd, buf2 + total, sizeof(buf2) - total);
+			if (ret < 0)
+				die_perror("read");
+			if (ret == 0) {
+				eof = true;
+				break;
+			}
 
-		total += ret;
-	} while (total < len);
+			total += ret;
+		} while (total < len);
 
-	if (total != len)
-		xerror("total %lu, len %lu eof %d\n", total, len, eof);
+		if (total != len)
+			xerror("total %lu, len %lu eof %d\n", total, len, eof);
 
-	if (memcmp(buf, buf2, len))
-		xerror("data corruption");
+		if (memcmp(buf, buf2, len))
+			xerror("data corruption");
 
-	if (s.tcpi_rcv_delta)
-		assert(s.tcpi_rcv_delta <= total);
+		if (s.tcpi_rcv_delta)
+			assert(s.tcpi_rcv_delta <= total);
 
-	do_getsockopts(&s, fd, ret, ret);
+		do_getsockopts(&s, fd, ret, ret);
 
-	if (eof)
-		total += 1; /* sequence advances due to FIN */
+		if (eof)
+			total += 1; /* sequence advances due to FIN */
 
-	assert(s.mptcpi_rcv_delta == (uint64_t)total);
+		assert(s.mptcpi_rcv_delta == (uint64_t)total);
+	}
 	close(fd);
 }
 
@@ -686,6 +692,9 @@ static void process_one_client(int fd, int pipefd)
 	if (ret < 0)
 		die_perror("recvmsg");
 
+	if (inq && msg.msg_controllen == 0)
+		xerror("msg_controllen is 0");
+
 	iov.iov_len = sizeof(buf);
 	iov.iov_base = buf + 1;
 	ret = recvmsg(fd, &msg, 0);
@@ -697,30 +706,32 @@ static void process_one_client(int fd, int pipefd)
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta == (uint64_t)ret);
 
-	ret += 1;
-	ret2 = write(fd, buf, ret);
-	if (ret2 < 0)
-		die_perror("write");
+	if (!inq) {
+		ret += 1;
+		ret2 = write(fd, buf, ret);
+		if (ret2 < 0)
+			die_perror("write");
 
-	do_getsockopts(&s, fd, ret, ret2);
-	if (s.mptcpi_rcv_delta != (uint64_t)ret)
-		xerror("mptcpi_rcv_delta %" PRIu64 ", expect %" PRIu64,
-		       s.mptcpi_rcv_delta, ret, s.mptcpi_rcv_delta - ret);
+		do_getsockopts(&s, fd, ret, ret2);
+		if (s.mptcpi_rcv_delta != (uint64_t)ret)
+			xerror("mptcpi_rcv_delta %" PRIu64 ", expect %" PRIu64,
+			       s.mptcpi_rcv_delta, ret, s.mptcpi_rcv_delta - ret);
 
-	/* be nice when running on top of older kernel */
-	if (s.pkt_stats_avail) {
-		if (s.last_sample.mptcpi_bytes_sent != ret2)
-			xerror("mptcpi_bytes_sent %" PRIu64 ", expect %" PRIu64,
-			       s.last_sample.mptcpi_bytes_sent, ret2,
-			       s.last_sample.mptcpi_bytes_sent - ret2);
-		if (s.last_sample.mptcpi_bytes_received != ret)
-			xerror("mptcpi_bytes_received %" PRIu64 ", expect %" PRIu64,
-			       s.last_sample.mptcpi_bytes_received, ret,
-			       s.last_sample.mptcpi_bytes_received - ret);
-		if (s.last_sample.mptcpi_bytes_acked != ret)
-			xerror("mptcpi_bytes_acked %" PRIu64 ", expect %" PRIu64,
-			       s.last_sample.mptcpi_bytes_acked, ret,
-			       s.last_sample.mptcpi_bytes_acked - ret);
+		/* be nice when running on top of older kernel */
+		if (s.pkt_stats_avail) {
+			if (s.last_sample.mptcpi_bytes_sent != ret2)
+				xerror("mptcpi_bytes_sent %" PRIu64 ", expect %" PRIu64,
+				       s.last_sample.mptcpi_bytes_sent, ret2,
+				       s.last_sample.mptcpi_bytes_sent - ret2);
+			if (s.last_sample.mptcpi_bytes_received != ret)
+				xerror("mptcpi_bytes_received %" PRIu64 ", expect %" PRIu64,
+				       s.last_sample.mptcpi_bytes_received, ret,
+				       s.last_sample.mptcpi_bytes_received - ret);
+			if (s.last_sample.mptcpi_bytes_acked != ret)
+				xerror("mptcpi_bytes_acked %" PRIu64 ", expect %" PRIu64,
+				       s.last_sample.mptcpi_bytes_acked, ret,
+				       s.last_sample.mptcpi_bytes_acked - ret);
+		}
 	}
 
 	/* wait for hangup */
