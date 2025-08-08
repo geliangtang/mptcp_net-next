@@ -28,6 +28,7 @@
 
 #include <linux/tcp.h>
 #include <linux/sockios.h>
+#include <arpa/inet.h>
 
 static int pf = AF_INET;
 static int proto_tx = IPPROTO_MPTCP;
@@ -189,6 +190,31 @@ again:
 	}
 }
 
+static void do_setsockopt_md5sig(int fd)
+{
+	const char *peer_ip = (pf == AF_INET) ? "127.0.0.1" : "::1";
+	const char *key = "0123456789";
+	size_t key_len = strlen(key);
+	struct tcp_md5sig md5sig;
+	struct sockaddr_in *addr;
+
+	memset(&md5sig, 0, sizeof(md5sig));
+	addr = (struct sockaddr_in *)&md5sig.tcpm_addr;
+	addr->sin_family = pf;
+
+	if (inet_pton(pf, peer_ip, &addr->sin_addr) != 1)
+		die_perror("inet_pton failed");
+
+	if (key_len > sizeof(md5sig.tcpm_key))
+		die_perror("Key too long\n");
+
+	memcpy(md5sig.tcpm_key, key, key_len);
+	md5sig.tcpm_keylen = key_len;
+
+	if (setsockopt(fd, IPPROTO_TCP, TCP_MD5SIG, &md5sig, sizeof(md5sig)))
+		die_perror("setsockopt(TCP_MD5SIG) failed");
+}
+
 static void do_setsockopt_reuseaddr(int fd)
 {
 	int one = 1;
@@ -202,6 +228,9 @@ static void do_setsockopts(int fd, bool server)
 {
 	if (server)
 		do_setsockopt_reuseaddr(fd);
+
+	if (md5)
+		do_setsockopt_md5sig(fd);
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
@@ -264,6 +293,8 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 		sock = socket(a->ai_family, a->ai_socktype, proto);
 		if (sock < 0)
 			continue;
+
+		do_setsockopts(sock, false);
 
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == 0)
 			break; /* success */
