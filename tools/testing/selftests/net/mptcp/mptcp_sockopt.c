@@ -34,6 +34,10 @@ static int pf = AF_INET;
 static int proto_tx = IPPROTO_MPTCP;
 static int proto_rx = IPPROTO_MPTCP;
 static bool inq;
+static bool md5;
+static char key[TCP_MD5SIG_MAXKEYLEN];
+static int prefixlen;
+static int ifindex;
 
 #ifndef IPPROTO_MPTCP
 #define IPPROTO_MPTCP 262
@@ -142,7 +146,7 @@ static void die_perror(const char *msg)
 
 static void die_usage(int r)
 {
-	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i]\n");
+	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i] [-m md5,key|md5ext,prefixlen,ifindex,key]\n");
 	exit(r);
 }
 
@@ -392,7 +396,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:i")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:im:")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -408,6 +412,14 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'i':
 			inq = true;
+			break;
+		case 'm':
+			md5 = true;
+			if (!strncmp(optarg, "md5,", 4))
+				sscanf(optarg, "md5,key=%s", key);
+			else if (!strncmp(optarg, "md5ext,", 6))
+				sscanf(optarg, "md5ext,prefixlen=%u,ifindex=%u,key=%s",
+				       &prefixlen, &ifindex, key);
 			break;
 		default:
 			die_usage(1);
