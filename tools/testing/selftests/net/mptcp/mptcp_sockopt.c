@@ -318,6 +318,47 @@ static void do_setsockopt_tos(int fd)
 		xerror("expect socklen_t == -1");
 }
 
+static void do_setsockopt_tclass(int fd)
+{
+	int tclass_in, tclass_out;
+	socklen_t s;
+	int r;
+
+	if (pf != AF_INET6 || inq || md5)
+		return;
+
+	tclass_in = rand() & 0xfc;
+	r = setsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass_in, sizeof(tclass_in));
+	if (r != 0)
+		die_perror("setsockopt IPV6_TCLASS");
+
+	tclass_out = 0;
+	s = sizeof(tclass_out);
+	r = getsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass_out, &s);
+	if (r != 0)
+		die_perror("getsockopt IPV6_TCLASS");
+
+	if (tclass_in != tclass_out)
+		xerror("tclass %x != %x socklen_t %d\n", tclass_in, tclass_out, s);
+
+	if (s != 4)
+		xerror("tclass should be 4 byte");
+
+	s = 0;
+	r = getsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass_out, &s);
+	if (r != 0)
+		die_perror("getsockopt IPV6_TCLASS 0");
+	if (s != 0)
+		xerror("expect socklen_t == 0");
+
+	s = -1;
+	r = getsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass_out, &s);
+	if (r != -1 && errno != EINVAL)
+		die_perror("getsockopt IPV6_TCLASS did not indicate -EINVAL");
+	if (s != -1)
+		xerror("IPV6_TCLASS expect socklen_t == -1");
+}
+
 static void do_setsockopts(int fd, bool server)
 {
 	if (server)
@@ -330,6 +371,7 @@ static void do_setsockopts(int fd, bool server)
 
 	do_setsockopt_maxseg(fd);
 	do_setsockopt_tos(fd);
+	do_setsockopt_tclass(fd);
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
