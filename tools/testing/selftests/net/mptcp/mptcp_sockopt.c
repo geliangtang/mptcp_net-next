@@ -994,6 +994,9 @@ static void connect_one_server_md5(int fd, int pipefd)
 
 	buf[i] = '\n';
 
+	ret = system("ip tcp_metrics show");
+	assert(ret == 0);
+
 	/* un-block server */
 	ret = read(pipefd, buf2, 4);
 	assert(ret == 4);
@@ -1237,6 +1240,9 @@ static void process_one_client_md5(int fd, int pipefd)
 {
 	ssize_t ret, ret2, ret3;
 	char buf[4096];
+
+	ret = system("ip tcp_metrics show");
+	assert(ret == 0);
 
 	ret = write(pipefd, "xmit", 4);
 	assert(ret == 4);
