@@ -348,6 +348,43 @@ do_tcpinq_tests()
 	return $?
 }
 
+do_tcpmd5_test()
+{
+	print_title "TCP_MD5 $*"
+	ip netns exec "$ns_sbox" ./mptcp_sockopt "$@"
+	local lret=$?
+	if [ $lret -ne 0 ];then
+		ret=$lret
+		mptcp_lib_pr_fail
+		mptcp_lib_result_fail "TCP_MD5: $*"
+		return $lret
+	fi
+
+	mptcp_lib_pr_ok
+	mptcp_lib_result_pass "TCP_MD5: $*"
+	return $lret
+}
+
+do_tcpmd5_tests()
+{
+	local lret=0
+
+	if ! mptcp_lib_kallsyms_has "mptcp_ioctl$"; then
+		mptcp_lib_pr_skip "TCP_MD5 not supported"
+		mptcp_lib_result_skip "TCP_MD5"
+		return
+	fi
+
+	do_tcpmd5_test -m
+	lret=$?
+	if [ $lret -ne 0 ] ; then
+		return $lret
+	fi
+	do_tcpmd5_test -6 -m
+
+	return $?
+}
+
 sin=$(mktemp)
 sout=$(mktemp)
 cin=$(mktemp)
@@ -363,6 +400,7 @@ run_tests $ns1 $ns2 dead:beef:1::1
 
 do_mptcp_sockopt_tests
 do_tcpinq_tests
+do_tcpmd5_tests
 
 mptcp_lib_result_print_all_tap
 exit $ret
