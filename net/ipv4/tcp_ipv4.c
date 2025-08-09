@@ -1533,6 +1533,8 @@ static int tcp_v4_parse_md5_keys(struct sock *sk, int optname,
 
 	flags = cmd.tcpm_flags & TCP_MD5SIG_FLAG_IFINDEX;
 
+	//pr_info("%s flags=%u l3flag=%u\n", __func__, flags, !!flags);
+
 	if (optname == TCP_MD5SIG_EXT &&
 	    cmd.tcpm_flags & TCP_MD5SIG_FLAG_PREFIX) {
 		prefixlen = cmd.tcpm_prefixlen;
@@ -1547,6 +1549,8 @@ static int tcp_v4_parse_md5_keys(struct sock *sk, int optname,
 		dev = dev_get_by_index_rcu(sock_net(sk), cmd.tcpm_ifindex);
 		if (dev && netif_is_l3_master(dev))
 			l3index = dev->ifindex;
+		//if (dev)
+		//	pr_info("%s netif_is_l3_master(dev)=%u\n", __func__, netif_is_l3_master(dev));
 
 		rcu_read_unlock();
 

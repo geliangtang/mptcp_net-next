@@ -624,6 +624,8 @@ static int tcp_v6_parse_md5_keys(struct sock *sk, int optname,
 
 	flags = cmd.tcpm_flags & TCP_MD5SIG_FLAG_IFINDEX;
 
+	//pr_info("%s flags=%u l3flag=%u\n", __func__, flags, !!flags);
+
 	if (optname == TCP_MD5SIG_EXT &&
 	    cmd.tcpm_flags & TCP_MD5SIG_FLAG_PREFIX) {
 		prefixlen = cmd.tcpm_prefixlen;
