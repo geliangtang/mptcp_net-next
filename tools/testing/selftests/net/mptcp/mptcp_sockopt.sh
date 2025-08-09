@@ -369,18 +369,23 @@ do_tcpmd5_tests()
 {
 	local lret=0
 
-	if ! mptcp_lib_kallsyms_has "mptcp_ioctl$"; then
-		mptcp_lib_pr_skip "TCP_MD5 not supported"
-		mptcp_lib_result_skip "TCP_MD5"
-		return
-	fi
-
 	do_tcpmd5_test -m
 	lret=$?
 	if [ $lret -ne 0 ] ; then
 		return $lret
 	fi
 	do_tcpmd5_test -6 -m
+	lret=$?
+	if [ $lret -ne 0 ] ; then
+		return $lret
+	fi
+
+	do_tcpmd5_test -e
+	lret=$?
+	if [ $lret -ne 0 ] ; then
+		return $lret
+	fi
+	do_tcpmd5_test -6 -e
 
 	return $?
 }

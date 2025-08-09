@@ -35,6 +35,7 @@ static int proto_tx = IPPROTO_MPTCP;
 static int proto_rx = IPPROTO_MPTCP;
 static bool inq;
 static bool md5;
+static bool ext;
 
 #ifndef IPPROTO_MPTCP
 #define IPPROTO_MPTCP 262
@@ -152,7 +153,7 @@ static void die_perror(const char *msg)
 
 static void die_usage(int r)
 {
-	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i] [-m]\n");
+	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i] [-m] [-e]\n");
 	exit(r);
 }
 
@@ -259,7 +260,7 @@ static void do_setsockopt_maxseg(int fd)
 	socklen_t s;
 	int r;
 
-	if (inq || md5)
+	if (inq || md5 || ext)
 		return;
 
 	s = sizeof(maxseg);
@@ -283,7 +284,7 @@ static void do_setsockopt_tos(int fd)
 	socklen_t s;
 	int r;
 
-	if (inq || md5)
+	if (inq || md5 || ext)
 		return;
 
 	tos_in = rand() & 0xfc;
@@ -324,7 +325,7 @@ static void do_setsockopt_tclass(int fd)
 	socklen_t s;
 	int r;
 
-	if (pf != AF_INET6 || inq || md5)
+	if (pf != AF_INET6 || inq || md5 || ext)
 		return;
 
 	tclass_in = rand() & 0xfc;
@@ -364,10 +365,11 @@ static void do_setsockopts(int fd, bool server)
 	if (server)
 		do_setsockopt_reuseaddr(fd);
 
-	if (md5) {
+	if (md5)
 		do_setsockopt_md5sig(fd);
+
+	if (ext)
 		do_setsockopt_md5sig_ext(fd);
-	}
 
 	do_setsockopt_maxseg(fd);
 	do_setsockopt_tos(fd);
@@ -465,7 +467,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:im")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:ime")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -484,6 +486,9 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'm':
 			md5 = true;
+			break;
+		case 'e':
+			ext = true;
 			break;
 		default:
 			die_usage(1);
@@ -1313,7 +1318,7 @@ static int server(int ipcfd)
 
 	if (inq)
 		process_one_client_inq(r, ipcfd);
-	else if (md5)
+	else if (md5 || ext)
 		process_one_client_md5(r, ipcfd);
 	else
 		process_one_client(r, ipcfd);
@@ -1340,7 +1345,7 @@ static int client(int ipcfd)
 
 	if (inq)
 		connect_one_server_inq(fd, ipcfd);
-	else if (md5)
+	else if (md5 || ext)
 		connect_one_server_md5(fd, ipcfd);
 	else
 		connect_one_server(fd, ipcfd);
