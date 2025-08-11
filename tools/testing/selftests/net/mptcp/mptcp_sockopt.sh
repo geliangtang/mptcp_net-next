@@ -275,7 +275,7 @@ do_mptcp_sockopt_tests()
 		   "IP_FREEBIND" "IP_TRANSPARENT" \
 		   "IP_BIND_ADDRESS_NO_PORT" \
 		   "IP_LOCAL_PORT_RANGE" \
-		   "IP_TOS"; do
+		   "IP_TOS" "IP_TTL"; do
 		print_title "$opt sockopt v4"
 		mptcp_lib_pr_ok
 		mptcp_lib_result_pass "$opt sockopt v4"

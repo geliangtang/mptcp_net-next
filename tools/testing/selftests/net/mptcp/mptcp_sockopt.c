@@ -346,6 +346,16 @@ static void do_setsockopt_tos(int fd)
 		perror("setsockopt(IP_TOS/IPV6_TCLASS)");
 }
 
+static void do_setsockopt_ttl(int fd)
+{
+	int optname = IP_TTL;
+	int level = SOL_IP;
+	int ttl = 100;
+
+	if (setsockopt(fd, level, optname, &ttl, sizeof(ttl)))
+		perror("setsockopt(IP_TTL)");
+}
+
 static void do_setsockopts(int fd)
 {
 	do_setsockopt_reuseaddr(fd);
@@ -358,6 +368,7 @@ static void do_setsockopts(int fd)
 	do_setsockopt_local_port_range(fd);
 	do_setsockopt_v6only(fd);
 	do_setsockopt_tos(fd);
+	do_setsockopt_ttl(fd);
 
 	if (md5)
 		do_setsockopt_md5sig(fd);
@@ -913,6 +924,20 @@ static void do_getsockopt_tos(int fd)
 	assert(len == -1);
 }
 
+static void do_getsockopt_ttl(int fd)
+{
+	int optname = IP_TTL;
+	int level = SOL_IP;
+	socklen_t len;
+	int ttl;
+
+	len = sizeof(ttl);
+	if (getsockopt(fd, level, optname, &ttl, &len))
+		die_perror("getsockopt(IP_TTL)");
+
+	assert(ttl == 100);
+}
+
 static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 {
 	if (md5)
@@ -946,6 +971,8 @@ static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 	do_getsockopt_v6only(fd);
 
 	do_getsockopt_tos(fd);
+
+	do_getsockopt_ttl(fd);
 }
 
 static void connect_one_server(int fd, int ipcfd)
