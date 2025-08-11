@@ -361,6 +361,15 @@ static void do_setsockopt_ttl(int fd)
 		perror("setsockopt(IP_TTL/IPV6_UNICAST_HOPS)");
 }
 
+static void do_setsockopt_maxseg(int fd)
+{
+	int maxseg = 1000;
+
+	if (setsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &maxseg,
+		       sizeof(maxseg)))
+		perror("setsockopt(TCP_MAXSEG)");
+}
+
 static void do_setsockopts(int fd)
 {
 	do_setsockopt_reuseaddr(fd);
@@ -377,6 +386,8 @@ static void do_setsockopts(int fd)
 
 	if (md5)
 		do_setsockopt_md5sig(fd);
+	else
+		do_setsockopt_maxseg(fd);
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
@@ -948,6 +959,18 @@ static void do_getsockopt_ttl(int fd)
 	assert(ttl == 100);
 }
 
+static void do_getsockopt_maxseg(int fd)
+{
+	int maxseg = 0;
+	socklen_t len;
+
+	len = sizeof(maxseg);
+	if (getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &maxseg, &len))
+		die_perror("getsockopt(TCP_MAXSEG)");
+
+	assert(maxseg == 988);
+}
+
 static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 {
 	if (md5)
@@ -983,6 +1006,8 @@ static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 	do_getsockopt_tos(fd);
 
 	do_getsockopt_ttl(fd);
+
+	do_getsockopt_maxseg(fd);
 }
 
 static void connect_one_server(int fd, int ipcfd)
