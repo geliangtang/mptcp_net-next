@@ -352,8 +352,13 @@ static void do_setsockopt_ttl(int fd)
 	int level = SOL_IP;
 	int ttl = 100;
 
+	if (pf == AF_INET6) {
+		optname = IPV6_UNICAST_HOPS;
+		level = SOL_IPV6;
+	}
+
 	if (setsockopt(fd, level, optname, &ttl, sizeof(ttl)))
-		perror("setsockopt(IP_TTL)");
+		perror("setsockopt(IP_TTL/IPV6_UNICAST_HOPS)");
 }
 
 static void do_setsockopts(int fd)
@@ -931,9 +936,14 @@ static void do_getsockopt_ttl(int fd)
 	socklen_t len;
 	int ttl;
 
+	if (pf == AF_INET6) {
+		optname = IPV6_UNICAST_HOPS;
+		level = SOL_IPV6;
+	}
+
 	len = sizeof(ttl);
 	if (getsockopt(fd, level, optname, &ttl, &len))
-		die_perror("getsockopt(IP_TTL)");
+		die_perror("getsockopt(IP_TTL/IPV6_UNICAST_HOPS)");
 
 	assert(ttl == 100);
 }

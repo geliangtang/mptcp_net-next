@@ -299,7 +299,7 @@ do_mptcp_sockopt_tests()
 		   "IP_BIND_ADDRESS_NO_PORT" \
 		   "IP_LOCAL_PORT_RANGE" \
 		   "IPV6_V6ONLY" \
-		   "IPV6_TCLASS"; do
+		   "IPV6_TCLASS" "IPV6_UNICAST_HOPS"; do
 		print_title "$opt sockopt v6"
 		mptcp_lib_pr_ok
 		mptcp_lib_result_pass "$opt sockopt v6"
