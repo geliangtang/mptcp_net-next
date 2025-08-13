@@ -375,6 +375,17 @@ static void do_setsockopt_maxseg(int fd)
 		perror("setsockopt(TCP_MAXSEG)");
 }
 
+static void do_setsockopt_pktinfo(int fd)
+{
+#if 0
+	int enable = 1;
+
+	if (-1 == setsockopt(fd, SOL_IP, IP_PKTINFO,
+			     &enable, sizeof(enable)))
+		perror("setsockopt(IP_PKTINFO)");
+#endif
+}
+
 static void do_setsockopts(int fd)
 {
 	do_setsockopt_reuseaddr(fd);
@@ -388,6 +399,7 @@ static void do_setsockopts(int fd)
 	do_setsockopt_v6only(fd);
 	do_setsockopt_tos(fd);
 	do_setsockopt_ttl(fd);
+	do_setsockopt_pktinfo(fd);
 
 	if (md5)
 		do_setsockopt_md5sig(fd);
