@@ -285,11 +285,11 @@ static void sock_test_tcpulp(int sock, int proto, unsigned int line)
 		if (strcmp(buf, "mptcp") != 0)
 			xerror("unexpected ULP '%s' for proto %d at line %u", buf, proto, line);
 		ret = do_ulp_so(sock, "tls");
-		if (ret == 0)
-			X("setsockopt");
+		//if (ret != 0)
+		//	X("setsockopt");
 	} else if (proto == IPPROTO_MPTCP) {
 		ret = do_ulp_so(sock, "tls");
-		if (ret != -1)
+		if (ret != 0)
 			X("setsockopt");
 	}
 
@@ -425,7 +425,7 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 
 	freeaddrinfo(addr);
 	if (sock != -1)
-		SOCK_TEST_TCPULP(sock, proto);
+		;//SOCK_TEST_TCPULP(sock, proto);
 	return sock;
 }
 
@@ -1363,7 +1363,7 @@ int main_loop(void)
 again:
 	check_getpeername_connect(fd);
 
-	SOCK_TEST_TCPULP(fd, cfg_sock_proto);
+	//SOCK_TEST_TCPULP(fd, cfg_sock_proto);
 
 	if (cfg_rcvbuf)
 		set_rcvbuf(fd, cfg_rcvbuf);

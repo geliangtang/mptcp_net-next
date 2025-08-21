@@ -376,6 +376,7 @@ static int tls_strp_copyin(read_descriptor_t *desc, struct sk_buff *in_skb,
 
 static int tls_strp_read_copyin(struct tls_strparser *strp)
 {
+	const struct proto_ops *ops = READ_ONCE(strp->sk->sk_socket->ops);
 	read_descriptor_t desc;
 
 	desc.arg.data = strp;
@@ -383,7 +384,7 @@ static int tls_strp_read_copyin(struct tls_strparser *strp)
 	desc.count = 1; /* give more than one skb per call */
 
 	/* sk should be locked here, so okay to do read_sock */
-	tcp_read_sock(strp->sk, &desc, tls_strp_copyin);
+	ops->read_sock(strp->sk, &desc, tls_strp_copyin);
 
 	return desc.error;
 }
@@ -460,12 +461,17 @@ static bool tls_strp_check_queue_ok(struct tls_strparser *strp)
 
 static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 {
-	struct tcp_sock *tp = tcp_sk(strp->sk);
 	struct sk_buff *first;
 	u32 offset;
 
-	first = tcp_recv_skb(strp->sk, tp->copied_seq, &offset);
-	if (WARN_ON_ONCE(!first))
+	if (strp->sk->sk_protocol == IPPROTO_MPTCP)
+		first = mptcp_recv_skb(strp->sk, &offset);
+	else {
+		struct tcp_sock *tp = tcp_sk(strp->sk);
+
+		first = tcp_recv_skb(strp->sk, tp->copied_seq, &offset);
+	}
+	if (!first)
 		return;
 
 	/* Bestow the state onto the anchor */
@@ -490,7 +496,14 @@ bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 	DEBUG_NET_WARN_ON_ONCE(!strp->stm.full_len);
 
 	if (!strp->copy_mode && force_refresh) {
-		if (unlikely(tcp_inq(strp->sk) < strp->stm.full_len)) {
+		int inq;
+
+		if (strp->sk->sk_protocol == IPPROTO_MPTCP)
+			inq = mptcp_inq(strp->sk);
+		else
+			inq = tcp_inq(strp->sk);
+
+		if (unlikely(inq < strp->stm.full_len)) {
 			WRITE_ONCE(strp->msg_ready, 0);
 			memset(&strp->stm, 0, sizeof(strp->stm));
 			return false;
@@ -513,7 +526,11 @@ static int tls_strp_read_sock(struct tls_strparser *strp)
 {
 	int sz, inq;
 
-	inq = tcp_inq(strp->sk);
+	if (strp->sk->sk_protocol == IPPROTO_MPTCP)
+		inq = mptcp_inq(strp->sk);
+	else
+		inq = tcp_inq(strp->sk);
+	//pr_info("%s inq=%u\n", __func__, inq);
 	if (inq < 1)
 		return 0;
 
@@ -539,6 +556,7 @@ static int tls_strp_read_sock(struct tls_strparser *strp)
 		return tls_strp_read_copy(strp, false);
 
 	WRITE_ONCE(strp->msg_ready, 1);
+	//pr_info("%s strp->msg_ready=%u\n", __func__, strp->msg_ready);
 	tls_rx_msg_ready(strp);
 
 	return 0;
@@ -546,8 +564,10 @@ static int tls_strp_read_sock(struct tls_strparser *strp)
 
 void tls_strp_check_rcv(struct tls_strparser *strp)
 {
-	if (unlikely(strp->stopped) || strp->msg_ready)
+	if (unlikely(strp->stopped) || strp->msg_ready) {
+		//pr_info("%s strp->stopped=%u strp->msg_ready=%u\n", __func__, strp->stopped, strp->msg_ready);
 		return;
+	}
 
 	if (tls_strp_read_sock(strp) == -ENOMEM)
 		queue_work(tls_strp_wq, &strp->work);
@@ -585,9 +605,12 @@ void tls_strp_msg_done(struct tls_strparser *strp)
 {
 	WARN_ON(!strp->stm.full_len);
 
-	if (likely(!strp->copy_mode))
-		tcp_read_done(strp->sk, strp->stm.full_len);
-	else
+	if (likely(!strp->copy_mode)) {
+		if (strp->sk->sk_protocol == IPPROTO_MPTCP)
+			mptcp_read_done(strp->sk, strp->stm.full_len);
+		else
+			tcp_read_done(strp->sk, strp->stm.full_len);
+	} else
 		tls_strp_flush_anchor_copy(strp);
 
 	WRITE_ONCE(strp->msg_ready, 0);

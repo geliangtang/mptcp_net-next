@@ -286,6 +286,23 @@ void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
 void mptcp_sock_set_nodelay(struct sock *sk);
 
 void mptcp_sock_set_reuseaddr(struct sock *sk);
+
+int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len);
+
+int mptcp_inq(struct sock *sk);
+
+struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off);
+
+bool __mptcp_move_skbs(struct sock *sk);
+
+int __mptcp_recvmsg_mskq(struct sock *sk,
+			 struct msghdr *msg,
+			 size_t len, int flags,
+			 struct scm_timestamping_internal *tss,
+			 int *cmsg_flags);
+
+void mptcp_read_done(struct sock *sk, size_t len);
+
 #else
 
 static inline void mptcp_init(void)

@@ -1895,7 +1895,7 @@ static void mptcp_rps_record_subflows(const struct mptcp_sock *msk)
 	}
 }
 
-static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
+int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct page_frag *pfrag;
@@ -1905,8 +1905,6 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 
 	/* silently ignore everything else */
 	msg->msg_flags &= MSG_MORE | MSG_DONTWAIT | MSG_NOSIGNAL | MSG_FASTOPEN;
-
-	lock_sock(sk);
 
 	mptcp_rps_record_subflows(msk);
 
@@ -2015,7 +2013,6 @@ wait_for_memory:
 		__mptcp_push_pending(sk, msg->msg_flags);
 
 out:
-	release_sock(sk);
 	if (copied == -EAGAIN)
 		pr_info("%s EAGAIN\n", __func__);
 	return copied;
@@ -2026,6 +2023,17 @@ do_error:
 
 	copied = sk_stream_error(sk, msg->msg_flags, ret);
 	goto out;
+}
+
+static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
+{
+	int ret;
+
+	lock_sock(sk);
+	ret = mptcp_sendmsg_locked(sk, msg, len);
+	release_sock(sk);
+
+	return ret;
 }
 
 static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied);
@@ -2041,11 +2049,11 @@ static void mptcp_eat_recv_skb(struct sock *sk, struct sk_buff *skb)
 	skb_attempt_defer_free(skb);
 }
 
-static int __mptcp_recvmsg_mskq(struct sock *sk,
-				struct msghdr *msg,
-				size_t len, int flags,
-				struct scm_timestamping_internal *tss,
-				int *cmsg_flags)
+int __mptcp_recvmsg_mskq(struct sock *sk,
+			 struct msghdr *msg,
+			 size_t len, int flags,
+			 struct scm_timestamping_internal *tss,
+			 int *cmsg_flags)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb, *tmp;
@@ -2174,7 +2182,7 @@ new_measure:
 	msk->rcvq_space.time = mstamp;
 }
 
-static bool __mptcp_move_skbs(struct sock *sk)
+bool __mptcp_move_skbs(struct sock *sk)
 {
 	struct mptcp_subflow_context *subflow;
 	struct mptcp_sock *msk = mptcp_sk(sk);
@@ -2229,6 +2237,38 @@ static unsigned int mptcp_inq_hint(const struct sock *sk)
 		return 1;
 
 	return 0;
+}
+
+int mptcp_inq(struct sock *sk)
+{
+#if 1
+	return mptcp_inq_hint(sk);
+#else
+	const struct mptcp_sock *msk = mptcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(msk->first);
+	int answ;
+
+	if ((1 << msk->first->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+		//pr_info("%s 1\n", __func__);
+		answ = 0;
+	} else if (sock_flag(msk->first, SOCK_URGINLINE) ||
+		   !tp->urg_data ||
+		   before(tp->urg_seq, tp->copied_seq) ||
+		   !before(tp->urg_seq, tp->rcv_nxt)) {
+
+		answ = tp->rcv_nxt - tp->copied_seq;
+
+		/* Subtract 1, if FIN was received */
+		if (answ && sock_flag(msk->first, SOCK_DONE))
+			answ--;
+		//pr_info("%s 2 tp->rcv_nxt=%u tp->copied_seq=%u\n", __func__, tp->rcv_nxt, tp->copied_seq);
+	} else {
+		answ = tp->urg_seq - tp->copied_seq;
+		//pr_info("%s 3\n", __func__);
+	}
+
+	return answ;
+#endif
 }
 
 static int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
@@ -4150,7 +4190,7 @@ static __poll_t mptcp_poll(struct file *file, struct socket *sock,
 	return mask;
 }
 
-static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
+struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 {
 	struct sk_buff *skb;
 	u32 offset;
@@ -4171,6 +4211,39 @@ static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 	}
 	return NULL;
 }
+
+void mptcp_read_done(struct sock *sk, size_t len)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct sk_buff *skb;
+	size_t left;
+	u32 offset;
+
+	if (sk->sk_state == TCP_LISTEN)
+		return;
+
+	left = len;
+	while (left && (skb = mptcp_recv_skb(sk, &offset)) != NULL) {
+		int used;
+
+		used = min_t(size_t, skb->len - offset, left);
+		left -= used;
+
+		if (skb->len > offset + used)
+			break;
+
+		mptcp_eat_recv_skb(sk, skb);
+	}
+
+	mptcp_rcv_space_adjust(msk, len - left);
+
+	/* Clean up data we have read: This will do ACK frames. */
+	if (left != len) {
+		mptcp_recv_skb(sk, &offset);
+		mptcp_cleanup_rbuf(msk, len - left);
+	}
+}
+EXPORT_SYMBOL(mptcp_read_done);
 
 /*
  * Note:

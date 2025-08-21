@@ -12,6 +12,7 @@
 #include <net/protocol.h>
 #include <net/tcp.h>
 #include <net/mptcp.h>
+#include <net/tls.h>
 #include "protocol.h"
 #include "mib.h"
 
@@ -606,12 +607,20 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		/* MD5 will force a fallback to TCP: OK to set while not connected */
 		case TCP_MD5SIG:
 		case TCP_MD5SIG_EXT:
+		case TCP_ULP:
 			return true;
 		}
 
 		/* TCP_REPAIR, TCP_REPAIR_QUEUE, TCP_QUEUE_SEQ, TCP_REPAIR_OPTIONS,
 		 * TCP_REPAIR_WINDOW are not supported, better avoid this mess
 		 */
+	}
+	if (level == SOL_TLS) {
+		switch (optname) {
+		case TLS_TX:
+		case TLS_RX:
+			return true;
+		}
 	}
 	return false;
 }
@@ -857,6 +866,7 @@ static int mptcp_setsockopt_sol_tcp_first_sf_only(struct mptcp_sock *msk, int op
 
 unlock:
 	release_sock(sk);
+	pr_info("%s ret=%d\n", __func__, ret);
 	return ret;
 }
 
@@ -924,7 +934,13 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 
 	switch (optname) {
 	case TCP_ULP:
-		return -EOPNOTSUPP;
+		if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))
+			return -EINVAL;
+		ret = tcp_setsockopt(sk, SOL_TCP, optname, optval, optlen);
+		//if (ret == 0)
+		//	WARN_ON_ONCE(!__mptcp_try_fallback(msk,
+		//					   MPTCP_MIB_MD5SIGFALLBACK));
+		return ret;
 	case TCP_CONGESTION:
 		return mptcp_setsockopt_sol_tcp_congestion(msk, optval, optlen);
 	case TCP_DEFER_ACCEPT:

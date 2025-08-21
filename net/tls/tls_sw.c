@@ -1362,6 +1362,7 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 	timeo = sock_rcvtimeo(sk, nonblock);
 
 	while (!tls_strp_msg_ready(ctx)) {
+		pr_info("%s\n", __func__);
 		if (!sk_psock_queue_empty(psock))
 			return 0;
 
@@ -1377,14 +1378,26 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 				break;
 		}
 
-		if (sk->sk_shutdown & RCV_SHUTDOWN)
+		if (sk->sk_protocol == IPPROTO_MPTCP) {
+			if (skb_queue_empty(&sk->sk_receive_queue) && __mptcp_move_skbs(sk))
+				continue;
+		}
+
+		if (sk->sk_shutdown & RCV_SHUTDOWN) {
+			if (sk->sk_protocol == IPPROTO_MPTCP) {
+				if (__mptcp_move_skbs(sk))
+					continue;
+			}
 			return 0;
+		}
 
 		if (sock_flag(sk, SOCK_DONE))
 			return 0;
 
-		if (!timeo)
+		if (!timeo) {
+			pr_info("%s return EAGAIN\n", __func__);
 			return -EAGAIN;
+		}
 
 		released = true;
 		add_wait_queue(sk_sleep(sk), &wait);
@@ -1689,8 +1702,10 @@ tls_decrypt_sw(struct sock *sk, struct tls_context *tls_ctx,
 
 	err = tls_decrypt_sg(sk, &msg->msg_iter, NULL, darg);
 	if (err < 0) {
-		if (err == -EBADMSG)
+		if (err == -EBADMSG) {
+			pr_err("%s tls_decrypt_sg return EBADMSG\n", __func__);
 			TLS_INC_STATS(sock_net(sk), LINUX_MIB_TLSDECRYPTERROR);
+		}
 		return err;
 	}
 	/* keep going even for ->async, the code below is TLS 1.3 */
@@ -2057,6 +2072,7 @@ int tls_sw_recvmsg(struct sock *sk,
 	if (unlikely(flags & MSG_ERRQUEUE))
 		return sock_recv_errqueue(sk, msg, len, SOL_IP, IP_RECVERR);
 
+	//pr_info("%s\n", __func__);
 	err = tls_rx_reader_lock(sk, ctx, flags & MSG_DONTWAIT);
 	if (err < 0)
 		return err;
@@ -2091,10 +2107,20 @@ int tls_sw_recvmsg(struct sock *sk,
 
 		err = tls_rx_rec_wait(sk, psock, flags & MSG_DONTWAIT,
 				      released);
+		//pr_info("%s err=%d\n", __func__, err);
 		if (err <= 0) {
 			if (psock) {
-				chunk = sk_msg_recvmsg(sk, psock, msg, len,
-						       flags);
+				if (sk->sk_protocol == IPPROTO_MPTCP) {
+					struct scm_timestamping_internal tss;
+					int cmsg_flags = 0;
+
+					pr_info("%s call __mptcp_recvmsg_mskq\n", __func__);
+					chunk = __mptcp_recvmsg_mskq(sk, msg, len, flags, &tss, &cmsg_flags);
+				} else {
+					pr_info("%s call sk_msg_recvmsg\n", __func__);
+					chunk = sk_msg_recvmsg(sk, psock, msg, len,
+							       flags);
+				}
 				if (chunk > 0) {
 					decrypted += chunk;
 					len -= chunk;
@@ -2123,6 +2149,7 @@ int tls_sw_recvmsg(struct sock *sk,
 
 		err = tls_rx_one_record(sk, msg, &darg);
 		if (err < 0) {
+			pr_err("%s tls_rx_one_record err=%d\n", __func__, err);
 			tls_err_abort(sk, -EBADMSG);
 			goto recv_end;
 		}
@@ -2251,6 +2278,8 @@ end:
 	tls_rx_reader_unlock(sk, ctx);
 	if (psock)
 		sk_psock_put(sk, psock);
+	pr_info("%s sk->sk_protocol=%u copied=%lu err=%d\n",
+		__func__, sk->sk_protocol, copied, err);
 	return copied ? : err;
 }
 

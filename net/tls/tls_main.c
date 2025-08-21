@@ -194,7 +194,13 @@ retry:
 		bvec_set_page(&bvec, p, size, offset);
 		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, size);
 
-		ret = tcp_sendmsg_locked(sk, &msg, size);
+		if (sk->sk_protocol == IPPROTO_MPTCP)
+			ret = mptcp_sendmsg_locked(sk, &msg, size);
+		else
+			ret = tcp_sendmsg_locked(sk, &msg, size);
+
+		pr_info("%s tcp_sendmsg sk->sk_protocol=%u size=%lu ret=%d\n",
+				__func__, sk->sk_protocol, size, ret);
 
 		if (ret != size) {
 			if (ret > 0) {
@@ -401,6 +407,7 @@ static void tls_sk_proto_close(struct sock *sk, long timeout)
 static __poll_t tls_sk_poll(struct file *file, struct socket *sock,
 			    struct poll_table_struct *wait)
 {
+	const struct proto_ops *ops = READ_ONCE(sock->ops);
 	struct tls_sw_context_rx *ctx;
 	struct tls_context *tls_ctx;
 	struct sock *sk = sock->sk;
@@ -409,7 +416,7 @@ static __poll_t tls_sk_poll(struct file *file, struct socket *sock,
 	u8 shutdown;
 	int state;
 
-	mask = tcp_poll(file, sock, wait);
+	mask = ops->poll(file, sock, wait);
 
 	state = inet_sk_state_load(sk);
 	shutdown = READ_ONCE(sk->sk_shutdown);
