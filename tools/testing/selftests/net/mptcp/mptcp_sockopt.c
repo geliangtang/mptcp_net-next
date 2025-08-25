@@ -741,9 +741,24 @@ static void connect_one_server(int fd, int unixfd)
 	close(unixfd);
 }
 
+static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
+{
+	struct cmsghdr *cmsg;
+
+	for (cmsg = CMSG_FIRSTHDR(msgh); cmsg ; cmsg = CMSG_NXTHDR(msgh, cmsg)) {
+		if (cmsg->cmsg_level == IPPROTO_TCP && cmsg->cmsg_type == TCP_CM_INQ) {
+			memcpy(inqv, CMSG_DATA(cmsg), sizeof(*inqv));
+			return;
+		}
+	}
+
+	xerror("could not find TCP_CM_INQ cmsg type");
+}
+
 static void process_one_client(int fd, int unixfd)
 {
 	ssize_t ret, ret2, ret3;
+	unsigned int tcp_inq;
 	char msg_buf[4096];
 	struct so_state s;
 	char buf[4096];
@@ -795,6 +810,15 @@ static void process_one_client(int fd, int unixfd)
 	if (ret < 0)
 		die_perror("recvmsg");
 
+	if (inq) {
+		if (msg.msg_controllen == 0)
+			xerror("msg_controllen is 0");
+
+		get_tcp_inq(&msg, &tcp_inq);
+
+		assert((size_t)tcp_inq == (expect_len - 1));
+	}
+
 	iov.iov_len = sizeof(buf);
 	iov.iov_base = buf + 1;
 	ret = recvmsg(fd, &msg, 0);
@@ -808,6 +832,12 @@ static void process_one_client(int fd, int unixfd)
 
 	/* should have gotten exact remainder of all pending data */
 	assert(ret == (ssize_t)expect_len - 1);
+
+	if (inq) {
+		/* should be 0, all drained */
+		get_tcp_inq(&msg, &tcp_inq);
+		assert(tcp_inq == 0);
+	}
 
 	ret += 1;
 	ret2 = write(fd, buf, ret);
@@ -857,6 +887,16 @@ static void process_one_client(int fd, int unixfd)
 			die_perror("recvmsg");
 
 		tot += ret;
+
+		if (inq) {
+			get_tcp_inq(&msg, &tcp_inq);
+
+			if (tcp_inq > expect_len - tot)
+				xerror("inq %d, remaining %d total_len %d\n",
+				       tcp_inq, expect_len - tot, (int)expect_len);
+
+			assert(tcp_inq <= expect_len - tot);
+		}
 	} while ((size_t)tot < expect_len);
 
 	ret = write(unixfd, "shut", 4);
@@ -875,11 +915,23 @@ static void process_one_client(int fd, int unixfd)
 		die_perror("recvmsg");
 	assert(ret == 1);
 
+	if (inq) {
+		get_tcp_inq(&msg, &tcp_inq);
+
+		/* tcp_inq should be 1 due to received fin. */
+		assert(tcp_inq == 1);
+	}
+
 	/* wait for hangup */
 	iov.iov_len = 1;
 	ret3 = recvmsg(fd, &msg, 0);
 	if (ret3 != 0)
 		xerror("expected EOF, got %lu", ret3);
+
+	if (inq) {
+		get_tcp_inq(&msg, &tcp_inq);
+		assert(tcp_inq == 1);
+	}
 
 	close(fd);
 }
