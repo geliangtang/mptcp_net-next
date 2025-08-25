@@ -258,7 +258,7 @@ do_mptcp_sockopt_tests()
 		return
 	fi
 
-	ip netns exec "$ns_sbox" ./mptcp_sockopt
+	ip netns exec "$ns_sbox" ./mptcp_inq
 	lret=$?
 
 	print_title "SOL_MPTCP sockopt v4"
@@ -271,7 +271,7 @@ do_mptcp_sockopt_tests()
 	mptcp_lib_pr_ok
 	mptcp_lib_result_pass "sockopt v4"
 
-	ip netns exec "$ns_sbox" ./mptcp_sockopt -6
+	ip netns exec "$ns_sbox" ./mptcp_inq -6
 	lret=$?
 
 	print_title "SOL_MPTCP sockopt v6"
@@ -305,7 +305,7 @@ run_tests()
 do_tcpinq_test()
 {
 	print_title "TCP_INQ cmsg/ioctl $*"
-	ip netns exec "$ns_sbox" ./mptcp_sockopt "$@"
+	ip netns exec "$ns_sbox" ./mptcp_inq "$@"
 	local lret=$?
 	if [ $lret -ne 0 ];then
 		ret=$lret
@@ -328,6 +328,8 @@ do_tcpinq_tests()
 		mptcp_lib_result_skip "TCP_INQ"
 		return
 	fi
+
+	mptcp_lib_print_info "sockopt TCP_INQ"
 
 	local args
 	for args in "-t tcp" "-r tcp"; do

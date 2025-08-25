@@ -29,6 +29,11 @@
 #include <linux/tcp.h>
 #include <linux/sockios.h>
 
+static int pf = AF_INET;
+static int proto_tx = IPPROTO_MPTCP;
+static int proto_rx = IPPROTO_MPTCP;
+static bool inq;
+
 #ifndef IPPROTO_MPTCP
 #define IPPROTO_MPTCP 262
 #endif
@@ -36,9 +41,97 @@
 #define SOL_MPTCP 284
 #endif
 
-static int pf = AF_INET;
-static int proto_tx = IPPROTO_MPTCP;
-static int proto_rx = IPPROTO_MPTCP;
+#ifndef MPTCP_INFO
+struct mptcp_info {
+	__u8	mptcpi_subflows;
+	__u8	mptcpi_add_addr_signal;
+	__u8	mptcpi_add_addr_accepted;
+	__u8	mptcpi_subflows_max;
+	__u8	mptcpi_add_addr_signal_max;
+	__u8	mptcpi_add_addr_accepted_max;
+	__u32	mptcpi_flags;
+	__u32	mptcpi_token;
+	__u64	mptcpi_write_seq;
+	__u64	mptcpi_snd_una;
+	__u64	mptcpi_rcv_nxt;
+	__u8	mptcpi_local_addr_used;
+	__u8	mptcpi_local_addr_max;
+	__u8	mptcpi_csum_enabled;
+	__u32	mptcpi_retransmits;
+	__u64	mptcpi_bytes_retrans;
+	__u64	mptcpi_bytes_sent;
+	__u64	mptcpi_bytes_received;
+	__u64	mptcpi_bytes_acked;
+};
+
+struct mptcp_subflow_data {
+	__u32		size_subflow_data;		/* size of this structure in userspace */
+	__u32		num_subflows;			/* must be 0, set by kernel */
+	__u32		size_kernel;			/* must be 0, set by kernel */
+	__u32		size_user;			/* size of one element in data[] */
+} __attribute__((aligned(8)));
+
+struct mptcp_subflow_addrs {
+	union {
+		__kernel_sa_family_t sa_family;
+		struct sockaddr sa_local;
+		struct sockaddr_in sin_local;
+		struct sockaddr_in6 sin6_local;
+		struct __kernel_sockaddr_storage ss_local;
+	};
+	union {
+		struct sockaddr sa_remote;
+		struct sockaddr_in sin_remote;
+		struct sockaddr_in6 sin6_remote;
+		struct __kernel_sockaddr_storage ss_remote;
+	};
+};
+
+#define MPTCP_INFO		1
+#define MPTCP_TCPINFO		2
+#define MPTCP_SUBFLOW_ADDRS	3
+#endif
+
+#ifndef MPTCP_FULL_INFO
+struct mptcp_subflow_info {
+	__u32				id;
+	struct mptcp_subflow_addrs	addrs;
+};
+
+struct mptcp_full_info {
+	__u32		size_tcpinfo_kernel;	/* must be 0, set by kernel */
+	__u32		size_tcpinfo_user;
+	__u32		size_sfinfo_kernel;	/* must be 0, set by kernel */
+	__u32		size_sfinfo_user;
+	__u32		num_subflows;		/* must be 0, set by kernel (real subflow count) */
+	__u32		size_arrays_user;	/* max subflows that userspace is interested in;
+						 * the buffers at subflow_info/tcp_info
+						 * are respectively at least:
+						 *  size_arrays * size_sfinfo_user
+						 *  size_arrays * size_tcpinfo_user
+						 * bytes wide
+						 */
+	__aligned_u64		subflow_info;
+	__aligned_u64		tcp_info;
+	struct mptcp_info	mptcp_info;
+};
+
+#define MPTCP_FULL_INFO		4
+#endif
+
+struct so_state {
+	struct mptcp_info mi;
+	struct mptcp_info last_sample;
+	struct tcp_info tcp_info;
+	struct mptcp_subflow_addrs addrs;
+	uint64_t mptcpi_rcv_delta;
+	uint64_t tcpi_rcv_delta;
+	bool pkt_stats_avail;
+};
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
 
 static void die_perror(const char *msg)
 {
@@ -48,7 +141,7 @@ static void die_perror(const char *msg)
 
 static void die_usage(int r)
 {
-	fprintf(stderr, "Usage: mptcp_inq [-6] [ -t tcp|mptcp ] [ -r tcp|mptcp]\n");
+	fprintf(stderr, "Usage: mptcp_inq [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i]\n");
 	exit(r);
 }
 
@@ -187,7 +280,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:i")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -201,6 +294,9 @@ static void parse_opts(int argc, char **argv)
 		case 'r':
 			proto_rx = protostr_to_num(optarg);
 			break;
+		case 'i':
+			inq = true;
+			break;
 		default:
 			die_usage(1);
 			break;
@@ -208,7 +304,297 @@ static void parse_opts(int argc, char **argv)
 	}
 }
 
-/* wait up to timeout milliseconds */
+static void do_getsockopt_bogus_sf_data(int fd, int optname)
+{
+	struct mptcp_subflow_data good_data;
+	struct bogus_data {
+		struct mptcp_subflow_data d;
+		char buf[2];
+	} bd;
+	socklen_t olen, _olen;
+	int ret;
+
+	memset(&bd, 0, sizeof(bd));
+	memset(&good_data, 0, sizeof(good_data));
+
+	olen = sizeof(good_data);
+	good_data.size_subflow_data = olen;
+
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &olen);
+	assert(ret < 0); /* 0 size_subflow_data */
+	assert(olen == sizeof(good_data));
+
+	bd.d = good_data;
+
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &olen);
+	assert(ret == 0);
+	assert(olen == sizeof(good_data));
+	assert(bd.d.num_subflows == 1);
+	assert(bd.d.size_kernel > 0);
+	assert(bd.d.size_user == 0);
+
+	bd.d = good_data;
+	_olen = rand() % olen;
+	olen = _olen;
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &olen);
+	assert(ret < 0);	/* bogus olen */
+	assert(olen == _olen);	/* must be unchanged */
+
+	bd.d = good_data;
+	olen = sizeof(good_data);
+	bd.d.size_kernel = 1;
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &olen);
+	assert(ret < 0); /* size_kernel not 0 */
+
+	bd.d = good_data;
+	olen = sizeof(good_data);
+	bd.d.num_subflows = 1;
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &olen);
+	assert(ret < 0); /* num_subflows not 0 */
+
+	/* forward compat check: larger struct mptcp_subflow_data on 'old' kernel */
+	bd.d = good_data;
+	olen = sizeof(bd);
+	bd.d.size_subflow_data = sizeof(bd);
+
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &olen);
+	assert(ret == 0);
+
+	/* olen must be truncated to real data size filled by kernel: */
+	assert(olen == sizeof(good_data));
+
+	assert(bd.d.size_subflow_data == sizeof(bd));
+
+	bd.d = good_data;
+	bd.d.size_subflow_data += 1;
+	bd.d.size_user = 1;
+	olen = bd.d.size_subflow_data + 1;
+	_olen = olen;
+
+	ret = getsockopt(fd, SOL_MPTCP, optname, &bd, &_olen);
+	assert(ret == 0);
+
+	/* no truncation, kernel should have filled 1 byte of optname payload in buf[1]: */
+	assert(olen == _olen);
+
+	assert(bd.d.size_subflow_data == sizeof(good_data) + 1);
+	assert(bd.buf[0] == 0);
+}
+
+static void do_getsockopt_mptcp_info(struct so_state *s, int fd, size_t w)
+{
+	struct mptcp_info i;
+	socklen_t olen;
+	int ret;
+
+	olen = sizeof(i);
+	ret = getsockopt(fd, SOL_MPTCP, MPTCP_INFO, &i, &olen);
+
+	if (ret < 0)
+		die_perror("getsockopt MPTCP_INFO");
+
+	s->pkt_stats_avail = olen >= sizeof(i);
+
+	s->last_sample = i;
+	if (s->mi.mptcpi_write_seq == 0)
+		s->mi = i;
+
+	assert(s->mi.mptcpi_write_seq + w == i.mptcpi_write_seq);
+
+	s->mptcpi_rcv_delta = i.mptcpi_rcv_nxt - s->mi.mptcpi_rcv_nxt;
+}
+
+static void do_getsockopt_tcp_info(struct so_state *s, int fd, size_t r, size_t w)
+{
+	struct my_tcp_info {
+		struct mptcp_subflow_data d;
+		struct tcp_info ti[2];
+	} ti;
+	int ret, tries = 5;
+	socklen_t olen;
+
+	do {
+		memset(&ti, 0, sizeof(ti));
+
+		ti.d.size_subflow_data = sizeof(struct mptcp_subflow_data);
+		ti.d.size_user = sizeof(struct tcp_info);
+		olen = sizeof(ti);
+
+		ret = getsockopt(fd, SOL_MPTCP, MPTCP_TCPINFO, &ti, &olen);
+		if (ret < 0)
+			xerror("getsockopt MPTCP_TCPINFO (tries %d, %m)");
+
+		assert(olen <= sizeof(ti));
+		assert(ti.d.size_kernel > 0);
+		assert(ti.d.size_user ==
+		       MIN(ti.d.size_kernel, sizeof(struct tcp_info)));
+		assert(ti.d.num_subflows == 1);
+
+		assert(olen > (socklen_t)sizeof(struct mptcp_subflow_data));
+		olen -= sizeof(struct mptcp_subflow_data);
+		assert(olen == ti.d.size_user);
+
+		s->tcp_info = ti.ti[0];
+
+		if (ti.ti[0].tcpi_bytes_sent == w &&
+		    ti.ti[0].tcpi_bytes_received == r)
+			goto done;
+
+		if (r == 0 && ti.ti[0].tcpi_bytes_sent == w &&
+		    ti.ti[0].tcpi_bytes_received) {
+			s->tcpi_rcv_delta = ti.ti[0].tcpi_bytes_received;
+			goto done;
+		}
+
+		/* wait and repeat, might be that tx is still ongoing */
+		sleep(1);
+	} while (tries-- > 0);
+
+	xerror("tcpi_bytes_sent %" PRIu64 ", want %zu. tcpi_bytes_received %" PRIu64 ", want %zu",
+		ti.ti[0].tcpi_bytes_sent, w, ti.ti[0].tcpi_bytes_received, r);
+
+done:
+	do_getsockopt_bogus_sf_data(fd, MPTCP_TCPINFO);
+}
+
+static void do_getsockopt_subflow_addrs(struct so_state *s, int fd)
+{
+	struct sockaddr_storage remote, local;
+	socklen_t olen, rlen, llen;
+	int ret;
+	struct my_addrs {
+		struct mptcp_subflow_data d;
+		struct mptcp_subflow_addrs addr[2];
+	} addrs;
+
+	memset(&addrs, 0, sizeof(addrs));
+	memset(&local, 0, sizeof(local));
+	memset(&remote, 0, sizeof(remote));
+
+	addrs.d.size_subflow_data = sizeof(struct mptcp_subflow_data);
+	addrs.d.size_user = sizeof(struct mptcp_subflow_addrs);
+	olen = sizeof(addrs);
+
+	ret = getsockopt(fd, SOL_MPTCP, MPTCP_SUBFLOW_ADDRS, &addrs, &olen);
+	if (ret < 0)
+		die_perror("getsockopt MPTCP_SUBFLOW_ADDRS");
+
+	assert(olen <= sizeof(addrs));
+	assert(addrs.d.size_kernel > 0);
+	assert(addrs.d.size_user ==
+	       MIN(addrs.d.size_kernel, sizeof(struct mptcp_subflow_addrs)));
+	assert(addrs.d.num_subflows == 1);
+
+	assert(olen > (socklen_t)sizeof(struct mptcp_subflow_data));
+	olen -= sizeof(struct mptcp_subflow_data);
+	assert(olen == addrs.d.size_user);
+
+	llen = sizeof(local);
+	ret = getsockname(fd, (struct sockaddr *)&local, &llen);
+	if (ret < 0)
+		die_perror("getsockname");
+	rlen = sizeof(remote);
+	ret = getpeername(fd, (struct sockaddr *)&remote, &rlen);
+	if (ret < 0)
+		die_perror("getpeername");
+
+	assert(rlen > 0);
+	assert(rlen == llen);
+
+	assert(remote.ss_family == local.ss_family);
+
+	assert(memcmp(&local, &addrs.addr[0].ss_local, sizeof(local)) == 0);
+	assert(memcmp(&remote, &addrs.addr[0].ss_remote, sizeof(remote)) == 0);
+	s->addrs = addrs.addr[0];
+
+	memset(&addrs, 0, sizeof(addrs));
+
+	addrs.d.size_subflow_data = sizeof(struct mptcp_subflow_data);
+	addrs.d.size_user = sizeof(sa_family_t);
+	olen = sizeof(addrs.d) + sizeof(sa_family_t);
+
+	ret = getsockopt(fd, SOL_MPTCP, MPTCP_SUBFLOW_ADDRS, &addrs, &olen);
+	assert(ret == 0);
+	assert(olen == sizeof(addrs.d) + sizeof(sa_family_t));
+
+	assert(addrs.addr[0].sa_family == pf);
+	assert(addrs.addr[0].sa_family == local.ss_family);
+
+	assert(memcmp(&local, &addrs.addr[0].ss_local, sizeof(local)) != 0);
+	assert(memcmp(&remote, &addrs.addr[0].ss_remote, sizeof(remote)) != 0);
+
+	do_getsockopt_bogus_sf_data(fd, MPTCP_SUBFLOW_ADDRS);
+}
+
+static void do_getsockopt_mptcp_full_info(struct so_state *s, int fd)
+{
+	size_t data_size = sizeof(struct mptcp_full_info);
+	struct mptcp_subflow_info sfinfo[2];
+	struct tcp_info tcp_info[2];
+	struct mptcp_full_info mfi;
+	socklen_t olen;
+	int ret;
+
+	memset(&mfi, 0, data_size);
+	memset(tcp_info, 0, sizeof(tcp_info));
+	memset(sfinfo, 0, sizeof(sfinfo));
+
+	mfi.size_tcpinfo_user = sizeof(struct tcp_info);
+	mfi.size_sfinfo_user = sizeof(struct mptcp_subflow_info);
+	mfi.size_arrays_user = 2;
+	mfi.subflow_info = (unsigned long)&sfinfo[0];
+	mfi.tcp_info = (unsigned long)&tcp_info[0];
+	olen = data_size;
+
+	ret = getsockopt(fd, SOL_MPTCP, MPTCP_FULL_INFO, &mfi, &olen);
+	if (ret < 0) {
+		if (errno == EOPNOTSUPP) {
+			perror("MPTCP_FULL_INFO test skipped");
+			return;
+		}
+		xerror("getsockopt MPTCP_FULL_INFO");
+	}
+
+	assert(olen <= data_size);
+	assert(mfi.size_tcpinfo_kernel > 0);
+	assert(mfi.size_tcpinfo_user ==
+	       MIN(mfi.size_tcpinfo_kernel, sizeof(struct tcp_info)));
+	assert(mfi.size_sfinfo_kernel > 0);
+	assert(mfi.size_sfinfo_user ==
+	       MIN(mfi.size_sfinfo_kernel, sizeof(struct mptcp_subflow_info)));
+	assert(mfi.num_subflows == 1);
+
+	/* Tolerate future extension to mptcp_info struct and running newer
+	 * test on top of older kernel.
+	 * Anyway any kernel supporting MPTCP_FULL_INFO must at least include
+	 * the following in mptcp_info.
+	 */
+	assert(olen > (socklen_t)__builtin_offsetof(struct mptcp_full_info, tcp_info));
+	assert(mfi.mptcp_info.mptcpi_subflows == 0);
+	assert(mfi.mptcp_info.mptcpi_bytes_sent == s->last_sample.mptcpi_bytes_sent);
+	assert(mfi.mptcp_info.mptcpi_bytes_received == s->last_sample.mptcpi_bytes_received);
+
+	assert(sfinfo[0].id == 1);
+	assert(tcp_info[0].tcpi_bytes_sent == s->tcp_info.tcpi_bytes_sent);
+	assert(tcp_info[0].tcpi_bytes_received == s->tcp_info.tcpi_bytes_received);
+	assert(!memcmp(&sfinfo->addrs, &s->addrs, sizeof(struct mptcp_subflow_addrs)));
+}
+
+static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
+{
+	if (proto_tx != IPPROTO_MPTCP || proto_rx != IPPROTO_MPTCP)
+		return;
+
+	do_getsockopt_mptcp_info(s, fd, w);
+
+	do_getsockopt_tcp_info(s, fd, r, w);
+
+	do_getsockopt_subflow_addrs(s, fd);
+
+	if (r)
+		do_getsockopt_mptcp_full_info(s, fd);
+}
+
 static void wait_for_ack(int fd, int timeout, size_t total)
 {
 	int i;
@@ -245,7 +631,10 @@ static void connect_one_server(int fd, int unixfd)
 {
 	size_t len, i, total, sent;
 	char buf[4096], buf2[4096];
+	struct so_state s;
 	ssize_t ret;
+
+	memset(&s, 0, sizeof(s));
 
 	len = rand() % (sizeof(buf) - 1);
 
@@ -258,6 +647,8 @@ static void connect_one_server(int fd, int unixfd)
 	}
 
 	buf[i] = '\n';
+
+	do_getsockopts(&s, fd, 0, 0);
 
 	/* un-block server */
 	ret = read(unixfd, buf2, 4);
@@ -274,6 +665,16 @@ static void connect_one_server(int fd, int unixfd)
 
 	if (ret != (ssize_t)len)
 		xerror("short write");
+
+	ret = read(fd, buf2, sizeof(buf2));
+	if (ret < 0)
+		die_perror("read");
+	assert(ret == len - 1);
+
+	if (memcmp(buf + 1, buf2, len - 1))
+		xerror("data corruption");
+
+	do_getsockopts(&s, fd, ret, ret + 1);
 
 	ret = read(unixfd, buf2, 4);
 	assert(strncmp(buf2, "huge", 4) == 0);
@@ -332,9 +733,23 @@ static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
 	xerror("could not find TCP_CM_INQ cmsg type");
 }
 
-static void process_one_client(int fd, int unixfd)
+static void check_tcp_inq(struct msghdr *msgh, unsigned int check, bool equal)
 {
 	unsigned int tcp_inq;
+
+	if (!inq)
+		return;
+
+	get_tcp_inq(msgh, &tcp_inq);
+
+	if (equal)
+		assert(tcp_inq == check);
+	else
+		assert(tcp_inq <= check);
+}
+
+static void process_one_client(int fd, int unixfd)
+{
 	size_t expect_len;
 	char msg_buf[4096];
 	char buf[4096];
@@ -349,7 +764,11 @@ static void process_one_client(int fd, int unixfd)
 		.msg_control = msg_buf,
 		.msg_controllen = sizeof(msg_buf),
 	};
-	ssize_t ret, tot;
+	ssize_t ret, ret2, tot;
+	struct so_state s;
+
+	memset(&s, 0, sizeof(s));
+	do_getsockopts(&s, fd, 0, 0);
 
 	ret = write(unixfd, "xmit", 4);
 	assert(ret == 4);
@@ -383,12 +802,12 @@ static void process_one_client(int fd, int unixfd)
 	if (ret < 0)
 		die_perror("recvmsg");
 
-	if (msg.msg_controllen == 0)
-		xerror("msg_controllen is 0");
+	if (inq) {
+		if (msg.msg_controllen == 0)
+			xerror("msg_controllen is 0");
+	}
 
-	get_tcp_inq(&msg, &tcp_inq);
-
-	assert((size_t)tcp_inq == (expect_len - 1));
+	check_tcp_inq(&msg, expect_len - 1, true);
 
 	iov.iov_len = sizeof(buf);
 	ret = recvmsg(fd, &msg, 0);
@@ -396,11 +815,17 @@ static void process_one_client(int fd, int unixfd)
 		die_perror("recvmsg");
 
 	/* should have gotten exact remainder of all pending data */
-	assert(ret == (ssize_t)tcp_inq);
+	assert(ret == (ssize_t)expect_len - 1);
 
 	/* should be 0, all drained */
-	get_tcp_inq(&msg, &tcp_inq);
-	assert(tcp_inq == 0);
+	check_tcp_inq(&msg, 0, true);
+
+	ret2 = write(fd, buf, ret);
+	if (ret2 < 0)
+		die_perror("write");
+	assert(ret2 == ret);
+
+	do_getsockopts(&s, fd, ret + 1, ret2);
 
 	/* request a large swath of data. */
 	ret = write(unixfd, "huge", 4);
@@ -422,13 +847,7 @@ static void process_one_client(int fd, int unixfd)
 
 		tot += ret;
 
-		get_tcp_inq(&msg, &tcp_inq);
-
-		if (tcp_inq > expect_len - tot)
-			xerror("inq %d, remaining %d total_len %d\n",
-			       tcp_inq, expect_len - tot, (int)expect_len);
-
-		assert(tcp_inq <= expect_len - tot);
+		check_tcp_inq(&msg, expect_len - tot, false);
 	} while ((size_t)tot < expect_len);
 
 	ret = write(unixfd, "shut", 4);
@@ -447,10 +866,8 @@ static void process_one_client(int fd, int unixfd)
 		die_perror("recvmsg");
 	assert(ret == 1);
 
-	get_tcp_inq(&msg, &tcp_inq);
-
 	/* tcp_inq should be 1 due to received fin. */
-	assert(tcp_inq == 1);
+	check_tcp_inq(&msg, 1, true);
 
 	iov.iov_len = 1;
 	ret = recvmsg(fd, &msg, 0);
@@ -459,8 +876,7 @@ static void process_one_client(int fd, int unixfd)
 
 	/* expect EOF */
 	assert(ret == 0);
-	get_tcp_inq(&msg, &tcp_inq);
-	assert(tcp_inq == 1);
+	check_tcp_inq(&msg, 1, true);
 
 	close(fd);
 }
@@ -497,8 +913,10 @@ static int server(int unixfd)
 	alarm(15);
 	r = xaccept(fd);
 
-	if (-1 == setsockopt(r, IPPROTO_TCP, TCP_INQ, &on, sizeof(on)))
-		die_perror("setsockopt");
+	if (inq) {
+		if (-1 == setsockopt(r, IPPROTO_TCP, TCP_INQ, &on, sizeof(on)))
+			die_perror("setsockopt");
+	}
 
 	process_one_client(r, unixfd);
 
