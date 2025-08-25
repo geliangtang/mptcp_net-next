@@ -742,6 +742,41 @@ static void connect_one_server(int fd, int unixfd)
 	close(unixfd);
 }
 
+static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
+{
+	struct cmsghdr *cmsg;
+
+	for (cmsg = CMSG_FIRSTHDR(msgh); cmsg ; cmsg = CMSG_NXTHDR(msgh, cmsg)) {
+		if (cmsg->cmsg_level == IPPROTO_TCP && cmsg->cmsg_type == TCP_CM_INQ) {
+			memcpy(inqv, CMSG_DATA(cmsg), sizeof(*inqv));
+			return;
+		}
+	}
+
+	xerror("could not find TCP_CM_INQ cmsg type");
+}
+
+static void do_getsockopt_inq(int fd, struct msghdr *msgh, unsigned int check)
+{
+	unsigned int tcp_inq;
+	socklen_t len;
+	int on;
+
+	len = sizeof(on);
+	if (getsockopt(fd, IPPROTO_TCP, TCP_INQ, &on, &len))
+		die_perror("getsockopt(TCP_INQ)");
+
+	if (!on)
+		return;
+
+	get_tcp_inq(msgh, &tcp_inq);
+
+	if (check <= 1)
+		assert(tcp_inq == check);
+	else
+		assert(tcp_inq <= check);
+}
+
 static void process_one_client(int fd, int unixfd)
 {
 	ssize_t ret, ret2, ret3;
@@ -799,6 +834,8 @@ static void process_one_client(int fd, int unixfd)
 	if (inq && msg.msg_controllen == 0)
 		xerror("msg_controllen is 0");
 
+	do_getsockopt_inq(fd, &msg, expect_len - 1);
+
 	iov.iov_len = sizeof(buf);
 	iov.iov_base = buf + 1;
 	ret = recvmsg(fd, &msg, 0);
@@ -813,6 +850,9 @@ static void process_one_client(int fd, int unixfd)
 
 	/* should have gotten exact remainder of all pending data */
 	assert(ret == (ssize_t)expect_len - 1);
+
+	/* should be 0, all drained */
+	do_getsockopt_inq(fd, &msg, 0);
 
 	ret += 1;
 	ret2 = write(fd, buf, ret);
@@ -862,6 +902,8 @@ static void process_one_client(int fd, int unixfd)
 			die_perror("recvmsg");
 
 		tot += ret;
+
+		do_getsockopt_inq(fd, &msg, expect_len - tot);
 	} while ((size_t)tot < expect_len);
 
 	ret = write(unixfd, "shut", 4);
@@ -880,11 +922,15 @@ static void process_one_client(int fd, int unixfd)
 		die_perror("recvmsg");
 	assert(ret == 1);
 
+	/* tcp_inq should be 1 due to received fin. */
+	do_getsockopt_inq(fd, &msg, 1);
+
 	/* wait for hangup */
 	iov.iov_len = 1;
 	ret3 = recvmsg(fd, &msg, 0);
 	if (ret3 != 0)
 		xerror("expected EOF, got %lu", ret3);
+	do_getsockopt_inq(fd, &msg, 1);
 
 	close(fd);
 }
