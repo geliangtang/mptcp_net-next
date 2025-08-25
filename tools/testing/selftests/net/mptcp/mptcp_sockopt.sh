@@ -329,6 +329,8 @@ do_tcpinq_tests()
 		return
 	fi
 
+	mptcp_lib_print_info "sockopt TCP_INQ"
+
 	local args
 	for args in "-t tcp" "-r tcp"; do
 		do_tcpinq_test $args -i

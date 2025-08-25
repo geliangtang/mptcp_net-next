@@ -29,16 +29,17 @@
 #include <linux/tcp.h>
 #include <linux/sockios.h>
 
+static int pf = AF_INET;
+static int proto_tx = IPPROTO_MPTCP;
+static int proto_rx = IPPROTO_MPTCP;
+static bool inq;
+
 #ifndef IPPROTO_MPTCP
 #define IPPROTO_MPTCP 262
 #endif
 #ifndef SOL_MPTCP
 #define SOL_MPTCP 284
 #endif
-
-static int pf = AF_INET;
-static int proto_tx = IPPROTO_MPTCP;
-static int proto_rx = IPPROTO_MPTCP;
 
 static void die_perror(const char *msg)
 {
@@ -48,7 +49,7 @@ static void die_perror(const char *msg)
 
 static void die_usage(int r)
 {
-	fprintf(stderr, "Usage: mptcp_inq [-6] [ -t tcp|mptcp ] [ -r tcp|mptcp]\n");
+	fprintf(stderr, "Usage: mptcp_inq [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i]\n");
 	exit(r);
 }
 
@@ -187,7 +188,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:i")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -201,6 +202,9 @@ static void parse_opts(int argc, char **argv)
 		case 'r':
 			proto_rx = protostr_to_num(optarg);
 			break;
+		case 'i':
+			inq = true;
+			break;
 		default:
 			die_usage(1);
 			break;
@@ -208,7 +212,6 @@ static void parse_opts(int argc, char **argv)
 	}
 }
 
-/* wait up to timeout milliseconds */
 static void wait_for_ack(int fd, int timeout, size_t total)
 {
 	int i;
@@ -275,6 +278,14 @@ static void connect_one_server(int fd, int unixfd)
 	if (ret != (ssize_t)len)
 		xerror("short write");
 
+	ret = read(fd, buf2, sizeof(buf2));
+	if (ret < 0)
+		die_perror("read");
+	assert(ret == len - 1);
+
+	if (memcmp(buf + 1, buf2, len - 1))
+		xerror("data corruption");
+
 	ret = read(unixfd, buf2, 4);
 	assert(strncmp(buf2, "huge", 4) == 0);
 
@@ -332,9 +343,23 @@ static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
 	xerror("could not find TCP_CM_INQ cmsg type");
 }
 
-static void process_one_client(int fd, int unixfd)
+static void check_tcp_inq(struct msghdr *msgh, unsigned int check, bool equal)
 {
 	unsigned int tcp_inq;
+
+	if (!inq)
+		return;
+
+	get_tcp_inq(msgh, &tcp_inq);
+
+	if (equal)
+		assert(tcp_inq == check);
+	else
+		assert(tcp_inq <= check);
+}
+
+static void process_one_client(int fd, int unixfd)
+{
 	size_t expect_len;
 	char msg_buf[4096];
 	char buf[4096];
@@ -349,7 +374,7 @@ static void process_one_client(int fd, int unixfd)
 		.msg_control = msg_buf,
 		.msg_controllen = sizeof(msg_buf),
 	};
-	ssize_t ret, tot;
+	ssize_t ret, ret2, tot;
 
 	ret = write(unixfd, "xmit", 4);
 	assert(ret == 4);
@@ -383,12 +408,12 @@ static void process_one_client(int fd, int unixfd)
 	if (ret < 0)
 		die_perror("recvmsg");
 
-	if (msg.msg_controllen == 0)
-		xerror("msg_controllen is 0");
+	if (inq) {
+		if (msg.msg_controllen == 0)
+			xerror("msg_controllen is 0");
+	}
 
-	get_tcp_inq(&msg, &tcp_inq);
-
-	assert((size_t)tcp_inq == (expect_len - 1));
+	check_tcp_inq(&msg, expect_len - 1, true);
 
 	iov.iov_len = sizeof(buf);
 	ret = recvmsg(fd, &msg, 0);
@@ -396,11 +421,15 @@ static void process_one_client(int fd, int unixfd)
 		die_perror("recvmsg");
 
 	/* should have gotten exact remainder of all pending data */
-	assert(ret == (ssize_t)tcp_inq);
+	assert(ret == (ssize_t)expect_len - 1);
 
 	/* should be 0, all drained */
-	get_tcp_inq(&msg, &tcp_inq);
-	assert(tcp_inq == 0);
+	check_tcp_inq(&msg, 0, true);
+
+	ret2 = write(fd, buf, ret);
+	if (ret2 < 0)
+		die_perror("write");
+	assert(ret2 == ret);
 
 	/* request a large swath of data. */
 	ret = write(unixfd, "huge", 4);
@@ -422,13 +451,7 @@ static void process_one_client(int fd, int unixfd)
 
 		tot += ret;
 
-		get_tcp_inq(&msg, &tcp_inq);
-
-		if (tcp_inq > expect_len - tot)
-			xerror("inq %d, remaining %d total_len %d\n",
-			       tcp_inq, expect_len - tot, (int)expect_len);
-
-		assert(tcp_inq <= expect_len - tot);
+		check_tcp_inq(&msg, expect_len - tot, false);
 	} while ((size_t)tot < expect_len);
 
 	ret = write(unixfd, "shut", 4);
@@ -447,10 +470,8 @@ static void process_one_client(int fd, int unixfd)
 		die_perror("recvmsg");
 	assert(ret == 1);
 
-	get_tcp_inq(&msg, &tcp_inq);
-
 	/* tcp_inq should be 1 due to received fin. */
-	assert(tcp_inq == 1);
+	check_tcp_inq(&msg, 1, true);
 
 	iov.iov_len = 1;
 	ret = recvmsg(fd, &msg, 0);
@@ -459,8 +480,7 @@ static void process_one_client(int fd, int unixfd)
 
 	/* expect EOF */
 	assert(ret == 0);
-	get_tcp_inq(&msg, &tcp_inq);
-	assert(tcp_inq == 1);
+	check_tcp_inq(&msg, 1, true);
 
 	close(fd);
 }
@@ -497,8 +517,10 @@ static int server(int unixfd)
 	alarm(15);
 	r = xaccept(fd);
 
-	if (-1 == setsockopt(r, IPPROTO_TCP, TCP_INQ, &on, sizeof(on)))
-		die_perror("setsockopt");
+	if (inq) {
+		if (-1 == setsockopt(r, IPPROTO_TCP, TCP_INQ, &on, sizeof(on)))
+			die_perror("setsockopt");
+	}
 
 	process_one_client(r, unixfd);
 
