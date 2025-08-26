@@ -620,9 +620,11 @@ static void connect_one_server(int fd, int unixfd)
 	/* un-block server */
 	ret = read(unixfd, buf2, 4);
 	assert(ret == 4);
-	close(unixfd);
 
 	assert(strncmp(buf2, "xmit", 4) == 0);
+
+	ret = write(unixfd, &len, sizeof(len));
+	assert(ret == (ssize_t)sizeof(len));
 
 	ret = write(fd, buf, len);
 	if (ret < 0)
@@ -630,6 +632,48 @@ static void connect_one_server(int fd, int unixfd)
 
 	if (ret != (ssize_t)len)
 		xerror("short write");
+
+	if (inq) {
+		ret = read(unixfd, buf2, 4);
+		assert(strncmp(buf2, "huge", 4) == 0);
+
+		total = rand() % (16 * 1024 * 1024);
+		total += (1 * 1024 * 1024);
+
+		ret = write(unixfd, &total, sizeof(total));
+		assert(ret == (ssize_t)sizeof(total));
+
+		while (total > 0) {
+			if (total > sizeof(buf))
+				len = sizeof(buf);
+			else
+				len = total;
+
+			ret = write(fd, buf, len);
+			if (ret < 0)
+				die_perror("write");
+			total -= ret;
+
+			/* we don't have to care about buf content, only
+			 * number of total bytes sent
+			 */
+		}
+
+		ret = read(unixfd, buf2, 4);
+		assert(ret == 4);
+		assert(strncmp(buf2, "shut", 4) == 0);
+
+		ret = write(fd, buf, 1);
+		assert(ret == 1);
+		close(fd);
+		ret = write(unixfd, "closed", 6);
+		assert(ret == 6);
+
+		close(unixfd);
+		return;
+	}
+
+	close(unixfd);
 
 	total = 0;
 	do {
@@ -678,12 +722,20 @@ static void process_one_client(int fd, int unixfd)
 		.msg_control = msg_buf,
 		.msg_controllen = sizeof(msg_buf),
 	};
+	size_t expect_len, tot;
+	char tmp[16];
 
 	memset(&s, 0, sizeof(s));
 	do_getsockopts(&s, fd, 0, 0);
 
 	ret = write(unixfd, "xmit", 4);
 	assert(ret == 4);
+
+	ret = read(unixfd, &expect_len, sizeof(expect_len));
+	assert(ret == (ssize_t)sizeof(expect_len));
+
+	if (expect_len > sizeof(buf))
+		xerror("expect len %zu exceeds buffer size", expect_len);
 
 	/* read one byte, expect cmsg to return expected - 1 */
 	ret = recvmsg(fd, &msg, 0);
@@ -703,6 +755,59 @@ static void process_one_client(int fd, int unixfd)
 
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta == (uint64_t)ret);
+
+	/* should have gotten exact remainder of all pending data */
+	assert(ret == (ssize_t)expect_len - 1);
+
+	if (inq) {
+		/* request a large swath of data. */
+		ret = write(unixfd, "huge", 4);
+		assert(ret == 4);
+
+		ret = read(unixfd, &expect_len, sizeof(expect_len));
+		assert(ret == (ssize_t)sizeof(expect_len));
+
+		/* peer should send us a few mb of data */
+		if (expect_len <= sizeof(buf))
+			xerror("expect len %zu too small\n", expect_len);
+
+		tot = 0;
+		do {
+			iov.iov_len = sizeof(buf);
+			ret = recvmsg(fd, &msg, 0);
+			if (ret < 0)
+				die_perror("recvmsg");
+
+			tot += ret;
+		} while ((size_t)tot < expect_len);
+
+		ret = write(unixfd, "shut", 4);
+		assert(ret == 4);
+
+		/* wait for hangup. Should have received one more byte of data. */
+		ret = read(unixfd, tmp, sizeof(tmp));
+		assert(ret == 6);
+		assert(strncmp(tmp, "closed", 6) == 0);
+
+		sleep(1);
+
+		iov.iov_len = 1;
+		ret = recvmsg(fd, &msg, 0);
+		if (ret < 0)
+			die_perror("recvmsg");
+		assert(ret == 1);
+
+		iov.iov_len = 1;
+		ret = recvmsg(fd, &msg, 0);
+		if (ret < 0)
+			die_perror("recvmsg");
+
+		/* expect EOF */
+		assert(ret == 0);
+
+		close(fd);
+		return;
+	}
 
 	ret += 1;
 	ret2 = write(fd, buf, ret);
