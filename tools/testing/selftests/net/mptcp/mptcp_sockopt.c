@@ -681,7 +681,13 @@ static void process_one_client(int fd, int pipefd)
 	ret = write(pipefd, "xmit", 4);
 	assert(ret == 4);
 
+	/* read one byte, expect cmsg to return expected - 1 */
+	ret = recvmsg(fd, &msg, 0);
+	if (ret < 0)
+		die_perror("recvmsg");
+
 	iov.iov_len = sizeof(buf);
+	iov.iov_base = buf + 1;
 	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
 		die_perror("recvmsg");
@@ -691,6 +697,7 @@ static void process_one_client(int fd, int pipefd)
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta == (uint64_t)ret);
 
+	ret += 1;
 	ret2 = write(fd, buf, ret);
 	if (ret2 < 0)
 		die_perror("write");
