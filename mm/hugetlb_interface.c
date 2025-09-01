@@ -169,10 +169,20 @@ static ssize_t free_hugepages_show(struct kobject *kobj,
 }
 HSTATE_ATTR_RO(free_hugepages);
 
+static ssize_t resv_hugepages_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	struct hstate *h = kobj_to_hstate(kobj, NULL);
+
+	return sysfs_emit(buf, "%lu\n", h->resv_huge_pages);
+}
+HSTATE_ATTR_RO(resv_hugepages);
+
 static struct attribute *hstate_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&nr_overcommit_hugepages_attr.attr,
 	&free_hugepages_attr.attr,
+	&resv_hugepages_attr.attr,
 	NULL,
 };
 
