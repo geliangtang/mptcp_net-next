@@ -119,8 +119,39 @@ static ssize_t nr_hugepages_store(struct kobject *kobj,
 }
 HSTATE_ATTR(nr_hugepages);
 
+static ssize_t nr_overcommit_hugepages_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	struct hstate *h = kobj_to_hstate(kobj, NULL);
+
+	return sysfs_emit(buf, "%lu\n", h->nr_overcommit_huge_pages);
+}
+
+static ssize_t nr_overcommit_hugepages_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int err;
+	unsigned long input;
+	struct hstate *h = kobj_to_hstate(kobj, NULL);
+
+	if (hstate_is_gigantic(h))
+		return -EINVAL;
+
+	err = kstrtoul(buf, 10, &input);
+	if (err)
+		return err;
+
+	spin_lock_irq(&hugetlb_lock);
+	h->nr_overcommit_huge_pages = input;
+	spin_unlock_irq(&hugetlb_lock);
+
+	return count;
+}
+HSTATE_ATTR(nr_overcommit_hugepages);
+
 static struct attribute *hstate_attrs[] = {
 	&nr_hugepages_attr.attr,
+	&nr_overcommit_hugepages_attr.attr,
 	NULL,
 };
 
