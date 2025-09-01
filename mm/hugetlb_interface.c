@@ -178,11 +178,29 @@ static ssize_t resv_hugepages_show(struct kobject *kobj,
 }
 HSTATE_ATTR_RO(resv_hugepages);
 
+static ssize_t surplus_hugepages_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	struct hstate *h;
+	unsigned long surplus_huge_pages;
+	int nid;
+
+	h = kobj_to_hstate(kobj, &nid);
+	if (nid == NUMA_NO_NODE)
+		surplus_huge_pages = h->surplus_huge_pages;
+	else
+		surplus_huge_pages = h->surplus_huge_pages_node[nid];
+
+	return sysfs_emit(buf, "%lu\n", surplus_huge_pages);
+}
+HSTATE_ATTR_RO(surplus_hugepages);
+
 static struct attribute *hstate_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&nr_overcommit_hugepages_attr.attr,
 	&free_hugepages_attr.attr,
 	&resv_hugepages_attr.attr,
+	&surplus_hugepages_attr.attr,
 	NULL,
 };
 
@@ -253,6 +271,7 @@ static struct node_hstate node_hstates[MAX_NUMNODES];
 static struct attribute *per_node_hstate_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&free_hugepages_attr.attr,
+	&surplus_hugepages_attr.attr,
 	NULL,
 };
 
