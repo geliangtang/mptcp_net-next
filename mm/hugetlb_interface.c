@@ -21,6 +21,9 @@
 #define HSTATE_ATTR(_name) \
 	static struct kobj_attribute _name##_attr = __ATTR_RW(_name)
 
+#define HSTATE_ATTR_RO(_name) \
+	static struct kobj_attribute _name##_attr = __ATTR_RO(_name)
+
 static struct kobject *hugepages_kobj;
 static struct kobject *hstate_kobjs[HUGE_MAX_HSTATE];
 
@@ -149,9 +152,27 @@ static ssize_t nr_overcommit_hugepages_store(struct kobject *kobj,
 }
 HSTATE_ATTR(nr_overcommit_hugepages);
 
+static ssize_t free_hugepages_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	struct hstate *h;
+	unsigned long free_huge_pages;
+	int nid;
+
+	h = kobj_to_hstate(kobj, &nid);
+	if (nid == NUMA_NO_NODE)
+		free_huge_pages = h->free_huge_pages;
+	else
+		free_huge_pages = h->free_huge_pages_node[nid];
+
+	return sysfs_emit(buf, "%lu\n", free_huge_pages);
+}
+HSTATE_ATTR_RO(free_hugepages);
+
 static struct attribute *hstate_attrs[] = {
 	&nr_hugepages_attr.attr,
 	&nr_overcommit_hugepages_attr.attr,
+	&free_hugepages_attr.attr,
 	NULL,
 };
 
@@ -221,6 +242,7 @@ static struct node_hstate node_hstates[MAX_NUMNODES];
  */
 static struct attribute *per_node_hstate_attrs[] = {
 	&nr_hugepages_attr.attr,
+	&free_hugepages_attr.attr,
 	NULL,
 };
 
