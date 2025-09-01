@@ -671,3 +671,13 @@ void __init hugetlb_sysfs_init(void)
 #endif
 	hugetlb_register_all_nodes();
 }
+
+#ifdef CONFIG_SYSCTL
+static const struct ctl_table hugetlb_table[] = {
+};
+
+void __init hugetlb_sysctl_init(void)
+{
+	register_sysctl_init("vm", hugetlb_table);
+}
+#endif /* CONFIG_SYSCTL */
