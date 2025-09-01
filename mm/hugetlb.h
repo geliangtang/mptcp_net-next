@@ -95,4 +95,12 @@ void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
 void add_hugetlb_folio(struct hstate *h, struct folio *folio,
 		       bool adjust_surplus);
 
+void __init hugetlb_sysfs_init(void);
+
+#ifdef CONFIG_SYSCTL
+void hugetlb_sysctl_init(void);
+#else
+static inline void hugetlb_sysctl_init(void) { }
+#endif
+
 #endif /* _LINUX_HUGETLB_INTERNAL_H */
