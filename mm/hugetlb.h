@@ -87,4 +87,12 @@ static inline int hstate_next_node_to_free(struct hstate *h, nodemask_t *nodes_a
 int hugetlb_set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 			       nodemask_t *nodes_allowed);
 
+void init_new_hugetlb_folio(struct hstate *h, struct folio *folio);
+void prep_and_add_allocated_folios(struct hstate *h,
+				   struct list_head *folio_list);
+void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
+			  bool adjust_surplus);
+void add_hugetlb_folio(struct hstate *h, struct folio *folio,
+		       bool adjust_surplus);
+
 #endif /* _LINUX_HUGETLB_INTERNAL_H */

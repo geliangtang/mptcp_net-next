@@ -1457,8 +1457,8 @@ static struct folio *alloc_gigantic_folio(struct hstate *h, gfp_t gfp_mask,
  *
  * Must be called with hugetlb lock held.
  */
-static void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
-							bool adjust_surplus)
+void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
+			  bool adjust_surplus)
 {
 	int nid = folio_nid(folio);
 
@@ -1493,8 +1493,8 @@ static void remove_hugetlb_folio(struct hstate *h, struct folio *folio,
 	h->nr_huge_pages_node[nid]--;
 }
 
-static void add_hugetlb_folio(struct hstate *h, struct folio *folio,
-			     bool adjust_surplus)
+void add_hugetlb_folio(struct hstate *h, struct folio *folio,
+		       bool adjust_surplus)
 {
 	int nid = folio_nid(folio);
 
@@ -1825,7 +1825,7 @@ static void __prep_account_new_huge_page(struct hstate *h, int nid)
 	h->nr_huge_pages_node[nid]++;
 }
 
-static void init_new_hugetlb_folio(struct hstate *h, struct folio *folio)
+void init_new_hugetlb_folio(struct hstate *h, struct folio *folio)
 {
 	__folio_set_hugetlb(folio);
 	INIT_LIST_HEAD(&folio->lru);
@@ -1955,8 +1955,8 @@ static struct folio *alloc_fresh_hugetlb_folio(struct hstate *h,
 	return folio;
 }
 
-static void prep_and_add_allocated_folios(struct hstate *h,
-					struct list_head *folio_list)
+void prep_and_add_allocated_folios(struct hstate *h,
+				   struct list_head *folio_list)
 {
 	unsigned long flags;
 	struct folio *folio, *tmp_f;
