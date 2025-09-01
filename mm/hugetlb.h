@@ -84,4 +84,7 @@ static inline int hstate_next_node_to_free(struct hstate *h, nodemask_t *nodes_a
 		((node = hstate_next_node_to_free(hs, mask)) || 1);	\
 		nr_nodes--)
 
+int hugetlb_set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
+			       nodemask_t *nodes_allowed);
+
 #endif /* _LINUX_HUGETLB_INTERNAL_H */

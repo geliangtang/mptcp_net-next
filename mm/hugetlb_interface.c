@@ -15,11 +15,112 @@
 
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
+#include <linux/mempolicy.h>
+#include "hugetlb.h"
+
+#define HSTATE_ATTR(_name) \
+	static struct kobj_attribute _name##_attr = __ATTR_RW(_name)
 
 static struct kobject *hugepages_kobj;
 static struct kobject *hstate_kobjs[HUGE_MAX_HSTATE];
 
+static struct hstate *kobj_to_node_hstate(struct kobject *kobj, int *nidp);
+
+static struct hstate *kobj_to_hstate(struct kobject *kobj, int *nidp)
+{
+	int i;
+
+	for (i = 0; i < HUGE_MAX_HSTATE; i++)
+		if (hstate_kobjs[i] == kobj) {
+			if (nidp)
+				*nidp = NUMA_NO_NODE;
+			return &hstates[i];
+		}
+
+	return kobj_to_node_hstate(kobj, nidp);
+}
+
+static ssize_t nr_hugepages_show_common(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	struct hstate *h;
+	unsigned long nr_huge_pages;
+	int nid;
+
+	h = kobj_to_hstate(kobj, &nid);
+	if (nid == NUMA_NO_NODE)
+		nr_huge_pages = h->nr_huge_pages;
+	else
+		nr_huge_pages = h->nr_huge_pages_node[nid];
+
+	return sysfs_emit(buf, "%lu\n", nr_huge_pages);
+}
+
+static ssize_t __nr_hugepages_store_common(bool obey_mempolicy,
+					   struct hstate *h, int nid,
+					   unsigned long count, size_t len)
+{
+	int err;
+	nodemask_t nodes_allowed, *n_mask;
+
+	if (hstate_is_gigantic(h) && !gigantic_page_runtime_supported())
+		return -EINVAL;
+
+	if (nid == NUMA_NO_NODE) {
+		/*
+		 * global hstate attribute
+		 */
+		if (!(obey_mempolicy &&
+				init_nodemask_of_mempolicy(&nodes_allowed)))
+			n_mask = &node_states[N_MEMORY];
+		else
+			n_mask = &nodes_allowed;
+	} else {
+		/*
+		 * Node specific request.  count adjustment happens in
+		 * hugetlb_set_max_huge_pages() after acquiring hugetlb_lock.
+		 */
+		init_nodemask_of_node(&nodes_allowed, nid);
+		n_mask = &nodes_allowed;
+	}
+
+	err = hugetlb_set_max_huge_pages(h, count, nid, n_mask);
+
+	return err ? err : len;
+}
+
+static ssize_t nr_hugepages_store_common(bool obey_mempolicy,
+					 struct kobject *kobj, const char *buf,
+					 size_t len)
+{
+	struct hstate *h;
+	unsigned long count;
+	int nid;
+	int err;
+
+	err = kstrtoul(buf, 10, &count);
+	if (err)
+		return err;
+
+	h = kobj_to_hstate(kobj, &nid);
+	return __nr_hugepages_store_common(obey_mempolicy, h, nid, count, len);
+}
+
+static ssize_t nr_hugepages_show(struct kobject *kobj,
+				       struct kobj_attribute *attr, char *buf)
+{
+	return nr_hugepages_show_common(kobj, attr, buf);
+}
+
+static ssize_t nr_hugepages_store(struct kobject *kobj,
+	       struct kobj_attribute *attr, const char *buf, size_t len)
+{
+	return nr_hugepages_store_common(false, kobj, buf, len);
+}
+HSTATE_ATTR(nr_hugepages);
+
 static struct attribute *hstate_attrs[] = {
+	&nr_hugepages_attr.attr,
 	NULL,
 };
 
@@ -88,12 +189,37 @@ static struct node_hstate node_hstates[MAX_NUMNODES];
  * A subset of global hstate attributes for node devices
  */
 static struct attribute *per_node_hstate_attrs[] = {
+	&nr_hugepages_attr.attr,
 	NULL,
 };
 
 static const struct attribute_group per_node_hstate_attr_group = {
 	.attrs = per_node_hstate_attrs,
 };
+
+/*
+ * kobj_to_node_hstate - lookup global hstate for node device hstate attr kobj.
+ * Returns node id via non-NULL nidp.
+ */
+static struct hstate *kobj_to_node_hstate(struct kobject *kobj, int *nidp)
+{
+	int nid;
+
+	for (nid = 0; nid < nr_node_ids; nid++) {
+		struct node_hstate *nhs = &node_hstates[nid];
+		int i;
+
+		for (i = 0; i < HUGE_MAX_HSTATE; i++)
+			if (nhs->hstate_kobjs[i] == kobj) {
+				if (nidp)
+					*nidp = nid;
+				return &hstates[i];
+			}
+	}
+
+	BUG();
+	return NULL;
+}
 
 /*
  * Unregister hstate attributes from a single node device.
@@ -171,6 +297,14 @@ static void __init hugetlb_register_all_nodes(void)
 		hugetlb_register_node(node_devices[nid]);
 }
 #else	/* !CONFIG_NUMA */
+
+static struct hstate *kobj_to_node_hstate(struct kobject *kobj, int *nidp)
+{
+	BUG();
+	if (nidp)
+		*nidp = -1;
+	return NULL;
+}
 
 static void hugetlb_register_all_nodes(void) { }
 
