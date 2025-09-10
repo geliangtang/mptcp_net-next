@@ -1287,6 +1287,8 @@ again:
 	if (cfg_input)
 		close(fd);
 
+	close(remotesock);
+
 	if (!err && --cfg_repeat > 0)
 		goto again;
 
