@@ -638,8 +638,19 @@ static void connect_one_server(int fd, int pipefd)
 static void process_one_client(int fd, int pipefd)
 {
 	ssize_t ret, ret2, ret3;
+	char msg_buf[4096];
 	struct so_state s;
 	char buf[4096];
+	struct iovec iov = {
+		.iov_base = buf,
+		.iov_len = 1,
+	};
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = msg_buf,
+		.msg_controllen = sizeof(msg_buf),
+	};
 
 	memset(&s, 0, sizeof(s));
 	do_getsockopts(&s, fd, 0, 0);
@@ -647,15 +658,23 @@ static void process_one_client(int fd, int pipefd)
 	ret = write(pipefd, "xmit", 4);
 	assert(ret == 4);
 
-	ret = read(fd, buf, sizeof(buf));
+	/* read one byte, expect cmsg to return expected - 1 */
+	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
-		die_perror("read");
+		die_perror("recvmsg");
+
+	iov.iov_len = sizeof(buf);
+	iov.iov_base = buf + 1;
+	ret = recvmsg(fd, &msg, 0);
+	if (ret < 0)
+		die_perror("recvmsg");
 
 	assert(s.mptcpi_rcv_delta <= (uint64_t)ret);
 
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta == (uint64_t)ret);
 
+	ret += 1;
 	ret2 = write(fd, buf, ret);
 	if (ret2 < 0)
 		die_perror("write");
@@ -685,7 +704,8 @@ static void process_one_client(int fd, int pipefd)
 	}
 
 	/* wait for hangup */
-	ret3 = read(fd, buf, 1);
+	iov.iov_len = 1;
+	ret3 = recvmsg(fd, &msg, 0);
 	if (ret3 != 0)
 		xerror("expected EOF, got %lu", ret3);
 
