@@ -699,49 +699,47 @@ static void connect_one_server(int fd, int unixfd)
 	if (s.mptcpi_rcv_delta)
 		assert(s.mptcpi_rcv_delta == (uint64_t)total);
 
-	if (inq) {
-		ret = read(unixfd, buf2, 4);
-		assert(strncmp(buf2, "huge", 4) == 0);
+	ret = read(unixfd, buf2, 4);
+	assert(strncmp(buf2, "huge", 4) == 0);
 
-		total = rand() % (16 * 1024 * 1024);
-		total += (1 * 1024 * 1024);
-		sent = total;
+	total = rand() % (16 * 1024 * 1024);
+	total += (1 * 1024 * 1024);
+	sent = total;
 
-		ret = write(unixfd, &total, sizeof(total));
-		assert(ret == (ssize_t)sizeof(total));
+	ret = write(unixfd, &total, sizeof(total));
+	assert(ret == (ssize_t)sizeof(total));
 
-		wait_for_ack(fd, 5000, len);
+	wait_for_ack(fd, 5000, len);
 
-		while (total > 0) {
-			if (total > sizeof(buf))
-				len = sizeof(buf);
-			else
-				len = total;
+	while (total > 0) {
+		if (total > sizeof(buf))
+			len = sizeof(buf);
+		else
+			len = total;
 
-			ret = write(fd, buf, len);
-			if (ret < 0)
-				die_perror("write");
-			total -= ret;
+		ret = write(fd, buf, len);
+		if (ret < 0)
+			die_perror("write");
+		total -= ret;
 
-			/* we don't have to care about buf content, only
-			 * number of total bytes sent
-			 */
-		}
-
-		ret = read(unixfd, buf2, 4);
-		assert(ret == 4);
-		assert(strncmp(buf2, "shut", 4) == 0);
-
-		wait_for_ack(fd, 5000, sent);
-
-		ret = write(fd, buf, 1);
-		assert(ret == 1);
-		ret = write(unixfd, "closed", 6);
-		assert(ret == 6);
+		/* we don't have to care about buf content, only
+		 * number of total bytes sent
+		 */
 	}
 
-	close(fd);
+	ret = read(unixfd, buf2, 4);
+	assert(ret == 4);
+	assert(strncmp(buf2, "shut", 4) == 0);
+
+	wait_for_ack(fd, 5000, sent);
+
+	ret = write(fd, buf, 1);
+	assert(ret == 1);
+	ret = write(unixfd, "closed", 6);
+	assert(ret == 6);
+
 	close(unixfd);
+	close(fd);
 }
 
 static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
@@ -781,8 +779,8 @@ static void do_getsockopt_inq(int fd, struct msghdr *msgh, unsigned int check)
 
 static void process_one_client(int fd, int unixfd)
 {
+	ssize_t ret, ret2, ret3;
 	char msg_buf[4096];
-	ssize_t ret, ret2;
 	struct so_state s;
 	char buf[4096];
 	struct iovec iov = {
@@ -885,57 +883,53 @@ static void process_one_client(int fd, int unixfd)
 			       s.last_sample.mptcpi_bytes_acked - ret);
 	}
 
-	if (inq) {
-		/* request a large swath of data. */
-		ret = write(unixfd, "huge", 4);
-		assert(ret == 4);
+	/* request a large swath of data. */
+	ret = write(unixfd, "huge", 4);
+	assert(ret == 4);
 
-		ret = read(unixfd, &expect_len, sizeof(expect_len));
-		assert(ret == (ssize_t)sizeof(expect_len));
+	ret = read(unixfd, &expect_len, sizeof(expect_len));
+	assert(ret == (ssize_t)sizeof(expect_len));
 
-		/* peer should send us a few mb of data */
-		if (expect_len <= sizeof(buf))
-			xerror("expect len %zu too small\n", expect_len);
+	/* peer should send us a few mb of data */
+	if (expect_len <= sizeof(buf))
+		xerror("expect len %zu too small\n", expect_len);
 
-		tot = 0;
-		do {
-			iov.iov_len = sizeof(buf);
-			ret = recvmsg(fd, &msg, 0);
-			if (ret < 0)
-				die_perror("recvmsg");
-
-			tot += ret;
-
-			do_getsockopt_inq(fd, &msg, expect_len - tot);
-		} while ((size_t)tot < expect_len);
-
-		ret = write(unixfd, "shut", 4);
-		assert(ret == 4);
-
-		/* wait for hangup. Should have received one more byte of data. */
-		ret = read(unixfd, tmp, sizeof(tmp));
-		assert(ret == 6);
-		assert(strncmp(tmp, "closed", 6) == 0);
-
-		sleep(1);
-
-		iov.iov_len = 1;
+	tot = 0;
+	do {
+		iov.iov_len = sizeof(buf);
 		ret = recvmsg(fd, &msg, 0);
 		if (ret < 0)
 			die_perror("recvmsg");
-		assert(ret == 1);
 
-		/* tcp_inq should be 1 due to received fin. */
-		do_getsockopt_inq(fd, &msg, 1);
-	}
+		tot += ret;
+
+		do_getsockopt_inq(fd, &msg, expect_len - tot);
+	} while ((size_t)tot < expect_len);
+
+	ret = write(unixfd, "shut", 4);
+	assert(ret == 4);
+
+	/* wait for hangup. Should have received one more byte of data. */
+	ret = read(unixfd, tmp, sizeof(tmp));
+	assert(ret == 6);
+	assert(strncmp(tmp, "closed", 6) == 0);
+
+	sleep(1);
 
 	iov.iov_len = 1;
 	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
 		die_perror("recvmsg");
+	assert(ret == 1);
 
-	/* expect EOF */
-	assert(ret == 0);
+	/* tcp_inq should be 1 due to received fin. */
+	do_getsockopt_inq(fd, &msg, 1);
+
+	/* wait for hangup */
+	iov.iov_len = 1;
+	ret3 = recvmsg(fd, &msg, 0);
+	if (ret3 != 0)
+		xerror("expected EOF, got %lu", ret3);
 	do_getsockopt_inq(fd, &msg, 1);
 
 	close(fd);
