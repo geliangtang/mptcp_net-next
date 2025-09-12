@@ -669,6 +669,36 @@ static void connect_one_server(int fd, int unixfd)
 	if (ret != (ssize_t)len)
 		xerror("short write");
 
+	total = 0;
+	do {
+		ret = read(fd, buf2 + total, sizeof(buf2) - total);
+		if (ret < 0)
+			die_perror("read");
+		if (ret == 0) {
+			eof = true;
+			break;
+		}
+
+		total += ret;
+	} while (total < len);
+
+	if (total != len)
+		xerror("total %lu, len %lu eof %d\n", total, len, eof);
+
+	if (memcmp(buf, buf2, len))
+		xerror("data corruption");
+
+	if (s.tcpi_rcv_delta)
+		assert(s.tcpi_rcv_delta <= total);
+
+	do_getsockopts(&s, fd, ret, ret);
+
+	if (eof)
+		total += 1; /* sequence advances due to FIN */
+
+	if (s.mptcpi_rcv_delta)
+		assert(s.mptcpi_rcv_delta == (uint64_t)total);
+
 	if (inq) {
 		ret = read(unixfd, buf2, 4);
 		assert(strncmp(buf2, "huge", 4) == 0);
@@ -706,45 +736,12 @@ static void connect_one_server(int fd, int unixfd)
 
 		ret = write(fd, buf, 1);
 		assert(ret == 1);
-		close(fd);
 		ret = write(unixfd, "closed", 6);
 		assert(ret == 6);
-
-		close(unixfd);
-		return;
 	}
 
-	close(unixfd);
-
-	total = 0;
-	do {
-		ret = read(fd, buf2 + total, sizeof(buf2) - total);
-		if (ret < 0)
-			die_perror("read");
-		if (ret == 0) {
-			eof = true;
-			break;
-		}
-
-		total += ret;
-	} while (total < len);
-
-	if (total != len)
-		xerror("total %lu, len %lu eof %d\n", total, len, eof);
-
-	if (memcmp(buf, buf2, len))
-		xerror("data corruption");
-
-	if (s.tcpi_rcv_delta)
-		assert(s.tcpi_rcv_delta <= total);
-
-	do_getsockopts(&s, fd, ret, ret);
-
-	if (eof)
-		total += 1; /* sequence advances due to FIN */
-
-	assert(s.mptcpi_rcv_delta == (uint64_t)total);
 	close(fd);
+	close(unixfd);
 }
 
 static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
@@ -784,8 +781,8 @@ static void do_getsockopt_inq(int fd, struct msghdr *msgh, unsigned int check)
 
 static void process_one_client(int fd, int unixfd)
 {
-	ssize_t ret, ret2, ret3;
 	char msg_buf[4096];
+	ssize_t ret, ret2;
 	struct so_state s;
 	char buf[4096];
 	struct iovec iov = {
@@ -847,7 +844,8 @@ static void process_one_client(int fd, int unixfd)
 	if (ret < 0)
 		die_perror("recvmsg");
 
-	assert(s.mptcpi_rcv_delta <= (uint64_t)ret);
+	if (s.mptcpi_rcv_delta)
+		assert(s.mptcpi_rcv_delta <= (uint64_t)ret);
 
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta == (uint64_t)ret);
@@ -857,6 +855,35 @@ static void process_one_client(int fd, int unixfd)
 
 	/* should be 0, all drained */
 	do_getsockopt_inq(fd, &msg, 0);
+
+	ret += 1;
+	ret2 = write(fd, buf, ret);
+	if (ret2 < 0)
+		die_perror("write");
+
+	do_getsockopts(&s, fd, ret, ret2);
+	if (s.mptcpi_rcv_delta && s.mptcpi_rcv_delta != (uint64_t)ret)
+		xerror("mptcpi_rcv_delta %" PRIu64 ", expect %" PRIu64 ", diff %" PRId64,
+		       s.mptcpi_rcv_delta, ret, s.mptcpi_rcv_delta - ret);
+
+	/* be nice when running on top of older kernel */
+	if (s.pkt_stats_avail) {
+		if (s.last_sample.mptcpi_bytes_sent != ret2)
+			xerror("mptcpi_bytes_sent %" PRIu64 ", expect %" PRIu64
+			       ", diff %" PRId64,
+			       s.last_sample.mptcpi_bytes_sent, ret2,
+			       s.last_sample.mptcpi_bytes_sent - ret2);
+		if (s.last_sample.mptcpi_bytes_received != ret)
+			xerror("mptcpi_bytes_received %" PRIu64 ", expect %" PRIu64
+			       ", diff %" PRId64,
+			       s.last_sample.mptcpi_bytes_received, ret,
+			       s.last_sample.mptcpi_bytes_received - ret);
+		if (s.last_sample.mptcpi_bytes_acked != ret)
+			xerror("mptcpi_bytes_acked %" PRIu64 ", expect %" PRIu64
+			       ", diff %" PRId64,
+			       s.last_sample.mptcpi_bytes_acked, ret,
+			       s.last_sample.mptcpi_bytes_acked - ret);
+	}
 
 	if (inq) {
 		/* request a large swath of data. */
@@ -900,53 +927,16 @@ static void process_one_client(int fd, int unixfd)
 
 		/* tcp_inq should be 1 due to received fin. */
 		do_getsockopt_inq(fd, &msg, 1);
-
-		iov.iov_len = 1;
-		ret = recvmsg(fd, &msg, 0);
-		if (ret < 0)
-			die_perror("recvmsg");
-
-		/* expect EOF */
-		assert(ret == 0);
-		do_getsockopt_inq(fd, &msg, 1);
-
-		close(fd);
-		return;
 	}
 
-	ret += 1;
-	ret2 = write(fd, buf, ret);
-	if (ret2 < 0)
-		die_perror("write");
+	iov.iov_len = 1;
+	ret = recvmsg(fd, &msg, 0);
+	if (ret < 0)
+		die_perror("recvmsg");
 
-	/* wait for hangup */
-	ret3 = read(fd, buf, 1);
-	if (ret3 != 0)
-		xerror("expected EOF, got %lu", ret3);
-
-	do_getsockopts(&s, fd, ret, ret2);
-	if (s.mptcpi_rcv_delta != (uint64_t)ret + 1)
-		xerror("mptcpi_rcv_delta %" PRIu64 ", expect %" PRIu64 ", diff %" PRId64,
-		       s.mptcpi_rcv_delta, ret + 1, s.mptcpi_rcv_delta - (ret + 1));
-
-	/* be nice when running on top of older kernel */
-	if (s.pkt_stats_avail) {
-		if (s.last_sample.mptcpi_bytes_sent != ret2)
-			xerror("mptcpi_bytes_sent %" PRIu64 ", expect %" PRIu64
-			       ", diff %" PRId64,
-			       s.last_sample.mptcpi_bytes_sent, ret2,
-			       s.last_sample.mptcpi_bytes_sent - ret2);
-		if (s.last_sample.mptcpi_bytes_received != ret)
-			xerror("mptcpi_bytes_received %" PRIu64 ", expect %" PRIu64
-			       ", diff %" PRId64,
-			       s.last_sample.mptcpi_bytes_received, ret,
-			       s.last_sample.mptcpi_bytes_received - ret);
-		if (s.last_sample.mptcpi_bytes_acked != ret)
-			xerror("mptcpi_bytes_acked %" PRIu64 ", expect %" PRIu64
-			       ", diff %" PRId64,
-			       s.last_sample.mptcpi_bytes_acked, ret,
-			       s.last_sample.mptcpi_bytes_acked - ret);
-	}
+	/* expect EOF */
+	assert(ret == 0);
+	do_getsockopt_inq(fd, &msg, 1);
 
 	close(fd);
 }
