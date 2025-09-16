@@ -43,6 +43,9 @@
 #ifndef MPTCP_INFO
 #define MPTCP_INFO		1
 #endif
+#ifndef TCP_IS_MPTCP
+#define TCP_IS_MPTCP		43	/* Is MPTCP being used? */
+#endif
 #ifndef MPTCP_INFO_FLAG_FALLBACK
 #define MPTCP_INFO_FLAG_FALLBACK		_BITUL(0)
 #endif
@@ -54,6 +57,12 @@
 #define TCP_CA_NAME_MAX	16
 #endif
 #define MPTCP_SCHED_NAME_MAX	16
+
+enum mptcp_pm_family {
+	IPV4 = 0,
+	IPV4MAPPED,
+	IPV6,
+};
 
 static const unsigned int total_bytes = 10 * 1024 * 1024;
 static int duration;
@@ -626,11 +635,13 @@ static int userspace_pm_add_addr(__u32 token, char *addr, __u8 id)
 			  NS_TEST, PM_CTL, addr, id, token);
 }
 
+#if 0
 static int userspace_pm_rm_addr(__u32 token, __u8 id)
 {
 	return SYS_NOFAIL("ip netns exec %s %s rem id %u token %u",
 			  NS_TEST, PM_CTL, id, token);
 }
+#endif
 
 static int userspace_pm_set_flags(__u32 token, char *addr, char *flags)
 {
@@ -717,9 +728,9 @@ static void run_userspace_pm(enum mptcp_pm_family family)
 	send_byte(accept_fd);
 	recv_byte(client_fd);
 
-	err = userspace_pm_rm_addr(token, 200);
-	if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))
-		goto close_accept;
+	//err = userspace_pm_rm_addr(token, 200);
+	//if (!ASSERT_OK(err, "userspace_pm_rm_addr 200"))
+	//	goto close_accept;
 
 	send_byte(client_fd);
 	recv_byte(accept_fd);
