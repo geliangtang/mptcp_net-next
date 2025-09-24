@@ -24,6 +24,7 @@
 #include "mptcp_bpf_burst.skel.h"
 #include "mptcp_bpf_iters.skel.h"
 #include "mptcp_bpf_stale.skel.h"
+#include "mptcp_bpf_pm.skel.h"
 
 #define NS_TEST "mptcp_ns"
 #define ADDR_1	"10.0.1.1"
@@ -1984,6 +1985,195 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+struct pm_event {
+	int type;
+	char data[100];
+};
+
+static int submit_event(int event_queue_fd, int type, const char* data)
+{
+	struct pm_event e;
+	int err;
+
+	e.type = type;
+	strncpy(e.data, data, sizeof(e.data) - 1);
+	e.data[sizeof(e.data) - 1] = '\0'; // 确保字符串终止
+
+	// 将事件推送到BPF队列
+	err = bpf_map_update_elem(event_queue_fd, NULL, &e, BPF_ANY);
+	if (err)
+		fprintf(stderr, "Failed to push event to queue: %d\n", err);
+
+	return err;
+}
+
+static void trigger_bpf_processing(int trigger_map_fd)
+{
+	int trigger = 1;
+	int key = 0;
+
+	// 设置触发信号，告诉BPF程序开始处理事件
+	if (bpf_map_update_elem(trigger_map_fd, &key, &trigger, BPF_ANY))
+		fprintf(stderr, "Failed to trigger BPF processing\n");
+}
+
+static void check_results(int result_map_fd, __u32 *result)
+{
+	int key = 0;
+
+	// 检查所有可用的处理结果
+	while (bpf_map_lookup_elem(result_map_fd, &key, result) == 0) {
+		// 删除已处理的结果
+		bpf_map_delete_elem(result_map_fd, &key);
+		key++;
+	}
+
+	if (!key)
+		printf("No results available from BPF.\n");
+
+}
+
+static int bpf_pm_get_token(int fd, int event_queue_fd,
+				  int result_map_fd, int trigger_map_fd)
+{
+	int type = 1;
+	__u32 token;
+	int i;
+
+	/* Wait max 2 sec for the connection to be established */
+	for (i = 0; i < 10; i++) {
+		usleep(200000); /* 0.2s */
+		send_byte(fd);
+
+		sync();
+		submit_event(event_queue_fd, type, "token");
+
+		trigger_bpf_processing(trigger_map_fd);
+
+		check_results(result_map_fd, &token);
+		return token;
+	}
+
+	return 0;
+}
+
+static int bpf_pm_add_subflow(__u32 token, char *addr, __u8 id,
+				    int event_queue_fd)
+{
+	int type = 2;
+
+	return submit_event(event_queue_fd, type, addr);
+}
+
+static void run_bpf_pm(enum mptcp_pm_family family,
+			     int event_queue_fd,
+			     int result_map_fd,
+			     int trigger_map_fd)
+{
+	bool ipv4mapped = (family == IPV4MAPPED);
+	bool ipv6 = (family == IPV6 || ipv4mapped);
+	int server_fd, client_fd, accept_fd;
+	__u32 result = 0;
+	__u32 token;
+	char *addr;
+	int err;
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
+	server_fd = start_mptcp_server(ipv6 ? AF_INET6 : AF_INET, addr, PORT_1, 0);
+	if (!ASSERT_OK_FD(server_fd, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_OK_FD(client_fd, "connect_to_fd"))
+		goto close_server;
+
+	accept_fd = accept(server_fd, NULL, NULL);
+	if (!ASSERT_OK_FD(accept_fd, "accept"))
+		goto close_client;
+
+	token = bpf_pm_get_token(client_fd, event_queue_fd, result_map_fd, trigger_map_fd);
+	if (!token)
+		goto close_client;
+
+	recv_byte(accept_fd);
+	usleep(200000); /* 0.2s */
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	addr = ipv6 ? (ipv4mapped ? "::ffff:"ADDR_2 : ADDR6_2) : ADDR_2;
+	err = bpf_pm_add_subflow(token, addr, 100, event_queue_fd);
+	if (!ASSERT_OK(err, "userspace_pm_add_subflow 100"))
+		goto close_accept;
+
+	// 触发BPF处理
+	trigger_bpf_processing(trigger_map_fd);
+
+	send_byte(accept_fd);
+	recv_byte(client_fd);
+
+	check_results(result_map_fd, &result);
+
+	ASSERT_EQ(result, 200, "unexpected invoked count");
+
+close_accept:
+	close(accept_fd);
+close_client:
+	close(client_fd);
+close_server:
+	close(server_fd);
+}
+
+static int bpf_pm_init(const char *pm_name)
+{
+	if (pm_init(pm_name))
+		goto fail;
+
+	return 0;
+fail:
+	return -1;
+}
+
+static void bpf_pm_cleanup(void)
+{
+}
+
+static void test_bpf_pm(void)
+{
+	int event_queue_fd, result_map_fd, trigger_map_fd;
+	struct mptcp_bpf_pm *skel;
+	struct netns_obj *netns;
+	int err;
+
+	skel = mptcp_bpf_pm__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "open: bpf_userspace pm"))
+		return;
+
+	err = mptcp_bpf_pm__attach(skel);
+	if (!ASSERT_OK(err, "attach: bpf_userspace pm"))
+		goto skel_destroy;
+
+	event_queue_fd = bpf_map__fd(skel->maps.event_queue);
+	result_map_fd = bpf_map__fd(skel->maps.result_map);
+	trigger_map_fd = bpf_map__fd(skel->maps.trigger_map);
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		return;
+
+	err = bpf_pm_init("userspace");
+	if (!ASSERT_OK(err, "userspace_pm_init: userspace pm"))
+		goto close_netns;
+
+	run_bpf_pm(IPV4, event_queue_fd, result_map_fd, trigger_map_fd);
+
+	bpf_pm_cleanup();
+close_netns:
+	netns_free(netns);
+skel_destroy:
+	mptcp_bpf_pm__destroy(skel);
+}
+
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -2024,6 +2214,8 @@ void test_mptcp(void)
 		test_iters_userspace_address();
 	if (test__start_subtest("stale"))
 		test_stale();
+	if (test__start_subtest("bpf_pm"))
+		test_bpf_pm();
 	if (test__start_subtest("tcp_ktls"))
 		test_tcp_ktls();
 	if (test__start_subtest("mptcp_ktls"))

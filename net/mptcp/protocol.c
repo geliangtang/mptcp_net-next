@@ -1653,6 +1653,12 @@ out:
 	return err;
 }
 
+__bpf_hook_start();
+__weak noinline void mptcp_push_pending_msk(struct mptcp_sock *msk)
+{
+}
+__bpf_hook_end();
+
 void __mptcp_push_pending(struct sock *sk, unsigned int flags)
 {
 	struct sock *prev_ssk = NULL, *ssk = NULL;
@@ -1662,6 +1668,8 @@ void __mptcp_push_pending(struct sock *sk, unsigned int flags)
 	};
 	bool do_check_data_fin = false;
 	int push_count = 1;
+
+	mptcp_push_pending_msk(msk);
 
 	while (mptcp_send_head(sk) && (push_count > 0)) {
 		struct mptcp_subflow_context *subflow;
