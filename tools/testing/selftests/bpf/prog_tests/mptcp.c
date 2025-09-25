@@ -11,6 +11,7 @@
 #include "mptcp_sock.skel.h"
 #include "mptcpify.skel.h"
 #include "mptcp_subflow.skel.h"
+#include "mptcp_bpf_userspace_pm.skel.h"
 
 #define NS_TEST "mptcp_ns"
 #define ADDR_1	"10.0.1.1"
@@ -766,6 +767,40 @@ fail:
 	netns_free(netns);
 }
 
+static void test_bpf_userspace_pm(void)
+{
+	struct mptcp_bpf_userspace_pm *skel;
+	struct netns_obj *netns;
+	int err;
+
+	skel = mptcp_bpf_userspace_pm__open();
+	if (!ASSERT_OK_PTR(skel, "open: bpf_userspace pm"))
+		return;
+
+	if (!ASSERT_OK(mptcp_bpf_userspace_pm__load(skel), "load: bpf_userspace pm"))
+		goto skel_destroy;
+
+	err = mptcp_bpf_userspace_pm__attach(skel);
+	if (!ASSERT_OK(err, "attach: bpf_userspace pm"))
+		goto skel_destroy;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		goto skel_destroy;
+
+	err = userspace_pm_init("bpf_userspace");
+	if (!ASSERT_OK(err, "userspace_pm_init: bpf_userspace pm"))
+		goto close_netns;
+
+	run_userspace_pm(skel->kconfig->CONFIG_MPTCP_IPV6 ? IPV6 : IPV4);
+
+	userspace_pm_cleanup();
+close_netns:
+	netns_free(netns);
+skel_destroy:
+	mptcp_bpf_userspace_pm__destroy(skel);
+}
+
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -776,4 +811,6 @@ void test_mptcp(void)
 		test_subflow();
 	if (test__start_subtest("userspace_pm"))
 		test_userspace_pm();
+	if (test__start_subtest("bpf_userspace_pm"))
+		test_bpf_userspace_pm();
 }

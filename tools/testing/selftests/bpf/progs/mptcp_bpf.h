@@ -33,6 +33,11 @@ static inline int list_is_head(const struct list_head *list,
 #define mptcp_for_each_subflow(__msk, __subflow)			\
 	list_for_each_entry(__subflow, &((__msk)->conn_list), node)
 
+/* errno macros from include/uapi/asm-generic/errno-base.h */
+#define	ESRCH		3	/* No such process */
+#define	ENOMEM		12	/* Out of Memory */
+#define	EINVAL		22	/* Invalid argument */
+
 static __always_inline struct sock *
 mptcp_subflow_tcp_sock(const struct mptcp_subflow_context *subflow)
 {
