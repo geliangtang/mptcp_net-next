@@ -256,11 +256,51 @@ static const struct btf_kfunc_id_set bpf_mptcp_fmodret_set = {
 	.set   = &bpf_mptcp_fmodret_ids,
 };
 
+__bpf_kfunc static void bpf_set_bit(unsigned long nr, unsigned long *addr__ign)
+{
+	__set_bit(nr, addr__ign);
+}
+
+__bpf_kfunc static __u8 bpf_find_next_zero_bit(const unsigned long *addr__ign,
+					       unsigned long size__sz,
+					       unsigned long offset)
+{
+	return find_next_zero_bit(addr__ign, size__sz, offset);
+}
+
+BTF_KFUNCS_START(bpf_mptcp_common_kfunc_ids)
+BTF_ID_FLAGS(func, bpf_set_bit)
+BTF_ID_FLAGS(func, bpf_find_next_zero_bit)
+BTF_KFUNCS_END(bpf_mptcp_common_kfunc_ids)
+
+static int bpf_mptcp_common_kfunc_filter(const struct bpf_prog *prog, u32 kfunc_id)
+{
+	if (!btf_id_set8_contains(&bpf_mptcp_common_kfunc_ids, kfunc_id))
+		return 0;
+
+	if (prog->type != BPF_PROG_TYPE_STRUCT_OPS)
+		return -EACCES;
+
+#ifdef CONFIG_BPF_JIT
+	if (prog->aux->st_ops == &bpf_mptcp_pm_ops)
+		return 0;
+#endif
+	return -EACCES;
+}
+
+static const struct btf_kfunc_id_set bpf_mptcp_common_kfunc_set = {
+	.owner	= THIS_MODULE,
+	.set	= &bpf_mptcp_common_kfunc_ids,
+	.filter	= bpf_mptcp_common_kfunc_filter,
+};
+
 static int __init bpf_mptcp_kfunc_init(void)
 {
 	int ret;
 
 	ret = register_btf_fmodret_id_set(&bpf_mptcp_fmodret_set);
+	ret = ret ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
+					       &bpf_mptcp_common_kfunc_set);
 #ifdef CONFIG_BPF_JIT
 	ret = ret ?: register_bpf_struct_ops(&bpf_mptcp_pm_ops, mptcp_pm_ops);
 #endif
