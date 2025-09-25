@@ -116,6 +116,24 @@ static int bpf_mptcp_pm_btf_struct_access(struct bpf_verifier_log *log,
 		case offsetof(struct mptcp_pm_addr_entry, addr.port):
 			end = offsetofend(struct mptcp_pm_addr_entry, addr.port);
 			break;
+#if IS_ENABLED(CONFIG_MPTCP_IPV6)
+		case offsetof(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[0]):
+			end = offsetofend(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[0]);
+			break;
+		case offsetof(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[1]):
+			end = offsetofend(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[1]);
+			break;
+		case offsetof(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[2]):
+			end = offsetofend(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[2]);
+			break;
+		case offsetof(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[3]):
+			end = offsetofend(struct mptcp_pm_addr_entry, addr.addr6.s6_addr32[3]);
+			break;
+#else
+		case offsetof(struct mptcp_pm_addr_entry, addr.addr.s_addr):
+			end = offsetofend(struct mptcp_pm_addr_entry, addr.addr.s_addr);
+			break;
+#endif
 		case offsetof(struct mptcp_pm_addr_entry, flags):
 			end = offsetofend(struct mptcp_pm_addr_entry, flags);
 			break;
@@ -844,7 +862,6 @@ BTF_ID_FLAGS(func, mptcp_pm_is_init_remote_addr)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_create_subflow_or_signal_addr, KF_SLEEPABLE)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_subflow)
 BTF_ID_FLAGS(func, bpf_mptcp_pm_accept_address)
-BTF_ID_FLAGS(func, bpf_sock_kfree_entry)
 BTF_ID_FLAGS(func, mptcp_local_address)
 BTF_ID_FLAGS(func, mptcp_lookup_subflow_by_saddr)
 BTF_ID_FLAGS(func, mptcp_pm_rm_subflow)
@@ -875,6 +892,8 @@ BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
 BTF_ID_FLAGS(func, bpf_find_next_zero_bit)
 BTF_ID_FLAGS(func, bpf_ipv4_is_private_10)
 BTF_ID_FLAGS(func, bpf_sock_kmemdup_entry)
+BTF_ID_FLAGS(func, lookup_subflow_by_daddr)
+BTF_ID_FLAGS(func, mptcp_subflow_connect)
 BTF_ID_FLAGS(func, mptcp_subflow_set_scheduled)
 BTF_ID_FLAGS(func, mptcp_subflow_active)
 BTF_ID_FLAGS(func, mptcp_set_timeout)

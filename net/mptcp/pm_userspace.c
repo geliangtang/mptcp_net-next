@@ -272,8 +272,14 @@ int mptcp_pm_nl_remove_doit(struct sk_buff *skb, struct genl_info *info)
 	sk = (struct sock *)msk;
 
 	lock_sock(sk);
-	if (msk->pm.ops->address_remove)
+	if (msk->pm.ops->address_remove) {
 		err = msk->pm.ops->address_remove(msk, &local);
+		if (!err) {
+			spin_lock_bh(&msk->pm.lock);
+			msk->pm.local_addr_used--;
+			spin_unlock_bh(&msk->pm.lock);
+		}
+	}
 	release_sock(sk);
 	if (err)
 		NL_SET_ERR_MSG_ATTR_FMT(info->extack, id,
@@ -581,7 +587,6 @@ static int mptcp_pm_userspace_address_remove(struct mptcp_sock *msk,
 	}
 
 	list_del_rcu(&entry->list);
-	msk->pm.local_addr_used--;
 	spin_unlock_bh(&msk->pm.lock);
 
 	mptcp_pm_remove_addr_entry(msk, entry);

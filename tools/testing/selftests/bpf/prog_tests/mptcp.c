@@ -866,6 +866,7 @@ static int userspace_pm_rm_subflow(__u32 token, char *addr, __u8 id)
 	bool ipv6 = strstr(addr, ":");
 	char line[1024], *str;
 	__u32 sport, dport;
+	int ret;
 
 	if (userspace_pm_get_events_line("type:10", line))
 		return -1;
@@ -877,8 +878,11 @@ static int userspace_pm_rm_subflow(__u32 token, char *addr, __u8 id)
 	}
 
 	str = ipv6 ? (strstr(addr, ".") ? "::ffff:"ADDR_1 : ADDR6_1) : ADDR_1;
-	return SYS_NOFAIL("ip netns exec %s %s dsf lip %s lport %u rip %s rport %u token %u",
-			  NS_TEST, PM_CTL, addr, sport, str, dport, token);
+	ret = SYS_NOFAIL("ip netns exec %s %s dsf lip %s lport %u rip %s rport %u token %u",
+			 NS_TEST, PM_CTL, addr, sport, str, dport, token);
+	ret = ret ?: SYS_NOFAIL("ip netns exec %s %s rem id %u token %u",
+				NS_TEST, PM_CTL, id, token);
+	return ret;
 }
 
 static int userspace_pm_add_addr(__u32 token, char *addr, __u8 id)
@@ -1039,10 +1043,15 @@ static void test_bpf_userspace_pm(void)
 	struct mptcp_bpf_userspace_pm *skel;
 	struct netns_obj *netns;
 	int err;
+	int cgroup_fd;
+
+	cgroup_fd = test__join_cgroup("/bpf_sockopt");
+	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: bpf_sockopt"))
+		return;
 
 	skel = mptcp_bpf_userspace_pm__open();
 	if (!ASSERT_OK_PTR(skel, "open: bpf_userspace pm"))
-		return;
+		goto close_cgroup;
 
 	err = bpf_program__set_flags(skel->progs.mptcp_pm_userspace_address_announce,
 				     BPF_F_SLEEPABLE);
@@ -1054,10 +1063,22 @@ static void test_bpf_userspace_pm(void)
 					    BPF_F_SLEEPABLE);
 	err = err ?: bpf_program__set_flags(skel->progs.mptcp_pm_userspace_set_priority,
 					    BPF_F_SLEEPABLE);
+	//err = err ?: bpf_program__set_flags(skel->progs.pm_setsockopt,
+	//				    BPF_F_SLEEPABLE);
 	if (!ASSERT_OK(err, "set sleepable flags"))
 		goto skel_destroy;
 
 	if (!ASSERT_OK(mptcp_bpf_userspace_pm__load(skel), "load: bpf_userspace pm"))
+		goto skel_destroy;
+
+	skel->links.pm_setsockopt = bpf_program__attach_cgroup(skel->progs.pm_setsockopt,
+							       cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.pm_setsockopt, "attach setsockopt"))
+		goto skel_destroy;
+
+	skel->links.pm_getsockopt = bpf_program__attach_cgroup(skel->progs.pm_getsockopt,
+							       cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.pm_getsockopt, "attach getsockopt"))
 		goto skel_destroy;
 
 	err = mptcp_bpf_userspace_pm__attach(skel);
@@ -1079,6 +1100,8 @@ close_netns:
 	netns_free(netns);
 skel_destroy:
 	mptcp_bpf_userspace_pm__destroy(skel);
+close_cgroup:
+	close(cgroup_fd);
 }
 
 static void test_bpf_hashmap_pm(void)

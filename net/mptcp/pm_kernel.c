@@ -103,6 +103,9 @@ struct list_head *mptcp_pm_get_local_addr_list(const struct mptcp_sock *msk)
 }
 EXPORT_SYMBOL_GPL(mptcp_pm_get_local_addr_list);
 
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc
 static bool lookup_subflow_by_daddr(const struct list_head *list,
 				    const struct mptcp_addr_info *daddr)
 {
@@ -123,6 +126,8 @@ static bool lookup_subflow_by_daddr(const struct list_head *list,
 
 	return false;
 }
+
+__bpf_kfunc_end_defs();
 
 static bool
 select_local_address(const struct pm_nl_pernet *pernet,
@@ -1744,6 +1749,28 @@ mptcp_pm_nl_append_new_local_addr_msk(struct mptcp_sock *msk,
 	struct pm_nl_pernet *pernet = pm_nl_get_pernet_from_msk(msk);
 
 	return mptcp_pm_nl_append_new_local_addr(pernet, entry, needs_id, replace);
+}
+
+__bpf_kfunc static bool mptcp_subflow_connect(struct mptcp_sock *msk,
+					      struct mptcp_addr_info *remote)
+{
+	struct mptcp_pm_local locals[MPTCP_PM_ADDR_MAX];
+	struct sock *sk = (struct sock *)msk;
+	bool sf_created = false;
+	int i, nr;
+
+	nr = fill_local_addresses_vec(msk, remote, locals);
+	if (nr == 0)
+		goto out;
+
+	spin_unlock_bh(&msk->pm.lock);
+	for (i = 0; i < nr; i++)
+		if (__mptcp_subflow_connect(sk, &locals[i], remote) == 0)
+			sf_created = true;
+	spin_lock_bh(&msk->pm.lock);
+
+out:
+	return sf_created;
 }
 
 __bpf_kfunc_end_defs();

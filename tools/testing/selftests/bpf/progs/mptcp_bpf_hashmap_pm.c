@@ -17,23 +17,34 @@ extern int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
 extern struct mptcp_pm_addr_entry *
 mptcp_userspace_pm_lookup_addr(struct mptcp_sock *msk,
 			       const struct mptcp_addr_info *addr) __ksym;
-extern int mptcp_userspace_pm_delete_local_addr(struct mptcp_sock *msk,
-						struct mptcp_pm_addr_entry *addr) __ksym;
 
-static int mptcp_pm_hashmap_delete_local_addr(struct mptcp_sock *msk,
-					      struct mptcp_pm_addr_entry *addr)
+static struct mptcp_pm_addr_entry *
+mptcp_pm_hashmap_lookup_addr_by_id(struct mptcp_sock *msk, unsigned int id)
 {
-	struct sock *sk = (struct sock *)msk;
 	struct mptcp_pm_addr_entry *entry;
 
-	entry = mptcp_pm_hashmap_lookup_addr(msk, &addr->addr);
-	if (!entry)
-		return -EINVAL;
+	bpf_for_each(mptcp_pm_addr, entry, (struct sock *)msk, MPTCP_PM_TYPE_USERSPACE) {
+		if (entry->addr.id == id)
+			return entry;
+	}
+	return NULL;
+}
 
-	mptcp_pm_hashmap_delete_entry(entry);
-	bpf_sock_kfree_entry(sk, entry, sizeof(*entry));
-	msk->pm.local_addr_used--;
-	return 0;
+static struct mptcp_pm_addr_entry *
+mptcp_pm_hashmap_lookup_addr(struct mptcp_sock *msk, const struct mptcp_addr_info *addr)
+{
+	struct mptcp_pm_addr_entry *entry;
+
+	bpf_for_each(mptcp_pm_addr, entry, (struct sock *)msk, MPTCP_PM_TYPE_USERSPACE) {
+		if (mptcp_addresses_equal(&entry->addr, addr, false))
+			return entry;
+	}
+	return NULL;
+}
+
+static void mptcp_pm_hashmap_delete_entry(struct mptcp_pm_addr_entry *entry)
+{
+	bpf_list_del_rcu(&entry->list);
 }
 
 SEC("struct_ops")
@@ -64,7 +75,7 @@ bool BPF_PROG(mptcp_pm_hashmap_get_priority, struct mptcp_sock *msk,
 	bool backup;
 
 	bpf_spin_lock_bh(&msk->pm.lock);
-	entry = mptcp_userspace_pm_lookup_addr(msk, skc);
+	entry = mptcp_pm_hashmap_lookup_addr(msk, skc);
 	backup = entry && !!(entry->flags & MPTCP_PM_ADDR_FLAG_BACKUP);
 	bpf_spin_unlock_bh(&msk->pm.lock);
 
@@ -91,7 +102,7 @@ int BPF_PROG(mptcp_pm_hashmap_address_announce, struct mptcp_sock *msk,
 {
 	int err;
 
-	err = mptcp_pm_hashmap_append_new_local_addr(msk, local, false);
+	err = mptcp_userspace_pm_append_new_local_addr(msk, local, false);
 	if (err < 0)
 		return err;
 
@@ -139,19 +150,11 @@ int BPF_PROG(mptcp_pm_hashmap_subflow_create, struct mptcp_sock *msk,
 	struct sock *sk = (struct sock *)msk;
 	int err;
 
-	err = mptcp_pm_hashmap_append_new_local_addr(msk, local, false);
+	err = mptcp_userspace_pm_append_new_local_addr(msk, local, false);
 	if (err < 0)
 		return err;
 
-	err = bpf_mptcp_subflow_connect(sk, local, remote);
-	bpf_spin_lock_bh(&msk->pm.lock);
-	if (err)
-		mptcp_pm_hashmap_delete_local_addr(msk, local);
-	else
-		msk->pm.extra_subflows++;
-	bpf_spin_unlock_bh(&msk->pm.lock);
-
-	return err;
+	return bpf_mptcp_subflow_connect(sk, local, remote);
 }
 
 SEC("struct_ops")
@@ -169,9 +172,6 @@ int BPF_PROG(mptcp_pm_hashmap_subflow_destroy, struct mptcp_sock *msk,
 	if (!subflow)
 		return -EINVAL;
 
-	bpf_spin_lock_bh(&msk->pm.lock);
-	mptcp_pm_hashmap_delete_local_addr(msk, local);
-	bpf_spin_unlock_bh(&msk->pm.lock);
 	mptcp_subflow_shutdown(sk, ssk, RCV_SHUTDOWN | SEND_SHUTDOWN);
 	mptcp_close_ssk(sk, ssk, subflow);
 	BPF_MPTCP_INC_STATS(bpf_sock_net(sk), MPTCP_MIB_RMSUBFLOW);
