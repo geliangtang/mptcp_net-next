@@ -127,7 +127,7 @@ int trace_get_send(struct trace_event_raw_mptcp_subflow_get_send *ctx)
 	int i = 0;
 
 	mptcp_for_each_subflow(msk, subflow) {
-		bpf_printk("bpf_iter tracepoint i=%d subflows=%u", i++, msk->pm.subflows);
+		bpf_printk("bpf_iter tracepoint i=%d subflows=%u", i++, msk->pm.extra_subflows);
 	}
 
 	bpf_printk("trace_get_send snd_wnd=%u token=%u", ctx->snd_wnd, msk->token);

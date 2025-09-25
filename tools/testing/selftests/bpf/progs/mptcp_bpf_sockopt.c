@@ -143,7 +143,7 @@ int mptcp_getsockopt(struct bpf_sockopt *ctx)
 		return 1;
 
 	msk = bpf_core_cast(sk, struct mptcp_sock);
-	if (msk->pm.subflows != 1)
+	if (msk->pm.extra_subflows != 1)
 		return 1;
 
 	if (ctx->level == SOL_SOCKET && ctx->optname == SO_MARK)
