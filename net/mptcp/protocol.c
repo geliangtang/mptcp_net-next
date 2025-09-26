@@ -4110,8 +4110,11 @@ static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 	struct sk_buff *skb;
 	u32 offset;
 
-	if (skb_queue_empty(&sk->sk_receive_queue))
-		__mptcp_move_skbs(sk);
+	if (skb_queue_empty(&sk->sk_receive_queue)) {
+		__sk_flush_backlog(sk);
+		if (skb_queue_empty(&sk->sk_receive_queue))
+			__mptcp_move_skbs(sk);
+	}
 
 	while ((skb = skb_peek(&sk->sk_receive_queue)) != NULL) {
 		offset = MPTCP_SKB_CB(skb)->offset;
