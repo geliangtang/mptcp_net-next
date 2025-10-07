@@ -4136,11 +4136,12 @@ static __poll_t mptcp_poll(struct file *file, struct socket *sock,
 
 static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 {
+	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb;
 	u32 offset;
 
-	if (skb_queue_empty(&sk->sk_receive_queue))
-		__mptcp_move_skbs(sk);
+	if (!list_empty(&msk->backlog_list))
+		mptcp_move_skbs(sk);
 
 	while ((skb = skb_peek(&sk->sk_receive_queue)) != NULL) {
 		offset = MPTCP_SKB_CB(skb)->offset;
