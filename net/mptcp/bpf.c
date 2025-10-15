@@ -779,11 +779,6 @@ __bpf_kfunc static bool bpf_mptcp_pm_accept_address(struct mptcp_sock *msk,
 	return mptcp_pm_accept_address(msk, addr);
 }
 
-__bpf_kfunc static void bpf_set_bit(unsigned long nr, unsigned long *addr__ign)
-{
-	__set_bit(nr, addr__ign);
-}
-
 __bpf_kfunc static void bpf_spin_lock_bh(spinlock_t *lock)
 {
 	spin_lock_bh(lock);
@@ -794,26 +789,9 @@ __bpf_kfunc static void bpf_spin_unlock_bh(spinlock_t *lock)
 	spin_unlock_bh(lock);
 }
 
-__bpf_kfunc static bool bpf_test_and_set_bit(unsigned long nr, unsigned long *addr__ign)
-{
-	return __test_and_set_bit(nr, addr__ign);
-}
-
-__bpf_kfunc static __u8 bpf_find_next_zero_bit(const unsigned long *addr__ign,
-					       unsigned long size__sz,
-					       unsigned long offset)
-{
-	return find_next_zero_bit(addr__ign, size__sz, offset);
-}
-
 __bpf_kfunc static bool bpf_ipv4_is_private_10(__be32 addr)
 {
 	return ipv4_is_private_10(addr);
-}
-
-__bpf_kfunc static bool bpf_test_bit(unsigned long nr, const unsigned long *addr__ign)
-{
-	return test_bit(nr, addr__ign);
 }
 
 __bpf_kfunc static int
@@ -915,11 +893,8 @@ BTF_ID_FLAGS(func, mptcp_close_ssk, KF_SLEEPABLE)
 BTF_ID_FLAGS(func, bpf_sock_net)
 BTF_ID_FLAGS(func, BPF_MPTCP_INC_STATS)
 BTF_ID_FLAGS(func, mptcp_userspace_pm_active)
-BTF_ID_FLAGS(func, bpf_set_bit)
-BTF_ID_FLAGS(func, bpf_test_and_set_bit)
 BTF_ID_FLAGS(func, bpf_spin_lock_bh)
 BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
-BTF_ID_FLAGS(func, bpf_find_next_zero_bit)
 BTF_ID_FLAGS(func, bpf_ipv4_is_private_10)
 BTF_ID_FLAGS(func, bpf_sock_kmemdup_entry)
 BTF_ID_FLAGS(func, lookup_subflow_by_daddr)
@@ -963,8 +938,6 @@ BTF_ID_FLAGS(func, bpf_spin_lock_bh)
 BTF_ID_FLAGS(func, bpf_spin_unlock_bh)
 BTF_ID_FLAGS(func, bpf_pm_copy_entry)
 BTF_ID_FLAGS(func, mptcp_pm_genl_fill_addr)
-BTF_ID_FLAGS(func, bpf_test_bit)
-BTF_ID_FLAGS(func, bpf_set_bit)
 BTF_KFUNCS_END(bpf_mptcp_tracing_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_mptcp_tracing_kfunc_set = {

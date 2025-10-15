@@ -25,7 +25,6 @@ extern void mptcp_local_address(const struct sock_common *skc,
 				struct mptcp_addr_info *addr) __ksym;
 extern bool mptcp_lookup_subflow_by_saddr(const struct list_head *list,
 					  const struct mptcp_addr_info *saddr) __ksym;
-extern bool bpf_test_and_set_bit(unsigned long nr, unsigned long *addr) __ksym;
 extern void mptcp_pm_rm_subflow(struct mptcp_sock *msk,
 				const struct mptcp_rm_list *rm_list) __ksym;
 extern bool mptcp_remove_anno_list_by_saddr(struct mptcp_sock *msk,

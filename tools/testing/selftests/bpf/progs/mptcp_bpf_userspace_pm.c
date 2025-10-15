@@ -25,9 +25,6 @@ struct callback_ctx {
 	unsigned long *bitmap;
 };
 
-extern u8 bpf_find_next_zero_bit(const unsigned long *addr,
-				 unsigned long size, unsigned long offset) __ksym;
-
 static int mptcp_pm_userspace_lookup_dup_addr_by_id(unsigned int id,
 						    struct mptcp_pm_addr_entry *new)
 {
@@ -360,7 +357,6 @@ int BPF_PROG(mptcp_pm_userspace_get_addr, struct mptcp_sock *msk, u8 id,
 	return 0;
 }
 
-extern bool bpf_test_bit(unsigned long nr, const unsigned long *addr) __ksym;
 extern int mptcp_pm_genl_fill_addr(struct sk_buff *msg,
 				   struct netlink_callback *cb,
 				   struct mptcp_pm_addr_entry *entry) __ksym;

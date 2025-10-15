@@ -29,8 +29,6 @@
 
 #define inet_sk(ptr) container_of(ptr, struct inet_sock, sk)
 
-extern void bpf_set_bit(unsigned long nr, unsigned long *addr) __ksym;
-
 extern int mptcp_pm_remove_addr(struct mptcp_sock *msk,
 				const struct mptcp_rm_list *rm_list) __ksym;
 extern void mptcp_pm_remove_addr_entry(struct mptcp_sock *msk,
@@ -117,6 +115,64 @@ static __always_inline void mptcp_pm_copy_entry(struct mptcp_pm_addr_entry *dst,
 
 	dst->flags = src->flags;
 	dst->ifindex = src->ifindex;
+}
+
+#define BITS_PER_LONG (sizeof(unsigned long) * 8)
+
+static __always_inline void bpf_set_bit(unsigned long nr,
+					unsigned long *addr)
+{
+	unsigned long index = nr / BITS_PER_LONG;
+	unsigned long offset = nr % BITS_PER_LONG;
+
+	addr[index] |= (1UL << offset);
+}
+
+static __always_inline u8 bpf_find_next_zero_bit(const unsigned long *addr,
+						 unsigned long size,
+						 unsigned long offset)
+{
+	unsigned long index = offset / BITS_PER_LONG;
+	unsigned long bit_offset = offset % BITS_PER_LONG;
+
+	for (; index * BITS_PER_LONG < size; index++) {
+		unsigned long word = ~addr[index];
+
+		if (bit_offset > 0) {
+			word &= (~0UL << bit_offset);
+		}
+
+		if (word != 0) {
+			unsigned long bit = __builtin_ffsl(word) - 1;
+			unsigned long result = index * BITS_PER_LONG + bit;
+			return (result < size) ? (u8)result : (u8)size;
+		}
+
+		bit_offset = 0;
+	}
+
+	return (u8)size;
+}
+
+static __always_inline bool bpf_test_bit(unsigned long nr,
+					 const unsigned long *addr)
+{
+	unsigned long index = nr / BITS_PER_LONG;
+	unsigned long offset = nr % BITS_PER_LONG;
+
+	return (addr[index] & (1UL << offset)) != 0;
+}
+
+static __always_inline bool bpf_test_and_set_bit(unsigned long nr,
+						 unsigned long *addr)
+{
+	unsigned long index = nr / BITS_PER_LONG;
+	unsigned long offset = nr % BITS_PER_LONG;
+	unsigned long mask = (1UL << offset);
+	bool old_value = (addr[index] & mask) != 0;
+
+	addr[index] |= mask;
+	return old_value;
 }
 
 static __always_inline struct sock *mptcp_pm_find_ssk(struct mptcp_sock *msk,
