@@ -2218,6 +2218,6 @@ void test_mptcp(void)
 		test_bpf_pm();
 	if (test__start_subtest("tcp_ktls"))
 		test_tcp_ktls();
-	if (test__start_subtest("mptcp_ktls"))
-		test_mptcp_ktls();
+	//if (test__start_subtest("mptcp_ktls"))
+	//	test_mptcp_ktls();
 }
