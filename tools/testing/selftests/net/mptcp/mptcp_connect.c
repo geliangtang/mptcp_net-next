@@ -935,8 +935,10 @@ static int do_splice(const int infd, const int outfd, const size_t len,
 	int err;
 
 	err = pipe(pipefd);
-	if (err)
+	if (err) {
+		fprintf(stderr, "%s err=%d\n", __func__, err);
 		return err;
+	}
 
 	while ((bytes = splice(infd, NULL, pipefd[1], NULL,
 			       len - winfo->total_len,

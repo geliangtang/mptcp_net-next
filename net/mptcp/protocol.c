@@ -47,6 +47,7 @@ static struct percpu_counter mptcp_sockets_allocated ____cacheline_aligned_in_sm
 
 static void __mptcp_destroy_sock(struct sock *sk);
 static void mptcp_check_send_data_fin(struct sock *sk);
+static void mptcp_backlog_purge(struct sock *sk);
 
 DEFINE_PER_CPU(struct mptcp_delegated_action, mptcp_delegated_actions) = {
 	.bh_lock = INIT_LOCAL_LOCK(bh_lock),
@@ -2644,6 +2645,7 @@ static void mptcp_check_fastclose(struct mptcp_sock *msk)
 	}
 
 	mptcp_set_state(sk, TCP_CLOSE);
+	mptcp_backlog_purge(sk);
 	WRITE_ONCE(sk->sk_shutdown, SHUTDOWN_MASK);
 	smp_mb__before_atomic(); /* SHUTDOWN must be visible first */
 	set_bit(MPTCP_WORK_CLOSE_SUBFLOW, &msk->flags);
@@ -3507,12 +3509,12 @@ static void mptcp_release_cb(struct sock *sk)
 	__must_hold(&sk->sk_lock.slock)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
-	u32 delta = 0;
 
 	for (;;) {
 		unsigned long flags = (msk->cb_flags & MPTCP_FLAGS_PROCESS_CTX_NEED);
 		LIST_HEAD(join_list);
 		LIST_HEAD(skbs);
+		u32 delta = 0;
 
 		sk_forward_alloc_add(sk, msk->borrowed_mem);
 		msk->borrowed_mem = 0;
@@ -3551,8 +3553,9 @@ static void mptcp_release_cb(struct sock *sk)
 		cond_resched();
 		spin_lock_bh(&sk->sk_lock.slock);
 		list_splice(&skbs, &msk->backlog_list);
+
+		WRITE_ONCE(msk->backlog_len, msk->backlog_len - delta);
 	}
-	WRITE_ONCE(msk->backlog_len, msk->backlog_len - delta);
 
 	if (__test_and_clear_bit(MPTCP_CLEAN_UNA, &msk->cb_flags))
 		__mptcp_clean_una_wakeup(sk);
