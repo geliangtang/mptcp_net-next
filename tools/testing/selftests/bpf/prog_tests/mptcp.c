@@ -903,6 +903,58 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+static void run_mptcp_ktls(void)
+{
+	int server_fd, client_fd;
+
+	server_fd = start_mptcp_server(AF_INET, ADDR_1, PORT_1, 0);
+	if (!ASSERT_GE(server_fd, 0, "start_mptcp_server"))
+		return;
+
+	client_fd = connect_to_fd(server_fd, 0);
+	if (!ASSERT_GE(client_fd, 0, "connect to fd"))
+		goto fail;
+
+	if (!ASSERT_OK(sockmap_init_ktls(client_fd), "init_ktls client_fd"))
+		goto fail;
+
+	if (!ASSERT_OK(send_recv_data(server_fd, client_fd,
+				      total_bytes, sockmap_init_ktls),
+		       "send_recv_data"))
+		goto fail;
+
+	CHECK(has_bytes_sent(ADDR_1), "mptcp ktls", "should have bytes_sent on addr1\n");
+	CHECK(has_bytes_sent(ADDR_2), "mptcp ktls", "should have bytes_sent on addr2\n");
+
+	close(client_fd);
+fail:
+	close(server_fd);
+}
+
+static void test_mptcp_ktls(void)
+{
+	struct netns_obj *netns;
+	int cgroup_fd;
+
+	cgroup_fd = test__join_cgroup("/mptcp_ktls");
+	if (!ASSERT_GE(cgroup_fd, 0, "join_cgroup: mptcp_ktls"))
+		return;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new"))
+		goto close_cgroup;
+
+	if (endpoint_init("subflow", 2))
+		goto close_netns;
+
+	run_mptcp_ktls();
+
+close_netns:
+	netns_free(netns);
+close_cgroup:
+	close(cgroup_fd);
+}
+
 void test_mptcp(void)
 {
 	if (test__start_subtest("base"))
@@ -927,4 +979,6 @@ void test_mptcp(void)
 		test_burst();
 	if (test__start_subtest("tcp_ktls"))
 		test_tcp_ktls();
+	if (test__start_subtest("mptcp_ktls"))
+		test_mptcp_ktls();
 }
