@@ -674,6 +674,7 @@ struct send_recv_arg {
 	int		fd;
 	uint32_t	bytes;
 	int		stop;
+	int		(*cb)(int fd);
 };
 
 static void *send_recv_server(void *arg)
@@ -692,6 +693,11 @@ static void *send_recv_server(void *arg)
 	}
 
 	if (settimeo(fd, 0)) {
+		err = -errno;
+		goto done;
+	}
+
+	if (a->cb && a->cb(fd)) {
 		err = -errno;
 		goto done;
 	}
@@ -724,13 +730,14 @@ done:
 	return NULL;
 }
 
-int send_recv_data(int lfd, int fd, uint32_t total_bytes)
+int send_recv_data(int lfd, int fd, uint32_t total_bytes, int (*cb)(int fd))
 {
 	ssize_t nr_recv = 0, bytes = 0;
 	struct send_recv_arg arg = {
 		.fd	= lfd,
 		.bytes	= total_bytes,
 		.stop	= 0,
+		.cb	= cb,
 	};
 	pthread_t srv_thread;
 	void *thread_ret;
