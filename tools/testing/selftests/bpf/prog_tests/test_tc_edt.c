@@ -114,7 +114,7 @@ static void run_test(void)
 		return;
 
 	ts_start = get_time_ns();
-	err = send_recv_data(server_fd, client_fd, TX_BYTES_COUNT);
+	err = send_recv_data(server_fd, client_fd, TX_BYTES_COUNT, NULL);
 	ts_end = get_time_ns();
 	close_netns(nstoken);
 	ASSERT_OK(err, "send_recv_data");
