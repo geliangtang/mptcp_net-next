@@ -909,8 +909,6 @@ static int tls_setsockopt(struct sock *sk, int level, int optname,
 
 static int tls_disconnect(struct sock *sk, int flags)
 {
-	if (sk->sk_protocol == IPPROTO_MPTCP)
-		return mptcp_disconnect(sk, flags);
 	return -EOPNOTSUPP;
 }
 

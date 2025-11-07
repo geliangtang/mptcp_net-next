@@ -28,8 +28,6 @@
 #include "protocol.h"
 #include "mib.h"
 
-static unsigned int mptcp_inq_hint(const struct sock *sk);
-
 #define CREATE_TRACE_POINTS
 #include <trace/events/mptcp.h>
 
@@ -1775,6 +1773,8 @@ out:
 	}
 }
 
+static int mptcp_disconnect(struct sock *sk, int flags);
+
 static int mptcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
 				  size_t len, int *copied_syn)
 {
@@ -3370,7 +3370,7 @@ static void mptcp_destroy_common(struct mptcp_sock *msk)
 	mptcp_pm_destroy(msk);
 }
 
-int mptcp_disconnect(struct sock *sk, int flags)
+static int mptcp_disconnect(struct sock *sk, int flags)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 
@@ -4493,10 +4493,10 @@ void mptcp_read_done(struct sock *sk, size_t len)
 		int used;
 
 		used = min_t(size_t, skb->len - offset, left);
-		left -= used;
 		msk->bytes_consumed += used;
 		MPTCP_SKB_CB(skb)->offset += used;
 		MPTCP_SKB_CB(skb)->map_seq += used;
+		left -= used;
 
 		if (skb->len > offset + used)
 			break;
@@ -4507,10 +4507,8 @@ void mptcp_read_done(struct sock *sk, size_t len)
 	mptcp_rcv_space_adjust(msk, len - left);
 
 	/* Clean up data we have read: This will do ACK frames. */
-	if (left != len) {
-		mptcp_recv_skb(sk, &offset);
+	if (left != len)
 		mptcp_cleanup_rbuf(msk, len - left);
-	}
 }
 EXPORT_SYMBOL(mptcp_read_done);
 
