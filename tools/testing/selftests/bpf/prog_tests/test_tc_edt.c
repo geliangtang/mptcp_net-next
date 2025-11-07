@@ -113,7 +113,7 @@ static void run_test(struct test_tc_edt *skel)
 	if (!ASSERT_OK_FD(client_fd, "connect client"))
 		return;
 
-	err = send_recv_data(server_fd, client_fd, TX_BYTES_COUNT);
+	err = send_recv_data(server_fd, client_fd, TX_BYTES_COUNT, NULL);
 	ts_end = get_time_ns();
 	close_netns(nstoken);
 	ASSERT_OK(err, "send_recv_data");
