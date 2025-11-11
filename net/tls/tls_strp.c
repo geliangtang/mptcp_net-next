@@ -603,6 +603,7 @@ void tls_strp_msg_consume(struct tls_strparser *strp)
 {
 	WARN_ON(!strp->stm.full_len);
 
+	//pr_info("%s strp->sk->sk_protocol=%d\n", __func__, strp->sk->sk_protocol);
 	if (likely(!strp->copy_mode))
 		strp->sk->sk_socket->ops->read_done(strp->sk,
 						    strp->stm.full_len);
