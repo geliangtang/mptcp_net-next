@@ -2443,8 +2443,7 @@ bool __mptcp_retransmit_pending_data(struct sock *sk)
  * TCP_CLOSE state
  */
 static void __mptcp_subflow_disconnect(struct sock *ssk,
-				       struct mptcp_subflow_context *subflow,
-				       unsigned int flags)
+				       struct mptcp_subflow_context *subflow)
 {
 	if (((1 << ssk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN)) ||
 	    subflow->send_fastclose) {
@@ -2515,7 +2514,7 @@ static void __mptcp_close_ssk(struct sock *sk, struct sock *ssk,
 
 	need_push = (flags & MPTCP_CF_PUSH) && __mptcp_retransmit_pending_data(sk);
 	if (!dispose_it) {
-		__mptcp_subflow_disconnect(ssk, subflow, flags);
+		__mptcp_subflow_disconnect(ssk, subflow);
 		release_sock(ssk);
 		goto out;
 	}
