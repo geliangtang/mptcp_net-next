@@ -103,6 +103,7 @@ fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio \
     --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randread \
     --size=4m \
     --filename=/dev/${devname}n1
+#--output=/dev/null
 lret=$?
 if [ $lret -ne 0 ]; then
 	final_ret=${lret}
@@ -115,6 +116,7 @@ fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio \
     --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randwrite \
     --size=4m \
     --filename=/dev/${devname}n1
+#--output=/dev/null
 lret=$?
 if [ $lret -ne 0 ]; then
 	final_ret=${lret}
