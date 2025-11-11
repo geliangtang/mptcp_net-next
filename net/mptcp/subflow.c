@@ -1376,7 +1376,7 @@ static bool subflow_check_data_avail(struct sock *ssk)
 			goto no_data;
 
 		skb = skb_peek(&ssk->sk_receive_queue);
-		if (WARN_ON_ONCE(!skb))
+		if (!skb)
 			goto no_data;
 
 		if (unlikely(!READ_ONCE(msk->can_ack)))
@@ -1541,12 +1541,28 @@ static void subflow_data_ready(struct sock *sk)
 	}
 }
 
-static void subflow_write_space(struct sock *ssk)
+void __mptcp_data_ready(struct sock *sk)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+
+	subflow_data_ready(msk->first);
+}
+
+void subflow_write_space(struct sock *ssk)
 {
 	struct sock *sk = mptcp_subflow_ctx(ssk)->conn;
 
+	pr_info("%s sk=%p ssk=%p\n", __func__, sk, ssk);
+	//__mptcp_sync_sndbuf(sk);
 	mptcp_propagate_sndbuf(sk, ssk);
 	mptcp_write_space(sk);
+}
+
+void __mptcp_write_space(struct sock *sk)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+
+	subflow_write_space(msk->first);
 }
 
 static const struct inet_connection_sock_af_ops *

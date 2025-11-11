@@ -180,6 +180,7 @@ do_eagain:
 	 */
 	set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 	err = -EAGAIN;
+	pr_info("%s sk=%p return -EAGAIN\n", __func__, sk);
 	goto out;
 do_interrupted:
 	err = sock_intr_errno(*timeo_p);

@@ -611,9 +611,12 @@ static void tcp_sndbuf_expand(struct sock *sk)
 	sndmem = ca_ops->sndbuf_expand ? ca_ops->sndbuf_expand(sk) : 2;
 	sndmem *= nr_segs * per_mss;
 
-	if (sk->sk_sndbuf < sndmem)
+	if (sk->sk_sndbuf < sndmem) {
 		WRITE_ONCE(sk->sk_sndbuf,
 			   min(sndmem, READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_wmem[2])));
+
+		pr_info("%s sk=%p\n", __func__, sk);
+	}
 }
 
 /* 2. Tuning advertised window (window_clamp, rcv_ssthresh)
@@ -5866,6 +5869,7 @@ static void tcp_new_space(struct sock *sk)
 		tp->snd_cwnd_stamp = tcp_jiffies32;
 	}
 
+	pr_info("%s call subflow_write_space ssk=%p\n", __func__, sk);
 	INDIRECT_CALL_1(sk->sk_write_space, sk_stream_write_space, sk);
 }
 

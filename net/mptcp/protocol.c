@@ -1837,16 +1837,26 @@ static u32 mptcp_send_limit(const struct sock *sk)
 	const struct mptcp_sock *msk = mptcp_sk(sk);
 	u32 limit, not_sent;
 
-	if (sk->sk_wmem_queued >= READ_ONCE(sk->sk_sndbuf))
+	if (sk->sk_wmem_queued >= READ_ONCE(sk->sk_sndbuf)) {
+		pr_info("%s return 0 sk=%p, sk->sk_wmem_queued=%u, READ_ONCE(sk->sk_sndbuf)=%u\n",
+			__func__, sk, sk->sk_wmem_queued, READ_ONCE(sk->sk_sndbuf));
 		return 0;
+	}
 
 	limit = mptcp_notsent_lowat(sk);
-	if (limit == UINT_MAX)
+	if (limit == UINT_MAX) {
+		//if (READ_ONCE(sk->sk_sndbuf) == 20480)
+		//	pr_info("%s return UINT_MAX sk=%p, sk->sk_wmem_queued=%u, READ_ONCE(sk->sk_sndbuf)=%u\n",
+		//		__func__, sk, sk->sk_wmem_queued, READ_ONCE(sk->sk_sndbuf));
 		return UINT_MAX;
+	}
 
 	not_sent = msk->write_seq - msk->snd_nxt;
-	if (not_sent >= limit)
+	if (not_sent >= limit) {
+		pr_info("%s 2 return 0 sk=%p, sk->sk_wmem_queued=%u, READ_ONCE(sk->sk_sndbuf)=%u\n",
+			__func__, sk, sk->sk_wmem_queued, READ_ONCE(sk->sk_sndbuf));
 		return 0;
+	}
 
 	return limit - not_sent;
 }
@@ -1901,8 +1911,11 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	}
 
 	ret = -EPIPE;
-	if (unlikely(sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN)))
+	if (unlikely(sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))) {
+		if (ret == -EPIPE)
+			pr_info("%s 1 return EPIPE\n", __func__);
 		goto do_error;
+	}
 
 	pfrag = sk_page_frag(sk);
 
@@ -1915,8 +1928,10 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 
 		/* ensure fitting the notsent_lowat() constraint */
 		copy_limit = mptcp_send_limit(sk);
-		if (!copy_limit)
+		if (!copy_limit) {
+			pr_info("%s wait_for_memory\n", __func__);
 			goto wait_for_memory;
+		}
 
 		/* reuse tail pfrag, if possible, or carve a new one from the
 		 * page allocator
@@ -1946,8 +1961,11 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 
 		ret = do_copy_data_nocache(sk, psize, &msg->msg_iter,
 					   page_address(dfrag->page) + offset);
-		if (ret)
+		if (ret) {
+			if (ret == -EPIPE)
+				pr_info("%s 2 return EPIPE\n", __func__);
 			goto do_error;
+		}
 
 		/* data successfully copied into the write queue */
 		sk_forward_alloc_add(sk, -total_ts);
@@ -1977,8 +1995,11 @@ wait_for_memory:
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		__mptcp_push_pending(sk, msg->msg_flags);
 		ret = sk_stream_wait_memory(sk, &timeo);
-		if (ret)
+		if (ret) {
+			if (ret == -EPIPE)
+				pr_info("%s 3 return EPIPE\n", __func__);
 			goto do_error;
+		}
 	}
 
 	if (copied)
@@ -3518,6 +3539,7 @@ struct sock *mptcp_sk_clone_init(const struct sock *sk,
 	 * uses the correct data
 	 */
 	mptcp_copy_inaddrs(nsk, ssk);
+	//pr_info("%s call __mptcp_propagate_sndbuf sk=%p ssk=%p\n", __func__, nsk, ssk);
 	__mptcp_propagate_sndbuf(nsk, ssk);
 
 	mptcp_rcv_space_init(msk, ssk);
@@ -3842,6 +3864,7 @@ bool mptcp_finish_join(struct sock *ssk)
 		}
 		mptcp_subflow_joined(msk, ssk);
 		spin_unlock_bh(&msk->fallback_lock);
+		pr_info("%s call mptcp_propagate_sndbuf sk=%p ssk=%p\n", __func__, parent, ssk);
 		mptcp_propagate_sndbuf(parent, ssk);
 		return true;
 	}
@@ -4244,7 +4267,8 @@ static int mptcp_stream_accept(struct socket *sock, struct socket *newsock,
 		mptcp_graft_subflows(newsk);
 		mptcp_rps_record_subflows(msk);
 
-		__mptcp_propagate_sndbuf(newsk, ssk);
+		//pr_info("%s call __mptcp_propagate_sndbuf sk=%p ssk=%p\n", __func__, newsk, ssk);
+		//__mptcp_propagate_sndbuf(newsk, ssk);
 
 		/* Do late cleanup for the first subflow as necessary. Also
 		 * deal with bad peers not doing a complete shutdown.
@@ -4287,6 +4311,11 @@ static __poll_t mptcp_check_writeable(struct mptcp_sock *msk)
 		return EPOLLOUT | EPOLLWRNORM;
 
 	return 0;
+}
+
+bool mptcp_stream_is_writeable(const struct sock *sk)
+{
+	return __mptcp_stream_is_writeable(sk, 1);
 }
 
 static __poll_t mptcp_poll(struct file *file, struct socket *sock,

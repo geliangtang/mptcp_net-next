@@ -994,6 +994,7 @@ static inline void __mptcp_sync_sndbuf(struct sock *sk)
 
 	/* the msk max wmem limit is <nr_subflows> * tcp wmem[2] */
 	WRITE_ONCE(sk->sk_sndbuf, new_sndbuf);
+	pr_info("%s sk=%p sk->sk_sndbuf=%d\n", __func__, sk, sk->sk_sndbuf);
 	mptcp_write_space(sk);
 }
 

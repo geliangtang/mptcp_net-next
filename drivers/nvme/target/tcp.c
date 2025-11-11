@@ -805,8 +805,10 @@ static int nvmet_tcp_try_send_one(struct nvmet_tcp_queue *queue,
 
 	if (cmd->state == NVMET_TCP_SEND_DATA) {
 		ret = nvmet_try_send_data(cmd, last_in_batch);
-		if (ret <= 0)
+		if (ret <= 0) {
+			pr_info("%s nvmet_try_send_data ret=%d queue->idx=%d\n", __func__, ret, queue->idx);
 			goto done_send;
+		}
 	}
 
 	if (cmd->state == NVMET_TCP_SEND_DDGST) {
@@ -821,8 +823,11 @@ static int nvmet_tcp_try_send_one(struct nvmet_tcp_queue *queue,
 			goto done_send;
 	}
 
-	if (cmd->state == NVMET_TCP_SEND_RESPONSE)
+	if (cmd->state == NVMET_TCP_SEND_RESPONSE) {
 		ret = nvmet_try_send_response(cmd, last_in_batch);
+		if (ret < 0)
+			pr_info("%s nvmet_try_send_response ret=%d queue->idx=%d\n", __func__, ret, queue->idx);
+	}
 
 done_send:
 	if (ret < 0) {
@@ -842,9 +847,12 @@ static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
 	for (i = 0; i < budget; i++) {
 		ret = nvmet_tcp_try_send_one(queue, i == budget - 1);
 		if (unlikely(ret < 0)) {
+			pr_err("%s bad ret=%d i=%d budget=%d sends=%d sk=%p sk_sndbuf=%u protocol=%u queue->idx=%d\n", __func__, ret, i, budget, *sends, queue->sock->sk, queue->sock->sk->sk_sndbuf, queue->sock->sk->sk_protocol, queue->idx);
 			nvmet_tcp_socket_error(queue, ret);
 			goto done;
 		} else if (ret == 0) {
+			if (queue->sock->sk->sk_protocol == 20480)
+				pr_err("%s ok ret=%d i=%d budget=%d sends=%d sk=%p sk_sndbuf=%u protocol=%u queue->idx=%d\n", __func__, ret, i, budget, *sends, queue->sock->sk, queue->sock->sk->sk_sndbuf, queue->sock->sk->sk_protocol, queue->idx);
 			break;
 		}
 		(*sends)++;
@@ -1596,6 +1604,7 @@ static void nvmet_tcp_data_ready(struct sock *sk)
 {
 	struct nvmet_tcp_queue *queue;
 
+	//pr_info("%s\n", __func__);
 	trace_sk_data_ready(sk);
 
 	read_lock_bh(&sk->sk_callback_lock);
@@ -1603,6 +1612,8 @@ static void nvmet_tcp_data_ready(struct sock *sk)
 	if (likely(queue)) {
 		if (queue->data_ready)
 			queue->data_ready(sk);
+		//__mptcp_data_ready(sk);
+
 		if (queue->state != NVMET_TCP_Q_TLS_HANDSHAKE)
 			queue_work_on(queue_cpu(queue), nvmet_tcp_wq,
 				      &queue->io_work);
@@ -1614,11 +1625,15 @@ static void nvmet_tcp_write_space(struct sock *sk)
 {
 	struct nvmet_tcp_queue *queue;
 
+	pr_info("%s\n", __func__);
+
 	read_lock_bh(&sk->sk_callback_lock);
 	queue = sk->sk_user_data;
 	if (unlikely(!queue))
 		goto out;
 
+	//pr_info("%s sk=%p\n", __func__, sk);
+	//__mptcp_write_space(sk);
 	if (unlikely(queue->state == NVMET_TCP_Q_CONNECTING)) {
 		queue->write_space(sk);
 		goto out;
@@ -1635,6 +1650,8 @@ out:
 static void nvmet_tcp_state_change(struct sock *sk)
 {
 	struct nvmet_tcp_queue *queue;
+
+	pr_info("%s\n", __func__);
 
 	read_lock_bh(&sk->sk_callback_lock);
 	queue = sk->sk_user_data;
@@ -1691,6 +1708,7 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 
 	ret = 0;
 	write_lock_bh(&sock->sk->sk_callback_lock);
+	pr_info("%s sock->sk=%p queue->idx=%d\n", __func__, sock->sk, queue->idx);
 	if (sock->sk->sk_state != TCP_ESTABLISHED) {
 		/*
 		 * If the socket is already closing, don't even start
@@ -1698,6 +1716,10 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 		 */
 		ret = -ENOTCONN;
 	} else {
+		//if (sock->sk->sk_write_space == subflow_write_space)
+		//	pr_info("%s call sk->sk_write_space sk=%p is subflow_write_space\n", __func__, sock->sk);
+		//else
+		//	pr_info("%s call sk->sk_write_space sk=%p is not subflow_write_space\n", __func__, sock->sk);
 		sock->sk->sk_user_data = queue;
 		queue->data_ready = sock->sk->sk_data_ready;
 		sock->sk->sk_data_ready = nvmet_tcp_data_ready;
@@ -1705,6 +1727,8 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 		sock->sk->sk_state_change = nvmet_tcp_state_change;
 		queue->write_space = sock->sk->sk_write_space;
 		sock->sk->sk_write_space = nvmet_tcp_write_space;
+		//if (queue->idx != 0)
+		//	__mptcp_write_space(sock->sk);
 		if (idle_poll_period_usecs)
 			nvmet_tcp_arm_queue_deadline(queue);
 		queue_work_on(queue_cpu(queue), nvmet_tcp_wq, &queue->io_work);

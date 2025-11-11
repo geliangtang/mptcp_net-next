@@ -243,6 +243,13 @@ void mptcp_sock_set_reuseaddr(struct sock *sk);
 void mptcp_sock_set_nodelay(struct sock *sk);
 
 int mptcp_sock_set_syncnt(struct sock *sk, int val);
+
+void __mptcp_write_space(struct sock *sk);
+void __mptcp_data_ready(struct sock *sk);
+
+void subflow_write_space(struct sock *ssk);
+
+bool mptcp_stream_is_writeable(const struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
