@@ -1702,6 +1702,30 @@ done:
 	read_unlock_bh(&sk->sk_callback_lock);
 }
 
+static void print_sockaddr(struct sockaddr *addr)
+{
+	if (!addr) {
+		pr_info("NULL address\n");
+		return;
+	}
+
+	switch (addr->sa_family) {
+	case AF_INET: {
+		const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
+		pr_info("IPv4: %pI4:%u\n", &sin->sin_addr, ntohs(sin->sin_port));
+		break;
+	}
+	case AF_INET6: {
+		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
+		pr_info("IPv6: %pI6:%u\n", &sin6->sin6_addr, ntohs(sin6->sin6_port));
+		break;
+	}
+	default:
+		pr_info("Unknown address family: %d\n", addr->sa_family);
+		break;
+	}
+}
+
 static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 {
 	struct socket *sock = queue->sock;
@@ -1718,6 +1742,10 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 		(struct sockaddr *)&queue->sockaddr_peer);
 	if (ret < 0)
 		return ret;
+
+	pr_info("%s sock->sk=%p protocol=%d queue->idx=%d\n", __func__, sock->sk, sock->sk->sk_protocol, queue->idx);
+	print_sockaddr((struct sockaddr *)&queue->sockaddr);
+	print_sockaddr((struct sockaddr *)&queue->sockaddr_peer);
 
 	rcu_read_lock();
 	proto = rcu_dereference(queue->port)->proto;
