@@ -258,6 +258,11 @@ void mptcp_read_done(struct sock *sk, size_t len);
 
 int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
 			  sk_read_actor_t recv_actor, bool noack);
+
+__poll_t mptcp_poll(struct file *file, struct socket *sock,
+		    struct poll_table_struct *wait);
+
+bool __mptcp_epollin_ready(const struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
@@ -367,6 +372,17 @@ static inline int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc
 					sk_read_actor_t recv_actor, bool noack)
 {
 	return 0;
+}
+
+static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
+				  struct poll_table_struct *wait)
+{
+	return 0;
+}
+
+statci inline bool __mptcp_epollin_ready(const struct sock *sk)
+{
+	return false;
 }
 #endif /* CONFIG_MPTCP */
 

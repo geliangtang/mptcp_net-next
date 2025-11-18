@@ -22,7 +22,7 @@ void tls_strp_abort_strp(struct tls_strparser *strp, int err)
 
 	/* Report an error on the lower socket */
 	WRITE_ONCE(strp->sk->sk_err, -err);
-	/* Paired with smp_rmb() in tcp_poll() */
+	/* Paired with smp_rmb() in tcp_poll()/mptcp_poll() */
 	smp_wmb();
 	sk_error_report(strp->sk);
 }
@@ -402,7 +402,9 @@ static int tls_strp_read_copy(struct tls_strparser *strp, bool qshort)
 	 * to read the data out. Otherwise the connection will stall.
 	 * Without pressure threshold of INT_MAX will never be ready.
 	 */
-	if (likely(qshort && !tcp_epollin_ready(strp->sk, INT_MAX)))
+	if (likely(qshort && !(strp->sk->sk_protocol == IPPROTO_MPTCP ?
+			       __mptcp_epollin_ready(strp->sk) :
+			       tcp_epollin_ready(strp->sk, INT_MAX))))
 		return 0;
 
 	shinfo = skb_shinfo(strp->anchor);
