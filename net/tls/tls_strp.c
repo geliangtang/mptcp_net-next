@@ -402,7 +402,9 @@ static int tls_strp_read_copy(struct tls_strparser *strp, bool qshort)
 	 * to read the data out. Otherwise the connection will stall.
 	 * Without pressure threshold of INT_MAX will never be ready.
 	 */
-	if (likely(qshort && !tcp_epollin_ready(strp->sk, INT_MAX)))
+	if (likely(qshort && !(sk_is_msk(strp->sk) ?
+			       mptcp_epollin_ready(strp->sk) :
+			       tcp_epollin_ready(strp->sk, INT_MAX))))
 		return 0;
 
 	shinfo = skb_shinfo(strp->anchor);

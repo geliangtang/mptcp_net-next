@@ -904,6 +904,20 @@ static void mptcp_rcv_rtt_update(struct mptcp_sock *msk,
 			     tp->scaling_ratio) >> 3;
 }
 
+bool mptcp_epollin_ready(const struct sock *sk)
+{
+	u64 data_avail = mptcp_data_avail(mptcp_sk(sk));
+
+	if (!data_avail)
+		return false;
+
+	/* mptcp doesn't have to deal with small skbs in the receive queue,
+	 * as it can always coalesce them
+	 */
+	return (data_avail >= sk->sk_rcvlowat) ||
+		tcp_under_memory_pressure(sk);
+}
+
 void mptcp_data_ready(struct sock *sk, struct sock *ssk)
 {
 	struct mptcp_subflow_context *subflow = mptcp_subflow_ctx(ssk);
@@ -4277,8 +4291,8 @@ static __poll_t mptcp_check_writeable(struct mptcp_sock *msk)
 	return 0;
 }
 
-static __poll_t mptcp_poll(struct file *file, struct socket *sock,
-			   struct poll_table_struct *wait)
+__poll_t mptcp_poll(struct file *file, struct socket *sock,
+		    struct poll_table_struct *wait)
 {
 	struct sock *sk = sock->sk;
 	struct mptcp_sock *msk;

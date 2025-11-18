@@ -852,20 +852,6 @@ static inline u64 mptcp_data_avail(const struct mptcp_sock *msk)
 	return READ_ONCE(msk->bytes_received) - READ_ONCE(msk->bytes_consumed);
 }
 
-static inline bool mptcp_epollin_ready(const struct sock *sk)
-{
-	u64 data_avail = mptcp_data_avail(mptcp_sk(sk));
-
-	if (!data_avail)
-		return false;
-
-	/* mptcp doesn't have to deal with small skbs in the receive queue,
-	 * as it can always coalesce them
-	 */
-	return (data_avail >= sk->sk_rcvlowat) ||
-		tcp_under_memory_pressure(sk);
-}
-
 int mptcp_set_rcvlowat(struct sock *sk, int val);
 
 static inline bool __tcp_can_send(const struct sock *ssk)
