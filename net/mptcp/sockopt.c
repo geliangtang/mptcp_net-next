@@ -757,6 +757,17 @@ static bool mptcp_supported_sockopt(int level, int optname)
 	return false;
 }
 
+static bool should_fallback_sockopt(int level, int optname)
+{
+	if (level == SOL_TCP) {
+		switch (optname) {
+		case TCP_ULP:
+			return false;
+		}
+	}
+	return true;
+}
+
 static int mptcp_setsockopt_sol_tcp_congestion(struct mptcp_sock *msk, sockptr_t optval,
 					       unsigned int optlen)
 {
@@ -1571,6 +1582,39 @@ static int mptcp_put_int_option(struct mptcp_sock *msk, char __user *optval,
 	return 0;
 }
 
+static int mptcp_getsockopt_tcp_ulp(struct sock *sk,
+				    char __user *optval,
+				    int __user *optlen)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	int ret = 0, len;
+
+	if (copy_from_sockptr(&len, USER_SOCKPTR(optlen), sizeof(int)))
+		return -EFAULT;
+
+	if (len < 0)
+		return -EINVAL;
+
+	lock_sock(sk);
+	len = min_t(unsigned int, len, TCP_ULP_NAME_MAX);
+	if (!icsk->icsk_ulp_ops) {
+		len = 0;
+		if (copy_to_sockptr(USER_SOCKPTR(optlen), &len, sizeof(int)))
+			ret = -EFAULT;
+		goto out;
+	}
+	if (copy_to_sockptr(USER_SOCKPTR(optlen), &len, sizeof(int))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	if (copy_to_sockptr(USER_SOCKPTR(optval), icsk->icsk_ulp_ops->name,
+			    len))
+		ret = -EFAULT;
+out:
+	release_sock(sk);
+	return ret;
+}
+
 static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 				    char __user *optval, int __user *optlen)
 {
@@ -1578,6 +1622,7 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 
 	switch (optname) {
 	case TCP_ULP:
+		return mptcp_getsockopt_tcp_ulp(sk, optval, optlen);
 	case TCP_CONGESTION:
 	case TCP_INFO:
 	case TCP_CC_INFO:
@@ -1721,7 +1766,7 @@ int mptcp_getsockopt(struct sock *sk, int level, int optname,
 	lock_sock(sk);
 	ssk = __mptcp_tcp_fallback(msk);
 	release_sock(sk);
-	if (ssk)
+	if (ssk && should_fallback_sockopt(level, optname))
 		return tcp_getsockopt(ssk, level, optname, optval, option);
 
 	if (level == SOL_IP)
