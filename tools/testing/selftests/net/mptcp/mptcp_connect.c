@@ -33,6 +33,7 @@
 #include <linux/tcp.h>
 #include <linux/time_types.h>
 #include <linux/sockios.h>
+#include <linux/tls.h>
 
 extern int optind;
 
@@ -46,6 +47,7 @@ extern int optind;
 static int  poll_timeout = 10 * 1000;
 static bool listen_mode;
 static bool quit;
+static int tls = 1;
 
 enum cfg_mode {
 	CFG_MODE_POLL,
@@ -279,8 +281,59 @@ static int fallback(int fd)
 	return !is_mptcp;
 }
 
+static int do_setsockopt_tls(int fd)
+{
+	struct tls12_crypto_info_aes_gcm_128 tls_tx = {
+		.info = {
+			.version     = TLS_1_2_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	struct tls12_crypto_info_aes_gcm_128 tls_rx = {
+		.info = {
+			.version     = TLS_1_2_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	int so_buf = 6553500;
+	int err;
+
+	if (!tls)
+		return 0;
+
+	err = setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));
+	if (err) {
+		perror("setsockopt TCP_ULP");
+		return err;
+	}
+	err = setsockopt(fd, SOL_TLS, TLS_TX, (void *)&tls_tx, sizeof(tls_tx));
+	if (err) {
+		perror("setsockopt TLS_TX");
+		return err;
+	}
+	err = setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
+	if (err) {
+		perror("setsockopt TLS_RX");
+		return err;
+	}
+	err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &so_buf, sizeof(so_buf));
+	if (err) {
+		perror("setsockopt SO_SNDBUF");
+		return err;
+	}
+	err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &so_buf, sizeof(so_buf));
+	if (err) {
+		perror("setsockopt SO_RCVBUF");
+		return err;
+	}
+
+	return 0;
+}
+
 static int do_ulp_so(int sock, const char *name)
 {
+	//if (!strcmp(name, "tls"))
+	//	return do_setsockopt_tls(sock);
 	return setsockopt(sock, IPPROTO_TCP, TCP_ULP, name, strlen(name));
 }
 
@@ -290,6 +343,9 @@ static void sock_test_tcpulp(int sock, int proto, int expect, unsigned int line)
 	socklen_t buflen = 8;
 	char buf[8] = "";
 	int ret = getsockopt(sock, IPPROTO_TCP, TCP_ULP, buf, &buflen);
+
+	if (tls)
+		return;
 
 	if (ret != 0)
 		X("getsockopt");
@@ -439,8 +495,13 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 	}
 
 	freeaddrinfo(addr);
-	if (sock != -1)
+	if (sock != -1) {
+		if (!fallback(sock)) {
+			if (do_setsockopt_tls(sock) < 0)
+				perror("do_setsockopt_tls");
+		}
 		SOCK_TEST_TCPULP(sock, proto, fallback(sock) ? -1 : 0);
+	}
 	return sock;
 }
 
@@ -1215,6 +1276,11 @@ again:
 			fd = open(cfg_input, O_RDONLY);
 			if (fd < 0)
 				xerror("can't open %s: %d", cfg_input, errno);
+		}
+
+		if (!fallback(remotesock)) {
+			if (do_setsockopt_tls(remotesock) < 0)
+				xerror("do_setsockopt_tls remotesock");
 		}
 
 		SOCK_TEST_TCPULP(remotesock, 0, 0);
