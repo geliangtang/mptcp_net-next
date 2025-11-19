@@ -33,6 +33,7 @@
 #include <linux/tcp.h>
 #include <linux/time_types.h>
 #include <linux/sockios.h>
+#include <linux/tls.h>
 
 extern int optind;
 
@@ -79,6 +80,7 @@ static int cfg_repeat = 1;
 static int cfg_truncate;
 static int cfg_rcv_trunc;
 static bool cfg_disconnect;
+static bool cfg_tls;
 
 struct cfg_cmsg_types {
 	unsigned int cmsg_enabled:1;
@@ -279,6 +281,58 @@ static int fallback(int fd)
 	return !is_mptcp;
 }
 
+static int do_setsockopt_tls(int fd)
+{
+	struct tls12_crypto_info_aes_gcm_128 tls_tx = {
+		.info = {
+			.version     = TLS_1_2_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	struct tls12_crypto_info_aes_gcm_128 tls_rx = {
+		.info = {
+			.version     = TLS_1_2_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	int so_buf = 6553500;
+	int err;
+
+	if (fallback(fd))
+		return 0;
+
+	if (cfg_disconnect || cfg_sockopt_types.mptfo)
+		return 0;
+
+	err = setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));
+	if (err) {
+		perror("setsockopt TCP_ULP");
+		return err;
+	}
+	err = setsockopt(fd, SOL_TLS, TLS_TX, (void *)&tls_tx, sizeof(tls_tx));
+	if (err) {
+		perror("setsockopt TLS_TX");
+		return err;
+	}
+	err = setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
+	if (err) {
+		perror("setsockopt TLS_RX");
+		return err;
+	}
+	err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &so_buf, sizeof(so_buf));
+	if (err) {
+		perror("setsockopt SO_SNDBUF");
+		return err;
+	}
+	err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &so_buf, sizeof(so_buf));
+	if (err) {
+		perror("setsockopt SO_RCVBUF");
+		return err;
+	}
+
+	return 0;
+}
+
 static int do_ulp_so(int sock, const char *name)
 {
 	return setsockopt(sock, IPPROTO_TCP, TCP_ULP, name, strlen(name));
@@ -439,6 +493,10 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 	}
 
 	freeaddrinfo(addr);
+	if (sock != -1) {
+		if (cfg_tls && do_setsockopt_tls(sock) < 0)
+			perror("do_setsockopt_tls");
+	}
 	return sock;
 }
 
@@ -1215,6 +1273,9 @@ again:
 				xerror("can't open %s: %d", cfg_input, errno);
 		}
 
+		if (cfg_tls && do_setsockopt_tls(remotesock) < 0)
+			xerror("do_setsockopt_tls remotesock");
+
 		memset(&winfo, 0, sizeof(winfo));
 		err = copyfd_io(fd, remotesock, 1, true, &winfo);
 	} else {
@@ -1519,7 +1580,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "6c:f:hi:I:jlm:M:o:p:P:r:R:s:S:t:T:w:")) != -1) {
+	while ((c = getopt(argc, argv, "6c:Cf:hi:I:jlm:M:o:p:P:r:R:s:S:t:T:w:")) != -1) {
 		switch (c) {
 		case 'f':
 			cfg_truncate = atoi(optarg);
@@ -1597,6 +1658,9 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'o':
 			parse_setsock_options(optarg);
+			break;
+		case 'C':
+			cfg_tls = true;
 			break;
 		}
 	}
