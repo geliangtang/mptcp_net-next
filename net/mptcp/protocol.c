@@ -4406,6 +4406,12 @@ static int mptcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	return __mptcp_read_sock(sk, desc, recv_actor, false);
 }
 
+int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+			  sk_read_actor_t recv_actor, bool noack)
+{
+	return __mptcp_read_sock(sk, desc, recv_actor, noack);
+}
+
 static int __mptcp_splice_read(struct sock *sk, struct tcp_splice_state *tss)
 {
 	/* Store TCP splice context information in read_descriptor_t. */
