@@ -385,6 +385,8 @@ static int tls_strp_read_copyin(struct tls_strparser *strp)
 	desc.count = 1; /* give more than one skb per call */
 
 	/* sk should be locked here, so okay to do read_sock */
+	strp->sk->sk_protocol == IPPROTO_MPTCP ?
+	mptcp_read_sock_noack(strp->sk, &desc, tls_strp_copyin, true) :
 	tcp_read_sock(strp->sk, &desc, tls_strp_copyin);
 
 	return desc.error;
