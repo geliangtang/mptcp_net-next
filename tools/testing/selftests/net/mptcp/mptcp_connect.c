@@ -522,8 +522,10 @@ static size_t do_rnd_write(const int fd, char *buf, const size_t len)
 		do_w = cfg_do_w;
 
 	bw = write(fd, buf, do_w);
-	if (bw < 0)
+	if (bw < 0) {
+		fprintf(stderr, "%s bw=%ld errno=%d\n", __func__, bw, errno);
 		return bw;
+	}
 
 	/* let the join handshake complete, before going on */
 	if (cfg_join && first) {
@@ -676,6 +678,8 @@ static ssize_t do_rnd_read(const int fd, char *buf, const size_t len)
 		ret = do_recvmsg_cmsg(fd, buf, cap);
 	} else {
 		ret = read(fd, buf, cap);
+		if (ret < 0)
+			fprintf(stderr, "%s ret=%d errno=%d\n", __func__, ret, errno);
 	}
 
 	return ret;
@@ -764,7 +768,7 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 			} else if (len < 0) {
 				if (cfg_rcv_trunc)
 					return 0;
-				perror("read");
+				perror("read 1");
 				return 3;
 			}
 
@@ -795,7 +799,7 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 						continue;
 					}
 
-					perror("write");
+					perror("write 1");
 					return 111;
 				}
 
