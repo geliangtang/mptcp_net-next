@@ -588,6 +588,17 @@ static bool mptcp_supported_sockopt(int level, int optname)
 	return false;
 }
 
+static bool mptcp_fallback_sockopt(int level, int optname)
+{
+	if (level == SOL_TCP) {
+		switch (optname) {
+		case TCP_ULP:
+			return true;
+		}
+	}
+	return false;
+}
+
 static int mptcp_setsockopt_sol_tcp_congestion(struct mptcp_sock *msk, sockptr_t optval,
 					       unsigned int optlen)
 {
@@ -928,7 +939,7 @@ int mptcp_setsockopt(struct sock *sk, int level, int optname,
 	lock_sock(sk);
 	ssk = __mptcp_tcp_fallback(msk);
 	release_sock(sk);
-	if (ssk)
+	if (ssk && !mptcp_fallback_sockopt(level, optname))
 		return tcp_setsockopt(ssk, level, optname, optval, optlen);
 
 	if (level == SOL_IP)
@@ -1546,7 +1557,7 @@ int mptcp_getsockopt(struct sock *sk, int level, int optname,
 	lock_sock(sk);
 	ssk = __mptcp_tcp_fallback(msk);
 	release_sock(sk);
-	if (ssk)
+	if (ssk && !mptcp_fallback_sockopt(level, optname))
 		return tcp_getsockopt(ssk, level, optname, optval, option);
 
 	if (level == SOL_IP)

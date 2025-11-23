@@ -47,7 +47,7 @@ extern int optind;
 static int  poll_timeout = 10 * 1000;
 static bool listen_mode;
 static bool quit;
-static int tls = 1;
+static int tls = 0;
 
 enum cfg_mode {
 	CFG_MODE_POLL,
@@ -351,7 +351,7 @@ static void sock_test_tcpulp(int sock, int proto, int expect, unsigned int line)
 		X("getsockopt");
 
 	if (buflen > 0) {
-		if (strcmp(buf, fallback(sock) ? "mptcp" : "tls") != 0)
+		if (strcmp(buf, "tls") != 0)
 			xerror("unexpected ULP '%s' for proto %d at line %u", buf, proto, line);
 		ret = do_ulp_so(sock, "tls");
 		if (ret == 0)
@@ -500,7 +500,7 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 			if (do_setsockopt_tls(sock) < 0)
 				perror("do_setsockopt_tls");
 		}
-		SOCK_TEST_TCPULP(sock, proto, fallback(sock) ? -1 : 0);
+		SOCK_TEST_TCPULP(sock, proto, 0);
 	}
 	return sock;
 }
