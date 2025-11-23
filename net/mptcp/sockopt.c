@@ -590,6 +590,17 @@ static bool mptcp_supported_sockopt(int level, int optname)
 	return false;
 }
 
+static bool mptcp_no_fallback_sockopt(int level, int optname)
+{
+	if (level == SOL_TCP) {
+		switch (optname) {
+		case TCP_ULP:
+			return true;
+		}
+	}
+	return false;
+}
+
 static int mptcp_setsockopt_sol_tcp_congestion(struct mptcp_sock *msk, sockptr_t optval,
 					       unsigned int optlen)
 {
@@ -950,6 +961,9 @@ int mptcp_setsockopt(struct sock *sk, int level, int optname,
 	if (!mptcp_supported_sockopt(level, optname))
 		return -ENOPROTOOPT;
 
+	if (!mptcp_no_fallback_sockopt(level, optname))
+		goto do_setsockopt;
+
 	/* @@ the meaning of setsockopt() when the socket is connected and
 	 * there are multiple subflows is not yet defined. It is up to the
 	 * MPTCP-level socket to configure the subflows until the subflow
@@ -962,6 +976,7 @@ int mptcp_setsockopt(struct sock *sk, int level, int optname,
 	if (ssk)
 		return tcp_setsockopt(ssk, level, optname, optval, optlen);
 
+do_setsockopt:
 	if (level == SOL_IP)
 		return mptcp_setsockopt_v4(msk, optname, optval, optlen);
 
@@ -1590,6 +1605,9 @@ int mptcp_getsockopt(struct sock *sk, int level, int optname,
 
 	pr_debug("msk=%p\n", msk);
 
+	if (!mptcp_no_fallback_sockopt(level, optname))
+		goto do_getsockopt;
+
 	/* @@ the meaning of setsockopt() when the socket is connected and
 	 * there are multiple subflows is not yet defined. It is up to the
 	 * MPTCP-level socket to configure the subflows until the subflow
@@ -1602,6 +1620,7 @@ int mptcp_getsockopt(struct sock *sk, int level, int optname,
 	if (ssk)
 		return tcp_getsockopt(ssk, level, optname, optval, option);
 
+do_getsockopt:
 	if (level == SOL_IP)
 		return mptcp_getsockopt_v4(msk, optname, optval, option);
 	if (level == SOL_IPV6)
