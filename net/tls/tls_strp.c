@@ -466,7 +466,7 @@ static bool tls_strp_check_queue_ok(struct tls_strparser *strp)
 	return true;
 }
 
-static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
+static bool tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 {
 	struct tcp_sock *tp = tcp_sk(strp->sk);
 	struct sk_buff *first;
@@ -475,8 +475,8 @@ static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 	first = strp->sk->sk_protocol == IPPROTO_MPTCP ?
 		mptcp_recv_skb(strp->sk, &offset) :
 		tcp_recv_skb(strp->sk, tp->copied_seq, &offset);
-	if (WARN_ON_ONCE(!first))
-		return;
+	if (!first)
+		return false;
 
 	/* Bestow the state onto the anchor */
 	strp->anchor->len = offset + len;
@@ -489,6 +489,7 @@ static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 	strp->anchor->destructor = NULL;
 
 	strp->stm.offset = offset;
+	return true;
 }
 
 bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
@@ -508,7 +509,8 @@ bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 			return false;
 		}
 
-		tls_strp_load_anchor_with_queue(strp, strp->stm.full_len);
+		if (!tls_strp_load_anchor_with_queue(strp, strp->stm.full_len))
+			return false;
 	}
 
 	rxm = strp_msg(strp->anchor);
@@ -537,7 +539,8 @@ static int tls_strp_read_sock(struct tls_strparser *strp)
 	if (inq < strp->stm.full_len)
 		return tls_strp_read_copy(strp, true);
 
-	tls_strp_load_anchor_with_queue(strp, inq);
+	if (!tls_strp_load_anchor_with_queue(strp, inq))
+		return 0;
 	if (!strp->stm.full_len) {
 		sz = tls_rx_msg_size(strp, strp->anchor);
 		if (sz < 0)
