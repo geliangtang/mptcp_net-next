@@ -78,6 +78,7 @@ static char *cfg_input;
 static int cfg_repeat = 1;
 static int cfg_truncate;
 static int cfg_rcv_trunc;
+static bool cfg_disconnect;
 
 struct cfg_cmsg_types {
 	unsigned int cmsg_enabled:1;
@@ -300,6 +301,8 @@ static void sock_test_tcpulp(int sock, int proto, int expect, unsigned int line)
 		if (ret == 0)
 			X("setsockopt");
 	} else if (proto == IPPROTO_MPTCP) {
+		if (cfg_disconnect)
+			return;
 		ret = do_ulp_so(sock, "tls");
 		if (ret != expect)
 			X("setsockopt");
@@ -1552,6 +1555,7 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'I':
 			cfg_repeat = atoi(optarg);
+			cfg_disconnect = true;
 			break;
 		case 'l':
 			listen_mode = true;
