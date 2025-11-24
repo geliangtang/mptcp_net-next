@@ -47,7 +47,6 @@ extern int optind;
 static int  poll_timeout = 10 * 1000;
 static bool listen_mode;
 static bool quit;
-static int tls = 0;
 
 enum cfg_mode {
 	CFG_MODE_POLL,
@@ -81,6 +80,7 @@ static int cfg_repeat = 1;
 static int cfg_truncate;
 static int cfg_rcv_trunc;
 static bool cfg_disconnect;
+static bool cfg_tls = true;
 
 struct cfg_cmsg_types {
 	unsigned int cmsg_enabled:1;
@@ -298,7 +298,10 @@ static int do_setsockopt_tls(int fd)
 	int so_buf = 6553500;
 	int err;
 
-	if (!tls)
+	if (!cfg_tls)
+		return 0;
+
+	if (cfg_disconnect || cfg_sockopt_types.mptfo)
 		return 0;
 
 	err = setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));
@@ -344,7 +347,7 @@ static void sock_test_tcpulp(int sock, int proto, int expect, unsigned int line)
 	char buf[8] = "";
 	int ret = getsockopt(sock, IPPROTO_TCP, TCP_ULP, buf, &buflen);
 
-	if (tls)
+	if (cfg_tls)
 		return;
 
 	if (ret != 0)

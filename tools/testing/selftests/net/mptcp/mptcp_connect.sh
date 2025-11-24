@@ -441,15 +441,15 @@ do_transfer()
 	local duration
 	duration=$((stop-start))
 	printf "(duration %05sms) " "${duration}"
-	#if [ ${rets} -ne 0 ] || [ ${retc} -ne 0 ] || [ ${timeout_pid} -ne 0 ]; then
-	#	mptcp_lib_pr_fail "client exit code $retc, server $rets"
-	#	mptcp_lib_pr_err_stats "${listener_ns}" "${connector_ns}" "${port}"
+	if [ ${rets} -ne 0 ] || [ ${retc} -ne 0 ] || [ ${timeout_pid} -ne 0 ]; then
+		mptcp_lib_pr_fail "client exit code $retc, server $rets"
+		mptcp_lib_pr_err_stats "${listener_ns}" "${connector_ns}" "${port}"
 
-	#	echo
-	#	cat "$capout"
-	#	mptcp_lib_result_fail "${TEST_GROUP}: ${tap_title}"
-	#	return 1
-	#fi
+		echo
+		cat "$capout"
+		mptcp_lib_result_fail "${TEST_GROUP}: ${tap_title}"
+		return 1
+	fi
 
 	#mptcp_lib_check_transfer $sin $cout "file received by client"
 	#retc=$?
