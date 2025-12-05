@@ -330,6 +330,7 @@ static int do_setsockopt_tls(int fd)
 		return err;
 	}
 
+	//fprintf(stderr, "do_setsockopt_tls done\n");
 	return 0;
 }
 
@@ -671,6 +672,8 @@ static ssize_t do_rnd_read(const int fd, char *buf, const size_t len)
 		ret = do_recvmsg_cmsg(fd, buf, cap);
 	} else {
 		ret = read(fd, buf, cap);
+		if (ret < 0)
+			fprintf(stderr, "%s 4 ret=%d\n", __func__, ret);
 	}
 
 	return ret;
@@ -759,7 +762,8 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 			} else if (len < 0) {
 				if (cfg_rcv_trunc)
 					return 0;
-				perror("read");
+				fprintf(stderr, "%s len=%ld errno=%d\n", __func__, len, errno);
+				perror("read 1");
 				return 3;
 			}
 
@@ -809,7 +813,7 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 			} else {
 				if (errno == EINTR)
 					continue;
-				perror("read");
+				perror("read 2");
 				return 4;
 			}
 		}
