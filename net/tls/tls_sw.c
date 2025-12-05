@@ -2100,6 +2100,8 @@ int tls_sw_recvmsg(struct sock *sk,
 					continue;
 				}
 			}
+			if (err < 0)
+				pr_info("%s goto recv_end err=%d sk_rcvbuf=%u\n", __func__, err, sk->sk_rcvbuf);
 			goto recv_end;
 		}
 
