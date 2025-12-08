@@ -16,6 +16,7 @@ struct mptcp_info;
 struct mptcp_sock;
 struct mptcp_pm_addr_entry;
 struct seq_file;
+struct strparser;
 
 /* MPTCP sk_buff extension data */
 struct mptcp_ext {
@@ -252,6 +253,11 @@ __poll_t mptcp_poll(struct file *file, struct socket *sock,
 
 int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
 			  sk_read_actor_t recv_actor);
+
+int mptcp_bpf_strp_read_sock(struct strparser *strp, read_descriptor_t *desc,
+			     sk_read_actor_t recv_actor);
+
+u32 mptcp_get_copied_seq(struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
