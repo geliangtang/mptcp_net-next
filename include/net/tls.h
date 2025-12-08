@@ -261,6 +261,8 @@ static const struct tls_prot_ops tls_tcp_ops = {
 	.epollin_ready	= tcp_epollin_ready,
 };
 
+extern const struct tls_prot_ops tls_mptcp_ops;
+
 struct tls_context {
 	/* read-only cache line */
 	struct tls_prot_info prot_info;
