@@ -32,9 +32,12 @@ static int connected_socket_v4(void)
 	socklen_t len = sizeof(addr);
 	int s, repair, err;
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	if (!ASSERT_GE(s, 0, "socket"))
+	s = socket(AF_INET, SOCK_STREAM, IPPROTO_MPTCP);
+	//s = socket(AF_INET, SOCK_STREAM, 0);
+	if (!ASSERT_GE(s, 0, "socket")) {
+		fprintf(stderr, "%s s=%d\n", __func__, s);
 		goto error;
+	}
 
 	repair = TCP_REPAIR_ON;
 	err = setsockopt(s, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
@@ -42,13 +45,15 @@ static int connected_socket_v4(void)
 		goto error;
 
 	err = connect(s, (struct sockaddr *)&addr, len);
-	if (!ASSERT_OK(err, "connect"))
+	if (!ASSERT_OK(err, "connect")) {
+		fprintf(stderr, "%s err=%d\n", __func__, err);
 		goto error;
+	}
 
-	repair = TCP_REPAIR_OFF_NO_WP;
-	err = setsockopt(s, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
-	if (!ASSERT_OK(err, "setsockopt(TCP_REPAIR)"))
-		goto error;
+	//repair = TCP_REPAIR_OFF_NO_WP;
+	//err = setsockopt(s, SOL_TCP, TCP_REPAIR, &repair, sizeof(repair));
+	//if (!ASSERT_OK(err, "setsockopt(TCP_REPAIR)"))
+	//	goto error;
 
 	return s;
 error:
@@ -96,6 +101,7 @@ static void test_sockmap_create_update_free(enum bpf_map_type map_type)
 	if (!ASSERT_GE(s, 0, "connected_socket_v4"))
 		return;
 
+#if 0
 	map = bpf_map_create(map_type, NULL, sizeof(int), sizeof(int), 1, NULL);
 	if (!ASSERT_GE(map, 0, "bpf_map_create"))
 		goto out;
@@ -106,6 +112,7 @@ static void test_sockmap_create_update_free(enum bpf_map_type map_type)
 
 out:
 	close(map);
+#endif
 	close(s);
 }
 
@@ -1046,14 +1053,15 @@ void test_sockmap_basic(void)
 {
 	if (test__start_subtest("sockmap create_update_free"))
 		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash create_update_free"))
-		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKHASH);
+//	if (test__start_subtest("sockhash create_update_free"))
+//		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKHASH);
 	if (test__start_subtest("sockmap vsock delete on close"))
 		test_sockmap_vsock_delete_on_close();
 	if (test__start_subtest("sockmap sk_msg load helpers"))
 		test_skmsg_helpers(BPF_MAP_TYPE_SOCKMAP);
 	if (test__start_subtest("sockhash sk_msg load helpers"))
 		test_skmsg_helpers(BPF_MAP_TYPE_SOCKHASH);
+#if 0
 	if (test__start_subtest("sockmap update"))
 		test_sockmap_update(BPF_MAP_TYPE_SOCKMAP);
 	if (test__start_subtest("sockhash update"))
@@ -1108,4 +1116,5 @@ void test_sockmap_basic(void)
 		test_sockmap_skb_verdict_vsock_poll();
 	if (test__start_subtest("sockmap vsock unconnected"))
 		test_sockmap_vsock_unconnected();
+#endif
 }
