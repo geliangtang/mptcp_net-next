@@ -762,6 +762,8 @@ static int do_tls_setsockopt_conf(struct sock *sk, sockptr_t optval,
 
 	if (sk_is_tcp(sk))
 		ctx->ops = &tls_tcp_ops;
+	else if (sk_is_msk(sk))
+		ctx->ops = &tls_mptcp_ops;
 
 	if (!tls_validate_prot_ops(ctx->ops))
 		return -EINVAL;
