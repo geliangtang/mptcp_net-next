@@ -3342,6 +3342,8 @@ static void __mptcp_wr_shutdown(struct sock *sk)
 	mptcp_check_send_data_fin(sk);
 }
 
+static void mptcp_destroy(struct sock *sk);
+
 static void __mptcp_destroy_sock(struct sock *sk)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
@@ -3356,6 +3358,7 @@ static void __mptcp_destroy_sock(struct sock *sk)
 	mptcp_release_sched(msk);
 
 	sk->sk_prot->destroy(sk);
+	//mptcp_destroy(sk);
 
 	sk_stream_kill_queues(sk);
 	xfrm_sk_free_policy(sk);
@@ -5022,6 +5025,11 @@ static u32 mptcp_get_skb_off(struct sk_buff *skb)
 static u32 mptcp_get_skb_seq(struct sk_buff *skb)
 {
 	return MPTCP_SKB_CB(skb)->map_seq;
+}
+
+u32 mptcp_get_copied_seq(struct sock *sk)
+{
+	return mptcp_sk(sk)->bytes_consumed;
 }
 
 static void mptcp_check_app_limited(struct sock *sk)
