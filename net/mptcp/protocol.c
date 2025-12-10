@@ -3259,7 +3259,7 @@ void __mptcp_unaccepted_force_close(struct sock *sk)
 
 static __poll_t mptcp_check_readable(struct sock *sk)
 {
-	return mptcp_epollin_ready(sk) ? EPOLLIN | EPOLLRDNORM : 0;
+	return (mptcp_epollin_ready(sk) || sk_is_readable(sk)) ? EPOLLIN | EPOLLRDNORM : 0;
 }
 
 static void mptcp_check_listen_stop(struct sock *sk)
