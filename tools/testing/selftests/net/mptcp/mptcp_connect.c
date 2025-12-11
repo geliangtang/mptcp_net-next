@@ -1436,7 +1436,7 @@ void xdisconnect(int fd)
 int main_loop(void)
 {
 	int fd = 0, ret, fd_in = 0;
-	struct addrinfo *peer;
+	struct addrinfo *peer = NULL;
 	struct wstate winfo;
 
 	if (cfg_input && cfg_sockopt_types.mptfo) {
