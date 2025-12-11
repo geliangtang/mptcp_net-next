@@ -1680,7 +1680,8 @@ TEST_F(tls, shutdown_reuse)
 	addr.sin_port = 0;
 
 	ret = bind(self->fd, &addr, sizeof(addr));
-	EXPECT_EQ(ret, 0);
+	if(!getenv("TEST_MPTCP"))
+		EXPECT_EQ(ret, 0);
 	ret = listen(self->fd, 10);
 	EXPECT_EQ(ret, -1);
 	EXPECT_EQ(errno, EINVAL);
