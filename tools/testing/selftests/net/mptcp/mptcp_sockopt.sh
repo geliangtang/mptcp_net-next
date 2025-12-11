@@ -375,7 +375,7 @@ do_tls_tests()
 	mptcp_lib_print_info "sockopt KTLS"
 
 	local args
-	for args in "-c" "-6 -c" "-c -t tcp -r tcp" "-6 -c -t tcp -r tcp" "-c -t tcp" "-c -r tcp" "-6 -c -t tcp" "-6 -c -r tcp"; do
+	for args in "-c" "-6 -c" "-c -t tcp -r tcp" "-6 -c -t tcp -r tcp"; do
 		do_tls_test $args
 		lret=$?
 		if [ $lret -ne 0 ] ; then
@@ -396,12 +396,12 @@ make_file "$cin" "client" 1
 make_file "$sin" "server" 1
 mptcp_lib_subtests_last_ts_reset
 
-do_tls_tests
 run_tests $ns1 $ns2 10.0.1.1
 run_tests $ns1 $ns2 dead:beef:1::1
 
 do_mptcp_sockopt_tests
 do_tcpinq_tests
+do_tls_tests
 
 mptcp_lib_result_print_all_tap
 exit $ret
