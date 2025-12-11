@@ -25,6 +25,7 @@
 
 #define TLS_PAYLOAD_MAX_LEN 16384
 #define SOL_TLS 282
+#define TLS_TX_MAX_PAYLOAD_LEN	5
 
 static int fips_enabled;
 
@@ -114,6 +115,7 @@ static void ulp_sock_pair(struct __test_metadata *_metadata,
 	struct sockaddr_in addr;
 	socklen_t len;
 	int sfd, ret;
+	int proto;
 
 	*notls = false;
 	len = sizeof(addr);
@@ -122,8 +124,10 @@ static void ulp_sock_pair(struct __test_metadata *_metadata,
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	*fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	proto = getenv("TEST_MPTCP")==NULL ? 0:262;
+
+	*fd = socket(AF_INET, SOCK_STREAM, proto);
+	sfd = socket(AF_INET, SOCK_STREAM, proto);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -1457,6 +1461,7 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 {
 	const unsigned int n_children = n_readers + n_writers;
 	const size_t data = 6 * 1000 * 1000;
+	char tmpfile_path[] = "/tmp/tls_test_XXXXXX";
 	const size_t file_sz = data / 100;
 	size_t read_bias, write_bias;
 	int i, fd, child_id;
@@ -1469,8 +1474,9 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 	write_bias = n_readers / n_writers ?: 1;
 
 	/* prep a file to send */
-	fd = open("/tmp/", O_TMPFILE | O_RDWR, 0600);
+	fd = mkstemp(tmpfile_path);
 	ASSERT_GE(fd, 0);
+	unlink(tmpfile_path);
 
 	memset(buf, 0xac, file_sz);
 	ASSERT_EQ(write(fd, buf, file_sz), file_sz);
@@ -3002,6 +3008,7 @@ TEST(non_established) {
 	struct sockaddr_in addr;
 	int sfd, ret, fd;
 	socklen_t len;
+	int proto;
 
 	len = sizeof(addr);
 
@@ -3013,8 +3020,10 @@ TEST(non_established) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	proto = getenv("TEST_MPTCP")==NULL ? 0:262;
+
+	fd = socket(AF_INET, SOCK_STREAM, proto);
+	sfd = socket(AF_INET, SOCK_STREAM, proto);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3130,6 +3139,7 @@ TEST(tls_v6ops) {
 	struct sockaddr_in6 addr, addr2;
 	int sfd, ret, fd;
 	socklen_t len, len2;
+	int proto;
 
 	tls_crypto_info_init(TLS_1_2_VERSION, TLS_CIPHER_AES_GCM_128, &tls12, 0);
 
@@ -3137,8 +3147,10 @@ TEST(tls_v6ops) {
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = 0;
 
-	fd = socket(AF_INET6, SOCK_STREAM, 0);
-	sfd = socket(AF_INET6, SOCK_STREAM, 0);
+	proto = getenv("TEST_MPTCP")==NULL ? 0:262;
+
+	fd = socket(AF_INET6, SOCK_STREAM, proto);
+	sfd = socket(AF_INET6, SOCK_STREAM, proto);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3186,6 +3198,7 @@ TEST(prequeue) {
 	struct sockaddr_in addr;
 	int sfd, cfd, ret, fd;
 	socklen_t len;
+	int proto;
 
 	len = sizeof(addr);
 	memrnd(buf, sizeof(buf));
@@ -3196,8 +3209,10 @@ TEST(prequeue) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	proto = getenv("TEST_MPTCP")==NULL ? 0:262;
+
+	fd = socket(AF_INET, SOCK_STREAM, proto);
+	sfd = socket(AF_INET, SOCK_STREAM, proto);
 
 	ASSERT_EQ(bind(sfd, &addr, sizeof(addr)), 0);
 	ASSERT_EQ(listen(sfd, 10), 0);
@@ -3232,6 +3247,7 @@ TEST(data_steal) {
 	int sfd, cfd, ret, fd;
 	int pid, status;
 	socklen_t len;
+	int proto;
 
 	len = sizeof(addr);
 	memrnd(buf, sizeof(buf));
@@ -3242,8 +3258,10 @@ TEST(data_steal) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	proto = getenv("TEST_MPTCP")==NULL ? 0:262;
+
+	fd = socket(AF_INET, SOCK_STREAM, proto);
+	sfd = socket(AF_INET, SOCK_STREAM, proto);
 
 	ASSERT_EQ(bind(sfd, &addr, sizeof(addr)), 0);
 	ASSERT_EQ(listen(sfd, 10), 0);
