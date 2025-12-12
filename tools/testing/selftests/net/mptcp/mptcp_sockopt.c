@@ -30,6 +30,7 @@
 #include <linux/sockios.h>
 #include <linux/net_tstamp.h>
 #include <linux/compiler.h>
+#include <linux/tls.h>
 
 static int pf = AF_INET;
 
@@ -45,10 +46,14 @@ static int pf = AF_INET;
 #ifndef SOL_TCP
 #define SOL_TCP 6
 #endif
+#ifndef TCP_ULP
+#define TCP_ULP 31
+#endif
 
 static int proto_tx = IPPROTO_MPTCP;
 static int proto_rx = IPPROTO_MPTCP;
 static bool inq;
+static bool tls;
 
 #ifndef MPTCP_INFO
 struct mptcp_info {
@@ -158,6 +163,7 @@ static void die_usage(int r)
 	fprintf(stderr, "Usage: mptcp_sockopt [-6]\n");
 	fprintf(stderr, "                     [-t tcp|mptcp] [-r tcp|mptcp]\n");
 	fprintf(stderr, "                     [-i]\n");
+	fprintf(stderr, "                     [-c]\n");
 	exit(r);
 }
 
@@ -209,6 +215,54 @@ static bool expect_all_features(void)
 	char *env = getenv("SELFTESTS_MPTCP_LIB_EXPECT_ALL_FEATURES");
 
 	return env && strcmp(env, "1") == 0;
+}
+
+#define TLS_OVERHEAD_SIZE	22
+
+static int do_setsockopt_tls(int fd)
+{
+	struct tls12_crypto_info_aes_gcm_128 tls_tx = {
+		.info = {
+			.version     = TLS_1_3_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	struct tls12_crypto_info_aes_gcm_128 tls_rx = {
+		.info = {
+			.version     = TLS_1_3_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	int so_buf = 6553500;
+	int err;
+
+	err = setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));
+	if (err) {
+		perror("setsockopt TCP_ULP");
+		return err;
+	}
+	err = setsockopt(fd, SOL_TLS, TLS_TX, (void *)&tls_tx, sizeof(tls_tx));
+	if (err) {
+		perror("setsockopt TLS_TX");
+		return err;
+	}
+	err = setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
+	if (err) {
+		perror("setsockopt TLS_RX");
+		return err;
+	}
+	err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &so_buf, sizeof(so_buf));
+	if (err) {
+		perror("setsockopt SO_SNDBUF");
+		return err;
+	}
+	err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &so_buf, sizeof(so_buf));
+	if (err) {
+		perror("setsockopt SO_RCVBUF");
+		return err;
+	}
+
+	return 0;
 }
 
 static int sock_listen_mptcp(const char * const listenaddr,
@@ -334,7 +388,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:i")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:ic")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -350,6 +404,9 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'i':
 			inq = true;
+			break;
+		case 'c':
+			tls = true;
 			break;
 		default:
 			die_usage(1);
@@ -814,6 +871,9 @@ static void connect_one_server(int fd, int unixfd)
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta <= total);
 
+	if (tls)
+		total += TLS_OVERHEAD_SIZE;
+
 	do_getsockopts(&s, fd, total, total);
 
 	if (eof)
@@ -985,16 +1045,17 @@ static void process_one_client(int fd, int unixfd)
 		xerror("expect len %zu exceeds buffer size", expect_len);
 
 	for (;;) {
+		size_t expect = expect_len + (tls ? TLS_OVERHEAD_SIZE : 0);
 		struct timespec req;
 		unsigned int queued;
 
 		ret = ioctl(fd, FIONREAD, &queued);
 		if (ret < 0)
 			die_perror("FIONREAD");
-		if (queued > expect_len)
+		if (queued > expect)
 			xerror("FIONREAD returned %u, but only %zu expected\n",
-			       queued, expect_len);
-		if (queued == expect_len)
+			       queued, expect);
+		if (queued == expect)
 			break;
 
 		req.tv_sec = 0;
@@ -1054,6 +1115,11 @@ static void process_one_client(int fd, int unixfd)
 		assert(tcp_inq == 1);
 	}
 	r += ret;
+
+	if (tls) {
+		r += TLS_OVERHEAD_SIZE;
+		w += TLS_OVERHEAD_SIZE;
+	}
 
 	do_getsockopts(&s, fd, r, w);
 	if (is_mptcp_socket(fd) > 0)
@@ -1118,6 +1184,9 @@ static int server(int unixfd)
 
 	alarm(15);
 	r = xaccept(fd);
+
+	if (tls)
+		do_setsockopt_tls(r);
 
 	process_one_client(r, unixfd);
 
@@ -1428,6 +1497,9 @@ static int client(int unixfd)
 	test_so_timestamping_sockopt(fd);
 	if (pf == AF_INET6)
 		test_ipv6_tclass_sockopt(fd);
+
+	if (tls)
+		do_setsockopt_tls(fd);
 
 	connect_one_server(fd, unixfd);
 
