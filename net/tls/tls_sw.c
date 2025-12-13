@@ -1377,14 +1377,16 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 				break;
 		}
 
-		if (sk->sk_shutdown & RCV_SHUTDOWN)
-			return 0;
-
 		if (sock_flag(sk, SOCK_DONE))
 			return 0;
 
-		if (!timeo)
-			return -EAGAIN;
+		ret = tcp_recv_should_stop(sk, timeo);
+		if (ret < 0) {
+			if (ret == -ESHUTDOWN)
+				return 0;
+			if (ret != -ENOTCONN)
+				return ret;
+		}
 
 		released = true;
 		add_wait_queue(sk_sleep(sk), &wait);
@@ -1395,10 +1397,6 @@ tls_rx_rec_wait(struct sock *sk, struct sk_psock *psock, bool nonblock,
 				    &wait);
 		sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
 		remove_wait_queue(sk_sleep(sk), &wait);
-
-		/* Handle signals */
-		if (signal_pending(current))
-			return sock_intr_errno(timeo);
 	}
 
 	if (unlikely(!tls_strp_msg_load(&ctx->strp, released)))
