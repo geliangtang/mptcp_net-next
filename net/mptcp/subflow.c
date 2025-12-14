@@ -28,6 +28,18 @@
 #include <trace/events/sock.h>
 
 static void mptcp_subflow_ops_undo_override(struct sock *ssk);
+static void subflow_ulp_fallback(struct sock *sk,
+				 struct mptcp_subflow_context *old_ctx);
+
+static void subflow_ulp_fallback_1(struct sock *sk)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+
+	pr_info("%s sk=%p icsk=%p icsk->icsk_ulp_ops=%p icsk_ulp_ops->name=%s\n",
+		__func__, sk, icsk, icsk->icsk_ulp_ops, icsk->icsk_ulp_ops->name);
+	icsk->icsk_ulp_ops = NULL;
+	rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
+}
 
 static void SUBFLOW_REQ_INC_STATS(struct request_sock *req,
 				  enum linux_mptcp_mib_field field)
@@ -545,6 +557,7 @@ static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
 	mptcp_get_options(skb, &mp_opt);
 	if (subflow->request_mptcp) {
 		if (!(mp_opt.suboptions & OPTION_MPTCP_MPC_SYNACK)) {
+			pr_info("%s call mptcp_try_fallback parent=%p sk=%p\n", __func__, parent, sk);
 			if (!mptcp_try_fallback(sk,
 						MPTCP_MIB_MPCAPABLEACTIVEFALLBACK)) {
 				MPTCP_INC_STATS(sock_net(sk),
@@ -552,6 +565,7 @@ static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
 				goto do_reset;
 			}
 
+			subflow_ulp_fallback_1(sk);
 			goto fallback;
 		}
 
@@ -769,6 +783,7 @@ static void subflow_ulp_fallback(struct sock *sk,
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	pr_info("%s\n", __func__);
 	mptcp_subflow_tcp_fallback(sk, old_ctx);
 	icsk->icsk_ulp_ops = NULL;
 	rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
@@ -784,6 +799,7 @@ void mptcp_subflow_drop_ctx(struct sock *ssk)
 	if (!ctx)
 		return;
 
+	pr_info("%s\n", __func__);
 	list_del(&mptcp_subflow_ctx(ssk)->node);
 	if (inet_csk(ssk)->icsk_ulp_ops) {
 		subflow_ulp_fallback(ssk, ctx);
@@ -2042,12 +2058,14 @@ static void subflow_ulp_clone(const struct request_sock *req,
 
 	if (!tcp_rsk(req)->is_mptcp ||
 	    (!subflow_req->mp_capable && !subflow_req->mp_join)) {
+		pr_info("%s call subflow_ulp_fallback 1\n", __func__);
 		subflow_ulp_fallback(newsk, old_ctx);
 		return;
 	}
 
 	new_ctx = subflow_create_ctx(newsk, priority);
 	if (!new_ctx) {
+		pr_info("%s call subflow_ulp_fallback 2\n", __func__);
 		subflow_ulp_fallback(newsk, old_ctx);
 		return;
 	}
