@@ -1329,6 +1329,7 @@ static inline bool mptcp_try_fallback(struct sock *ssk, int fb_mib)
 	struct sock *sk = subflow->conn;
 	struct mptcp_sock *msk;
 
+	pr_info("%s fb_mib=%d\n", __func__, fb_mib);
 	msk = mptcp_sk(sk);
 	if (!__mptcp_try_fallback(msk, fb_mib))
 		return false;
@@ -1350,6 +1351,7 @@ static inline void mptcp_early_fallback(struct mptcp_sock *msk,
 					struct mptcp_subflow_context *subflow,
 					int fb_mib)
 {
+	pr_info("%s\n", __func__);
 	subflow->request_mptcp = 0;
 	WARN_ON_ONCE(!__mptcp_try_fallback(msk, fb_mib));
 }
