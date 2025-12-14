@@ -269,7 +269,6 @@ static void set_mptfo(int fd, int pf)
 		perror("TCP_FASTOPEN");
 }
 
-#if 0
 static int fallback(int fd)
 {
 	int is_mptcp = 0;
@@ -281,7 +280,6 @@ static int fallback(int fd)
 
 	return !is_mptcp;
 }
-#endif
 
 static int do_setsockopt_tls(int fd)
 {
@@ -300,8 +298,8 @@ static int do_setsockopt_tls(int fd)
 	int so_buf = 6553500;
 	int err;
 
-	//if (fallback(fd))
-	//	return 0;
+	if (fallback(fd))
+		return 0;
 
 	if (cfg_disconnect || cfg_sockopt_types.mptfo)
 		return 0;
