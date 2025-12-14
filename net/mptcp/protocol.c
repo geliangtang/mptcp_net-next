@@ -65,6 +65,8 @@ static const struct proto_ops *mptcp_fallback_tcp_ops(const struct sock *sk)
 {
 	unsigned short family = READ_ONCE(sk->sk_family);
 
+	pr_info("%s\n", __func__);
+
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
 	if (family == AF_INET6)
 		return &inet6_stream_ops;
@@ -94,6 +96,7 @@ bool __mptcp_try_fallback(struct mptcp_sock *msk, int fb_mib)
 	}
 
 	msk->allow_subflows = false;
+	pr_info("%s MPTCP_FALLBACK_DONE\n", __func__);
 	set_bit(MPTCP_FALLBACK_DONE, &msk->flags);
 	__MPTCP_INC_STATS(net, fb_mib);
 	spin_unlock_bh(&msk->fallback_lock);
