@@ -247,6 +247,11 @@ static inline __be32 mptcp_reset_option(const struct sk_buff *skb)
 
 void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
 
+int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len);
+
+int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+			  sk_read_actor_t recv_actor);
+
 void mptcp_sock_set_reuseaddr(struct sock *sk);
 
 void mptcp_sock_set_nodelay(struct sock *sk);
@@ -349,6 +354,18 @@ static inline struct request_sock *mptcp_subflow_reqsk_alloc(const struct reques
 static inline __be32 mptcp_reset_option(const struct sk_buff *skb)  { return htonl(0u); }
 
 static inline void mptcp_active_detect_blackhole(struct sock *sk, bool expired) { }
+
+static inline int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg,
+				       size_t len)
+{
+	return 0;
+}
+
+static inline int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+					sk_read_actor_t recv_actor)
+{
+	return 0;
+}
 
 static inline void mptcp_sock_set_reuseaddr(struct sock *sk) { }
 
