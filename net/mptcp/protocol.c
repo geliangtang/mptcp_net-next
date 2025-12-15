@@ -578,7 +578,7 @@ static bool mptcp_subflow_could_cleanup(const struct sock *ssk, bool rx_empty)
 			      (ICSK_ACK_PUSHED2 | ICSK_ACK_PUSHED)));
 }
 
-static void mptcp_cleanup_rbuf(struct mptcp_sock *msk, int copied)
+void __mptcp_cleanup_rbuf(struct mptcp_sock *msk, int copied, bool lock)
 {
 	int old_space = READ_ONCE(msk->old_wspace);
 	struct mptcp_subflow_context *subflow;
@@ -592,9 +592,20 @@ static void mptcp_cleanup_rbuf(struct mptcp_sock *msk, int copied)
 	mptcp_for_each_subflow(msk, subflow) {
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 
-		if (cleanup || mptcp_subflow_could_cleanup(ssk, rx_empty))
-			mptcp_subflow_cleanup_rbuf(ssk, copied);
+		if (cleanup || mptcp_subflow_could_cleanup(ssk, rx_empty)) {
+			if (lock) {
+				mptcp_subflow_cleanup_rbuf(ssk, copied);
+			} else {
+				if (tcp_can_send_ack(ssk))
+					__tcp_cleanup_rbuf(ssk, copied);
+			}
+		}
 	}
+}
+
+static void mptcp_cleanup_rbuf(struct mptcp_sock *msk, int copied)
+{
+	__mptcp_cleanup_rbuf(msk, copied, true);
 }
 
 static void mptcp_check_data_fin(struct sock *sk)
@@ -2027,7 +2038,7 @@ do_error:
 	goto out;
 }
 
-static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
+int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 {
 	int ret;
 
@@ -2037,8 +2048,6 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 
 	return ret;
 }
-
-static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied);
 
 static void mptcp_eat_recv_skb(struct sock *sk, struct sk_buff *skb)
 {
@@ -2135,7 +2144,7 @@ static void mptcp_rcv_space_init(struct mptcp_sock *msk, const struct sock *ssk)
  * Only difference: Use lowest rtt estimate of the subflows in use, see
  * mptcp_rcv_rtt_update() and mptcp_rtt_us_est().
  */
-static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
+void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 {
 	struct mptcp_subflow_context *subflow;
 	struct sock *sk = (struct sock *)msk;
@@ -2296,8 +2305,8 @@ static unsigned int mptcp_inq_hint(const struct sock *sk)
 	return 0;
 }
 
-static int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
-			 int flags, int *addr_len)
+int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+		  int flags, int *addr_len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct scm_timestamping_internal tss;
@@ -4087,7 +4096,7 @@ out:
 	return 0;
 }
 
-static struct proto mptcp_prot = {
+struct proto mptcp_prot = {
 	.name		= "MPTCP",
 	.owner		= THIS_MODULE,
 	.init		= mptcp_init_sock,
@@ -4118,6 +4127,9 @@ static struct proto mptcp_prot = {
 	.obj_size	= sizeof(struct mptcp_sock),
 	.slab_flags	= SLAB_TYPESAFE_BY_RCU,
 	.no_autobind	= true,
+#ifdef CONFIG_BPF_SYSCALL
+	.psock_update_sk_prot	= mptcp_bpf_update_proto,
+#endif
 };
 
 static int mptcp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int addr_len)
@@ -4613,6 +4625,11 @@ void mptcp_read_done(struct sock *sk, size_t len)
 }
 EXPORT_SYMBOL(mptcp_read_done);
 
+static int mptcp_peek_len(struct socket *sock)
+{
+	return mptcp_inq(sock->sk);
+}
+
 static const struct proto_ops mptcp_stream_ops = {
 	.family		   = PF_INET,
 	.owner		   = THIS_MODULE,
@@ -4635,6 +4652,7 @@ static const struct proto_ops mptcp_stream_ops = {
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
 	.splice_read	   = mptcp_splice_read,
+	.peek_len	   = mptcp_peek_len,
 };
 
 static struct inet_protosw mptcp_protosw = {
@@ -4741,6 +4759,7 @@ static const struct proto_ops mptcp_v6_stream_ops = {
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
 	.splice_read	   = mptcp_splice_read,
+	.peek_len	   = mptcp_peek_len,
 };
 
 static struct proto mptcp_v6_prot;

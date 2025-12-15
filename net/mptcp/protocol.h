@@ -853,6 +853,9 @@ static inline u64 mptcp_data_avail(const struct mptcp_sock *msk)
 }
 
 int mptcp_set_rcvlowat(struct sock *sk, int val);
+void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied);
+void __mptcp_cleanup_rbuf(struct mptcp_sock *msk, int copied, bool lock);
+int mptcp_bpf_update_proto(struct sock *sk, struct sk_psock *psock, bool restore);
 
 static inline bool __tcp_can_send(const struct sock *ssk)
 {

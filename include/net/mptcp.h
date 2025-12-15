@@ -142,6 +142,8 @@ struct mptcp_skb_cb {
 
 #define MPTCP_SKB_CB(__skb)	((struct mptcp_skb_cb *)&((__skb)->cb[0]))
 
+extern struct proto mptcp_prot;
+
 #ifdef CONFIG_MPTCP
 void mptcp_init(void);
 
@@ -265,6 +267,11 @@ void mptcp_read_done(struct sock *sk, size_t len);
 
 int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
 			  sk_read_actor_t recv_actor, bool noack);
+
+int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len);
+
+int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+		  int flags, int *addr_len);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
