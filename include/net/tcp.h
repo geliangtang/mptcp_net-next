@@ -338,6 +338,12 @@ void sk_forced_mem_schedule(struct sock *sk, int size);
 
 bool tcp_check_oom(const struct sock *sk, int shift);
 
+struct sk_msg;
+
+int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
+		      long timeo);
+int tcp_bpf_send_verdict(struct sock *sk, struct sk_psock *psock,
+			 struct sk_msg *msg, int *copied, int flags);
 
 extern struct proto tcp_prot;
 

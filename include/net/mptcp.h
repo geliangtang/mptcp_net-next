@@ -250,6 +250,11 @@ void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
 
+int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len);
+
+int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+			  sk_read_actor_t recv_actor);
+
 void mptcp_sock_no_linger(struct sock *sk);
 
 void mptcp_sock_set_priority(struct sock *sk, u32 priority);
@@ -348,6 +353,18 @@ static inline void mptcp_active_detect_blackhole(struct sock *sk, bool expired) 
 
 static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
 				  struct poll_table_struct *wait)
+{
+	return 0;
+}
+
+static inline int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg,
+				       size_t len)
+{
+	return 0;
+}
+
+static inline int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+					sk_read_actor_t recv_actor)
 {
 	return 0;
 }
