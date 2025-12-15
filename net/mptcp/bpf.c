@@ -13,7 +13,10 @@
 #include <linux/bpf_verifier.h>
 #include <linux/btf.h>
 #include <linux/btf_ids.h>
+#include <linux/skmsg.h>
 #include <net/bpf_sk_storage.h>
+#include <net/strparser.h>
+#include <net/inet_common.h>
 #include "protocol.h"
 
 #ifdef CONFIG_BPF_JIT
@@ -189,6 +192,370 @@ static struct bpf_struct_ops bpf_mptcp_sched_ops = {
 	.name		= "mptcp_sched_ops",
 	.cfi_stubs	= &__bpf_mptcp_sched_ops,
 };
+
+static struct proto *mptcpv6_prot_saved __read_mostly;
+static DEFINE_SPINLOCK(mptcpv6_prot_lock);
+static struct proto mptcp_bpf_prots[TCP_BPF_NUM_PROTS][TCP_BPF_NUM_CFGS];
+
+static int mptcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+			     int flags, int *addr_len)
+{
+	struct sk_psock *psock;
+	int copied, ret;
+
+	if (unlikely(flags & MSG_ERRQUEUE))
+		return inet_recv_error(sk, msg, len, addr_len);
+
+	if (!len)
+		return 0;
+
+	psock = sk_psock_get(sk);
+	if (unlikely(!psock))
+		return mptcp_recvmsg(sk, msg, len, flags, addr_len);
+	if (!skb_queue_empty(&sk->sk_receive_queue) &&
+	    sk_psock_queue_empty(psock)) {
+		sk_psock_put(sk, psock);
+		return mptcp_recvmsg(sk, msg, len, flags, addr_len);
+	}
+	lock_sock(sk);
+msg_bytes_ready:
+	copied = sk_msg_recvmsg(sk, psock, msg, len, flags);
+	if (!copied) {
+		long timeo;
+		int data;
+
+		timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+		data = tcp_msg_wait_data(sk, psock, timeo);
+		if (data < 0) {
+			ret = data;
+			goto unlock;
+		}
+		if (data) {
+			if (!sk_psock_queue_empty(psock))
+				goto msg_bytes_ready;
+			release_sock(sk);
+			sk_psock_put(sk, psock);
+			return mptcp_recvmsg(sk, msg, len, flags, addr_len);
+		}
+		copied = -EAGAIN;
+	}
+	ret = copied;
+
+unlock:
+	release_sock(sk);
+	sk_psock_put(sk, psock);
+	return ret;
+}
+
+static int mptcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
+{
+	struct sk_msg tmp, *msg_tx = NULL;
+	int copied = 0, err = 0, ret = 0;
+	struct sk_psock *psock;
+	long timeo;
+	int flags;
+
+	/* Don't let internal flags through */
+	flags = (msg->msg_flags & ~MSG_SENDPAGE_DECRYPTED);
+	flags |= MSG_NO_SHARED_FRAGS;
+
+	psock = sk_psock_get(sk);
+	if (unlikely(!psock))
+		return mptcp_sendmsg(sk, msg, size);
+
+	lock_sock(sk);
+	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+	while (msg_data_left(msg)) {
+		bool enospc = false;
+		u32 copy, osize;
+
+		if (sk->sk_err) {
+			err = -sk->sk_err;
+			goto out_err;
+		}
+
+		copy = msg_data_left(msg);
+		if (!sk_stream_memory_free(sk))
+			goto wait_for_sndbuf;
+		if (psock->cork) {
+			msg_tx = psock->cork;
+		} else {
+			msg_tx = &tmp;
+			sk_msg_init(msg_tx);
+		}
+
+		osize = msg_tx->sg.size;
+		err = sk_msg_alloc(sk, msg_tx, msg_tx->sg.size + copy, msg_tx->sg.end - 1);
+		if (err) {
+			if (err != -ENOSPC)
+				goto wait_for_memory;
+			enospc = true;
+			copy = msg_tx->sg.size - osize;
+		}
+
+		ret = sk_msg_memcopy_from_iter(sk, &msg->msg_iter, msg_tx,
+					       copy);
+		if (ret < 0) {
+			sk_msg_trim(sk, msg_tx, osize);
+			goto out_err;
+		}
+
+		copied += ret;
+		if (psock->cork_bytes) {
+			if (size > psock->cork_bytes)
+				psock->cork_bytes = 0;
+			else
+				psock->cork_bytes -= size;
+			if (psock->cork_bytes && !enospc)
+				goto out_err;
+			/* All cork bytes are accounted, rerun the prog. */
+			psock->eval = __SK_NONE;
+			psock->cork_bytes = 0;
+		}
+
+		err = tcp_bpf_send_verdict(sk, psock, msg_tx, &copied, flags);
+		if (unlikely(err < 0))
+			goto out_err;
+		continue;
+wait_for_sndbuf:
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+wait_for_memory:
+		err = sk_stream_wait_memory(sk, &timeo);
+		if (err) {
+			if (msg_tx && msg_tx != psock->cork)
+				sk_msg_free(sk, msg_tx);
+			goto out_err;
+		}
+	}
+out_err:
+	if (err < 0)
+		err = sk_stream_error(sk, msg->msg_flags, err);
+	release_sock(sk);
+	sk_psock_put(sk, psock);
+	return copied > 0 ? copied : err;
+}
+
+static bool is_next_msg_fin(struct sk_psock *psock)
+{
+	struct scatterlist *sge;
+	struct sk_msg *msg_rx;
+	int i;
+
+	msg_rx = sk_psock_peek_msg(psock);
+	i = msg_rx->sg.start;
+	sge = sk_msg_elem(msg_rx, i);
+	if (!sge->length) {
+		struct sk_buff *skb = msg_rx->skb;
+
+		if (skb && TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+			return true;
+	}
+	return false;
+}
+
+static int mptcp_bpf_recvmsg_parser(struct sock *sk,
+				    struct msghdr *msg,
+				    size_t len,
+				    int flags,
+				    int *addr_len)
+{
+	//int peek = flags & MSG_PEEK;
+	struct sk_psock *psock;
+	struct mptcp_sock *msk;
+	//struct tcp_sock *tcp;
+	int copied = 0;
+	u32 seq;
+
+	if (unlikely(flags & MSG_ERRQUEUE))
+		return inet_recv_error(sk, msg, len, addr_len);
+
+	if (!len)
+		return 0;
+
+	psock = sk_psock_get(sk);
+	if (unlikely(!psock))
+		return mptcp_recvmsg(sk, msg, len, flags, addr_len);
+
+	lock_sock(sk);
+	//tcp = tcp_sk(sk);
+	msk = mptcp_sk(sk);
+	//seq = tcp->copied_seq;
+	/* We may have received data on the sk_receive_queue pre-accept and
+	 * then we can not use read_skb in this context because we haven't
+	 * assigned a sk_socket yet so have no link to the ops. The work-around
+	 * is to check the sk_receive_queue and in these cases read skbs off
+	 * queue again. The read_skb hook is not running at this point because
+	 * of lock_sock so we avoid having multiple runners in read_skb.
+	 */
+	if (unlikely(!skb_queue_empty(&sk->sk_receive_queue))) {
+		tcp_data_ready(sk);
+		/* This handles the ENOMEM errors if we both receive data
+		 * pre accept and are already under memory pressure. At least
+		 * let user know to retry.
+		 */
+		if (unlikely(!skb_queue_empty(&sk->sk_receive_queue))) {
+			copied = -EAGAIN;
+			goto out;
+		}
+	}
+
+msg_bytes_ready:
+	copied = sk_msg_recvmsg(sk, psock, msg, len, flags);
+	/* The typical case for EFAULT is the socket was gracefully
+	 * shutdown with a FIN pkt. So check here the other case is
+	 * some error on copy_page_to_iter which would be unexpected.
+	 * On fin return correct return code to zero.
+	 */
+	if (copied == -EFAULT) {
+		bool is_fin = is_next_msg_fin(psock);
+
+		if (is_fin) {
+			copied = 0;
+			seq++;
+			goto out;
+		}
+	}
+	seq += copied;
+	if (!copied) {
+		long timeo;
+		int data;
+
+		if (sock_flag(sk, SOCK_DONE))
+			goto out;
+
+		if (sk->sk_err) {
+			copied = sock_error(sk);
+			goto out;
+		}
+
+		if (sk->sk_shutdown & RCV_SHUTDOWN)
+			goto out;
+
+		if (sk->sk_state == TCP_CLOSE) {
+			copied = -ENOTCONN;
+			goto out;
+		}
+
+		timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+		if (!timeo) {
+			copied = -EAGAIN;
+			goto out;
+		}
+
+		if (signal_pending(current)) {
+			copied = sock_intr_errno(timeo);
+			goto out;
+		}
+
+		data = tcp_msg_wait_data(sk, psock, timeo);
+		if (data < 0) {
+			copied = data;
+			goto unlock;
+		}
+		if (data && !sk_psock_queue_empty(psock))
+			goto msg_bytes_ready;
+		copied = -EAGAIN;
+	}
+out:
+	//if (!peek)
+	//	WRITE_ONCE(tcp->copied_seq, seq);
+	mptcp_rcv_space_adjust(msk, copied);
+	if (copied > 0)
+		__mptcp_cleanup_rbuf(msk, copied, false);
+
+unlock:
+	release_sock(sk);
+	sk_psock_put(sk, psock);
+	return copied;
+}
+
+static void mptcp_bpf_rebuild_protos(struct proto prot[TCP_BPF_NUM_CFGS],
+				     struct proto *base)
+{
+	prot[TCP_BPF_BASE]			= *base;
+	prot[TCP_BPF_BASE].destroy		= sock_map_destroy;
+	prot[TCP_BPF_BASE].close		= sock_map_close;
+	prot[TCP_BPF_BASE].recvmsg		= mptcp_bpf_recvmsg;
+	prot[TCP_BPF_BASE].sock_is_readable	= sk_msg_is_readable;
+
+	prot[TCP_BPF_TX]			= prot[TCP_BPF_BASE];
+	prot[TCP_BPF_TX].sendmsg		= mptcp_bpf_sendmsg;
+
+	prot[TCP_BPF_RX]			= prot[TCP_BPF_BASE];
+	prot[TCP_BPF_RX].recvmsg		= mptcp_bpf_recvmsg_parser;
+
+	prot[TCP_BPF_TXRX]			= prot[TCP_BPF_TX];
+	prot[TCP_BPF_TXRX].recvmsg		= mptcp_bpf_recvmsg_parser;
+}
+
+static void mptcp_bpf_check_v6_needs_rebuild(struct proto *ops)
+{
+	if (unlikely(ops != smp_load_acquire(&mptcpv6_prot_saved))) {
+		spin_lock_bh(&mptcpv6_prot_lock);
+		if (likely(ops != mptcpv6_prot_saved)) {
+			mptcp_bpf_rebuild_protos(mptcp_bpf_prots[TCP_BPF_IPV6], ops);
+			smp_store_release(&mptcpv6_prot_saved, ops);
+		}
+		spin_unlock_bh(&mptcpv6_prot_lock);
+	}
+}
+
+static int __init mptcp_bpf_v4_build_proto(void)
+{
+	mptcp_bpf_rebuild_protos(mptcp_bpf_prots[TCP_BPF_IPV4], &mptcp_prot);
+	return 0;
+}
+late_initcall(mptcp_bpf_v4_build_proto);
+
+static int mptcp_bpf_assert_proto_ops(struct proto *ops)
+{
+	/* In order to avoid retpoline, we make assumptions when we call
+	 * into ops if e.g. a psock is not present. Make sure they are
+	 * indeed valid assumptions.
+	 */
+	return ops->recvmsg  == mptcp_recvmsg &&
+	       ops->sendmsg  == mptcp_sendmsg ? 0 : -ENOTSUPP;
+}
+
+int mptcp_bpf_update_proto(struct sock *sk, struct sk_psock *psock, bool restore)
+{
+	int family = sk->sk_family == AF_INET6 ? TCP_BPF_IPV6 : TCP_BPF_IPV4;
+	int config = psock->progs.msg_parser   ? TCP_BPF_TX   : TCP_BPF_BASE;
+
+	if (psock->progs.stream_verdict || psock->progs.skb_verdict) {
+		config = (config == TCP_BPF_TX) ? TCP_BPF_TXRX : TCP_BPF_RX;
+	}
+
+	if (restore) {
+		if (inet_csk_has_ulp(sk)) {
+			/* TLS does not have an unhash proto in SW cases,
+			 * but we need to ensure we stop using the sock_map
+			 * unhash routine because the associated psock is being
+			 * removed. So use the original unhash handler.
+			 */
+			WRITE_ONCE(sk->sk_prot->unhash, psock->saved_unhash);
+			tcp_update_ulp(sk, psock->sk_proto, psock->saved_write_space);
+		} else {
+			sk->sk_write_space = psock->saved_write_space;
+			/* Pairs with lockless read in sk_clone_lock() */
+			sock_replace_proto(sk, psock->sk_proto);
+		}
+		return 0;
+	}
+
+	if (sk->sk_family == AF_INET6) {
+		if (mptcp_bpf_assert_proto_ops(psock->sk_proto))
+			return -EINVAL;
+
+		mptcp_bpf_check_v6_needs_rebuild(psock->sk_proto);
+	}
+
+	/* Pairs with lockless read in sk_clone_lock() */
+	sock_replace_proto(sk, &mptcp_bpf_prots[family][config]);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mptcp_bpf_update_proto);
+
 #endif /* CONFIG_BPF_JIT */
 
 struct mptcp_sock *bpf_mptcp_sock_from_subflow(struct sock *sk)
