@@ -120,7 +120,8 @@ retry:
 
 		bvec_set_page(&bvec, page, size, off);
 		iov_iter_bvec(&msghdr.msg_iter, ITER_SOURCE, &bvec, 1, size);
-		ret = tcp_sendmsg_locked(sk, &msghdr, size);
+		ret = sk_is_msk(sk) ? mptcp_sendmsg_locked(sk, &msghdr, size) :
+				      tcp_sendmsg_locked(sk, &msghdr, size);
 		if (ret <= 0)
 			return ret;
 
@@ -178,8 +179,8 @@ int tcp_bpf_sendmsg_redir(struct sock *sk, bool ingress,
 EXPORT_SYMBOL_GPL(tcp_bpf_sendmsg_redir);
 
 #ifdef CONFIG_BPF_SYSCALL
-static int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
-			     long timeo)
+int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
+		      long timeo)
 {
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	int ret = 0;
@@ -400,8 +401,8 @@ unlock:
 	return ret;
 }
 
-static int tcp_bpf_send_verdict(struct sock *sk, struct sk_psock *psock,
-				struct sk_msg *msg, int *copied, int flags)
+int tcp_bpf_send_verdict(struct sock *sk, struct sk_psock *psock,
+			 struct sk_msg *msg, int *copied, int flags)
 {
 	bool cork = false, enospc = sk_msg_full(msg), redir_ingress;
 	struct sock *sk_redir;
@@ -687,6 +688,7 @@ int tcp_bpf_strp_read_sock(struct strparser *strp, read_descriptor_t *desc,
 	}
 
 	psock->ingress_bytes = 0;
+	pr_info("%s call tcp_read_sock_noack sk_protocol=%d\n", __func__, sk->sk_protocol);
 	copied = tcp_read_sock_noack(sk, desc, recv_actor, true,
 				     &psock->copied_seq);
 	if (copied < 0)
