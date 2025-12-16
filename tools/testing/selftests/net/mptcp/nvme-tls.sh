@@ -1,6 +1,6 @@
 #!/bin/bash
 
-trtype="${1:-tcp}"
+trtype="${1:-mptcp}"
 port=10
 ns=1
 nqn=nqn.test
