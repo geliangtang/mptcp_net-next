@@ -272,6 +272,8 @@ __poll_t mptcp_poll(struct file *file, struct socket *sock,
 bool mptcp_epollin_ready(const struct sock *sk);
 
 void mptcp_sock_set_reuseaddr(struct sock *sk);
+
+void mptcp_sock_set_nodelay(struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
@@ -400,6 +402,8 @@ static inline bool mptcp_epollin_ready(const struct sock *sk)
 }
 
 static inline void mptcp_sock_set_reuseaddr(struct sock *sk) { }
+
+static inline void mptcp_sock_set_nodelay(struct sock *sk) { }
 #endif /* CONFIG_MPTCP */
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
