@@ -1,13 +1,15 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
-trtype="${1:-mptcp}"
-traddr="${2:-127.0.0.1}"
+tls=${1:-""}
+trtype="${2:-mptcp}"
+traddr="${3:-127.0.0.1}"
 ns=1
 port=1234
 trsvcid=4420
 nqn=nqn.2014-08.org.nvmexpress.${trtype}dev
 final_ret=0
+extra=""
 
 #ip mptcp monitor &
 
@@ -50,14 +52,28 @@ echo ${trtype} > addr_trtype
 echo ipv4 > addr_adrfam
 echo ${traddr} > addr_traddr
 echo ${trsvcid} > addr_trsvcid
+
+if [ -n "$tls" ]; then
+	echo "tls1.3" > addr_tsas
+	key1=$(nvme gen-tls-key --subsysnqn=${nqn})
+	key2=$(nvme gen-tls-key --subsysnqn=nqn.2014-08.org.nvmexpress.discovery)
+
+	nvme check-tls-key --subsysnqn=${nqn} -i -d ${key1}
+	nvme check-tls-key --subsysnqn=nqn.2014-08.org.nvmexpress.discovery -i -d ${key2}
+
+	#systemctl start tlshd.service
+	keyctl show
+	extra="--tls"
+fi
+
 cd subsystems
 ln -s ../../../subsystems/${nqn} ${trtype}subsys
 
-echo "nvme discover"
-nvme discover -t ${trtype} -a ${traddr} -s ${trsvcid}
+echo "nvme discover ${extra}"
+nvme discover -t ${trtype} -a ${traddr} -s ${trsvcid} ${extra}
 
-echo "nvme connect"
-devname=$(nvme connect -t ${trtype} -a ${traddr} -s ${trsvcid} -n ${nqn} | awk '{print $4}')
+echo "nvme connect ${extra}"
+devname=$(nvme connect -t ${trtype} -a ${traddr} -s ${trsvcid} -n ${nqn} ${extra} | awk '{print $4}')
 lret=$?
 if [ $lret -ne 0 ]; then
 	final_ret=${lret}
@@ -77,6 +93,7 @@ echo "fio randread"
 fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio \
     --thread=1 --blocksize=4k --runtime=10 --time_based --rw=randread --numjobs=4 \
     --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randread \
+    --size=4m \
     --filename=/dev/${devname}n1
 #--output=/dev/null
 lret=$?
@@ -89,6 +106,7 @@ echo "fio randwrite"
 fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio \
     --thread=1 --blocksize=4k --runtime=10 --time_based --rw=randwrite --numjobs=4 \
     --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randwrite \
+    --size=4m \
     --filename=/dev/${devname}n1
 #--output=/dev/null
 lret=$?

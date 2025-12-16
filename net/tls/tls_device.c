@@ -1074,6 +1074,8 @@ int tls_set_device_offload(struct sock *sk)
 	ctx = tls_get_ctx(sk);
 	prot = &ctx->prot_info;
 
+	pr_info("%s\n", __func__);
+
 	if (ctx->priv_ctx_tx)
 		return -EEXIST;
 

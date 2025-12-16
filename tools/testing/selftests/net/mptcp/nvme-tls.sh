@@ -1,6 +1,6 @@
 #!/bin/bash
 
-trtype="${1:-tcp}"
+trtype="${1:-mptcp}"
 port=10
 ns=1
 nqn=nqn.test
@@ -47,11 +47,13 @@ keyctl show
 
 nvme discover -t ${trtype} -a 127.0.0.1 -s 4420 --tls
 devname=$(nvme connect -t ${trtype} -a 127.0.0.1 -s 4420 -n nqn.test --tls | awk '{print $4}')
+echo ${devname}
 
 echo "fio randread"
 fio --name=global --direct=1 --norandommap --randrepeat=0 --ioengine=libaio \
     --thread=1 --blocksize=4k --runtime=10 --time_based --rw=randread --numjobs=4 \
     --iodepth=256 --group_reporting --size=100% --name=libaio_4_256_4k_randread \
+    --size=4m \
     --filename=/dev/${devname}n1
 
 nvme disconnect -n nqn.test
