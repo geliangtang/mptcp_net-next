@@ -26,7 +26,12 @@
 #define TLS_PAYLOAD_MAX_LEN 16384
 #define SOL_TLS 282
 
+#ifndef IPPROTO_MPTCP
+#define IPPROTO_MPTCP 262
+#endif
+
 static int fips_enabled;
+static int protocol;
 
 struct tls_crypto_info_keys {
 	union {
@@ -122,8 +127,8 @@ static void ulp_sock_pair(struct __test_metadata *_metadata,
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	*fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	*fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3013,8 +3018,8 @@ TEST(non_established) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3137,8 +3142,8 @@ TEST(tls_v6ops) {
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = 0;
 
-	fd = socket(AF_INET6, SOCK_STREAM, 0);
-	sfd = socket(AF_INET6, SOCK_STREAM, 0);
+	fd = socket(AF_INET6, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET6, SOCK_STREAM, protocol);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3196,8 +3201,8 @@ TEST(prequeue) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ASSERT_EQ(bind(sfd, &addr, sizeof(addr)), 0);
 	ASSERT_EQ(listen(sfd, 10), 0);
@@ -3242,8 +3247,8 @@ TEST(data_steal) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ASSERT_EQ(bind(sfd, &addr, sizeof(addr)), 0);
 	ASSERT_EQ(listen(sfd, 10), 0);
@@ -3299,4 +3304,33 @@ static void __attribute__((constructor)) fips_check(void) {
 	}
 }
 
-TEST_HARNESS_MAIN
+static void print_usage(const char* program_name) {
+	printf("Usage: ./mptcp_tls [--mptcp]\n");
+	printf("\t--mptcp  using MPTCP instead of TCP\n\n");
+}
+
+static int parse_arguments(int argc, char** argv) {
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-h")) {
+			print_usage(argv[0]);
+			return i;
+		}
+		if (!strcmp(argv[i], "--mptcp")) {
+			protocol = IPPROTO_MPTCP;
+			return i;
+		}
+	}
+	return 0;
+}
+
+int main(int argc, char **argv) {
+	int index = parse_arguments(argc, argv);
+
+	if (protocol == IPPROTO_MPTCP) {
+		for (int i = index; i < argc; i++)
+			argv[i] = argv[i + 1];
+		argc--;
+	}
+
+	return test_harness_run(argc, argv);
+}
