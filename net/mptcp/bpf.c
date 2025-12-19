@@ -419,6 +419,7 @@ msg_bytes_ready:
 	if (!copied) {
 		long timeo;
 		int data;
+		int err;
 
 		if (sock_flag(sk, SOCK_DONE))
 			goto out;
@@ -428,22 +429,12 @@ msg_bytes_ready:
 			goto out;
 		}
 
-		if (sk->sk_shutdown & RCV_SHUTDOWN)
-			goto out;
-
-		if (sk->sk_state == TCP_CLOSE) {
-			copied = -ENOTCONN;
-			goto out;
-		}
-
 		timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
-		if (!timeo) {
-			copied = -EAGAIN;
-			goto out;
-		}
 
-		if (signal_pending(current)) {
-			copied = sock_intr_errno(timeo);
+		err = tcp_recv_should_stop(sk, timeo);
+		if (err < 0) {
+			if (err != -ESHUTDOWN)
+				copied = err;
 			goto out;
 		}
 
