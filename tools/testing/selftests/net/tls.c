@@ -25,8 +25,15 @@
 
 #define TLS_PAYLOAD_MAX_LEN 16384
 #define SOL_TLS 282
+#define TLS_TX_MAX_PAYLOAD_LEN	5
+
+#ifndef IPPROTO_MPTCP
+#define IPPROTO_MPTCP 262
+#endif
 
 static int fips_enabled;
+static bool mptcp_enabled;
+static int protocol;
 
 struct tls_crypto_info_keys {
 	union {
@@ -122,8 +129,8 @@ static void ulp_sock_pair(struct __test_metadata *_metadata,
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	*fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	*fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -1457,6 +1464,7 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 {
 	const unsigned int n_children = n_readers + n_writers;
 	const size_t data = 6 * 1000 * 1000;
+	char tmpfile_path[] = "/tmp/tls_test_XXXXXX";
 	const size_t file_sz = data / 100;
 	size_t read_bias, write_bias;
 	int i, fd, child_id;
@@ -1469,8 +1477,9 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 	write_bias = n_readers / n_writers ?: 1;
 
 	/* prep a file to send */
-	fd = open("/tmp/", O_TMPFILE | O_RDWR, 0600);
+	fd = mkstemp(tmpfile_path);
 	ASSERT_GE(fd, 0);
+	unlink(tmpfile_path);
 
 	memset(buf, 0xac, file_sz);
 	ASSERT_EQ(write(fd, buf, file_sz), file_sz);
@@ -1674,7 +1683,8 @@ TEST_F(tls, shutdown_reuse)
 	addr.sin_port = 0;
 
 	ret = bind(self->fd, &addr, sizeof(addr));
-	EXPECT_EQ(ret, 0);
+	if(!mptcp_enabled)
+		EXPECT_EQ(ret, 0);
 	ret = listen(self->fd, 10);
 	EXPECT_EQ(ret, -1);
 	EXPECT_EQ(errno, EINVAL);
@@ -3013,8 +3023,8 @@ TEST(non_established) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3137,8 +3147,8 @@ TEST(tls_v6ops) {
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = 0;
 
-	fd = socket(AF_INET6, SOCK_STREAM, 0);
-	sfd = socket(AF_INET6, SOCK_STREAM, 0);
+	fd = socket(AF_INET6, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET6, SOCK_STREAM, protocol);
 
 	ret = bind(sfd, &addr, sizeof(addr));
 	ASSERT_EQ(ret, 0);
@@ -3196,8 +3206,8 @@ TEST(prequeue) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ASSERT_EQ(bind(sfd, &addr, sizeof(addr)), 0);
 	ASSERT_EQ(listen(sfd, 10), 0);
@@ -3242,8 +3252,8 @@ TEST(data_steal) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = 0;
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, protocol);
+	sfd = socket(AF_INET, SOCK_STREAM, protocol);
 
 	ASSERT_EQ(bind(sfd, &addr, sizeof(addr)), 0);
 	ASSERT_EQ(listen(sfd, 10), 0);
@@ -3299,4 +3309,31 @@ static void __attribute__((constructor)) fips_check(void) {
 	}
 }
 
-TEST_HARNESS_MAIN
+void print_usage(const char* program_name) {
+	printf("--mptcp	Using MPTCP\n");
+}
+
+int parse_arguments(int argc, char** argv) {
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--mptcp") == 0) {
+			mptcp_enabled = 1;
+			protocol = IPPROTO_MPTCP;
+			return i;
+		}
+	}
+	return 0;
+}
+
+int main(int argc, char **argv) {
+	int mptcp_index;
+
+	mptcp_index = parse_arguments(argc, argv);
+
+	if (mptcp_enabled) {
+		for (int j = mptcp_index; j < argc; j++)
+			argv[j] = argv[j+1];
+		argc--;
+	}
+
+	return test_harness_run(argc, argv);
+}
