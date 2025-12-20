@@ -468,6 +468,26 @@ static void tls_sk_proto_close(struct sock *sk, long timeout)
 		tls_ctx_free(sk, ctx);
 }
 
+static __poll_t tls_prot_poll(struct file *file, struct socket *sock,
+			      struct poll_table_struct *wait)
+{
+	struct tls_context *tls_ctx;
+	struct sock *sk = sock->sk;
+
+	tls_ctx = tls_get_ctx(sk);
+	if (!tls_ctx) {
+		__poll_t mask = 0;
+
+		if (sk->sk_protocol == IPPROTO_TCP)
+			mask = tcp_poll(file, sock, wait);
+		else if (sk->sk_protocol == IPPROTO_MPTCP)
+			mask = mptcp_poll(file, sock, wait);
+		return mask;
+	}
+
+	return tls_ctx->prot->ops->poll(file, sock, wait);
+}
+
 static __poll_t tls_sk_poll(struct file *file, struct socket *sock,
 			    struct poll_table_struct *wait)
 {
@@ -479,7 +499,7 @@ static __poll_t tls_sk_poll(struct file *file, struct socket *sock,
 	u8 shutdown;
 	int state;
 
-	mask = tcp_poll(file, sock, wait);
+	mask = tls_prot_poll(file, sock, wait);
 
 	state = inet_sk_state_load(sk);
 	shutdown = READ_ONCE(sk->sk_shutdown);
