@@ -146,6 +146,7 @@ void update_sk_prot(struct sock *sk, struct tls_context *ctx)
 		   &tls_prots[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 	WRITE_ONCE(sk->sk_socket->ops,
 		   &tls_proto_ops[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
+	WRITE_ONCE(ctx->ops, &tls_prot_ops[proto]);
 }
 
 int wait_on_pending_writer(struct sock *sk, long *timeo)
