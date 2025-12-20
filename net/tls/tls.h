@@ -202,6 +202,8 @@ void tls_strp_data_ready(struct tls_strparser *strp);
 void tls_strp_check_rcv(struct tls_strparser *strp, bool announce);
 void tls_strp_msg_consume(struct tls_strparser *strp);
 
+void tls_strp_ops_init(void);
+
 int tls_rx_msg_size(struct tls_strparser *strp, struct sk_buff *skb);
 void tls_rx_msg_maybe_announce(struct tls_strparser *strp);
 

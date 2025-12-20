@@ -68,6 +68,8 @@ struct tls_decrypt_ctx {
 	struct scatterlist sg[];
 };
 
+static const struct tls_strparser_ops __rcu *tls_strp_ops_table[TLS_NUM_PROTO];
+
 noinline void tls_err_abort(struct sock *sk, int err)
 {
 	WARN_ON_ONCE(err >= 0);
@@ -2425,13 +2427,33 @@ void tls_sw_write_space(struct sock *sk, struct tls_context *ctx)
 		schedule_delayed_work(&tx_ctx->tx_work.work, 0);
 }
 
+static const struct tls_strparser_ops *tls_strp_lookup_ops(int id)
+{
+	if (id >= 0 && id < TLS_NUM_PROTO)
+		return rcu_access_pointer(tls_strp_ops_table[id]);
+	return NULL;
+}
+
+static int tls_proto_id(int sk_protocol)
+{
+	if (sk_protocol == IPPROTO_MPTCP)
+		return TLSMPTCP;
+	return TLSTCP;
+}
+
 void tls_sw_strparser_arm(struct sock *sk, struct tls_context *tls_ctx)
 {
 	struct tls_sw_context_rx *rx_ctx = tls_sw_ctx_rx(tls_ctx);
+	const struct tls_strparser_ops *ops;
+
+	ops = tls_strp_lookup_ops(tls_proto_id(sk->sk_protocol));
+	if (WARN_ON_ONCE(!ops))
+		return;
 
 	write_lock_bh(&sk->sk_callback_lock);
 	rx_ctx->saved_data_ready = sk->sk_data_ready;
 	sk->sk_data_ready = tls_data_ready;
+	rx_ctx->strp_ops = ops;
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
@@ -2657,4 +2679,34 @@ free_priv:
 	}
 out:
 	return rc;
+}
+
+static void tls_strp_register_ops(const struct tls_strparser_ops *ops)
+{
+	int id = tls_proto_id(ops->protocol);
+
+	if (id >= 0 && id < TLS_NUM_PROTO)
+		rcu_assign_pointer(tls_strp_ops_table[id], ops);
+}
+
+static bool tls_sw_tcp_recv_ready(const struct sock *sk)
+{
+	return tcp_epollin_ready(sk, INT_MAX);
+}
+
+static struct sk_buff *tls_sw_tcp_recv_skb(struct sock *sk, u32 *off)
+{
+	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
+}
+
+static const struct tls_strparser_ops tcp_tls_strp_ops = {
+	.protocol	= IPPROTO_TCP,
+	.recv_ready	= tls_sw_tcp_recv_ready,
+	.recv_skb	= tls_sw_tcp_recv_skb,
+	.read_done	= tcp_read_done,
+};
+
+void tls_strp_ops_init(void)
+{
+	tls_strp_register_ops(&tcp_tls_strp_ops);
 }
