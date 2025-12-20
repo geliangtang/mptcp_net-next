@@ -25,6 +25,7 @@
 #include <net/mptcp.h>
 #include <net/hotdata.h>
 #include <net/xfrm.h>
+#include <net/tls.h>
 #include <asm/ioctls.h>
 #include "protocol.h"
 #include "mib.h"
@@ -5128,6 +5129,41 @@ static int mptcp_read_skb(struct sock *sk, skb_read_actor_t recv_actor)
 	return copied;
 }
 
+static void mptcp_read_done(struct sock *sk, size_t len)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct sk_buff *skb;
+	size_t left;
+	u32 offset;
+
+	msk_owned_by_me(msk);
+
+	if (sk->sk_state == TCP_LISTEN)
+		return;
+
+	left = len;
+	while (left && (skb = mptcp_recv_skb(sk, &offset)) != NULL) {
+		int used;
+
+		used = min_t(size_t, skb->len - offset, left);
+		msk->bytes_consumed += used;
+		msk->copied_seq += used;
+		left -= used;
+
+		if (skb->len > offset + used)
+			break;
+
+		mptcp_eat_recv_skb(sk, skb);
+	}
+
+	/* Clean up data we have read: This will do ACK frames. */
+	if (left != len) {
+		msk->read_copied += len - left;
+		set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
+		mptcp_schedule_work(sk);
+	}
+}
+
 static const struct proto_ops mptcp_stream_ops = {
 	.family		   = PF_INET,
 	.owner		   = THIS_MODULE,
@@ -5322,3 +5358,16 @@ u64 mptcp_sk_copied_seq(struct sock *sk)
 {
 	return READ_ONCE(mptcp_sk(sk)->copied_seq);
 }
+
+static bool mptcp_recv_ready(const struct sock *sk)
+{
+	return mptcp_epollin_ready(sk);
+}
+
+const struct tls_strparser_ops mptcp_tls_strp_ops = {
+	.protocol	= IPPROTO_MPTCP,
+	.recv_ready	= mptcp_recv_ready,
+	.recv_skb	= mptcp_recv_skb,
+	.read_done	= mptcp_read_done,
+};
+EXPORT_SYMBOL_GPL(mptcp_tls_strp_ops);

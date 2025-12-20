@@ -2706,7 +2706,14 @@ static const struct tls_strparser_ops tcp_tls_strp_ops = {
 	.read_done	= tcp_read_done,
 };
 
+#if IS_REACHABLE(CONFIG_MPTCP)
+extern const struct tls_strparser_ops mptcp_tls_strp_ops;
+#endif
+
 void tls_strp_ops_init(void)
 {
 	tls_strp_register_ops(&tcp_tls_strp_ops);
+#if IS_REACHABLE(CONFIG_MPTCP)
+	tls_strp_register_ops(&mptcp_tls_strp_ops);
+#endif
 }
