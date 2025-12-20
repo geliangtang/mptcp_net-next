@@ -4647,7 +4647,7 @@ static __poll_t mptcp_poll(struct file *file, struct socket *sock,
 	return mask;
 }
 
-static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
+struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb;
@@ -4663,6 +4663,7 @@ static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(mptcp_recv_skb);
 
 /*
  * Note:
@@ -4874,6 +4875,42 @@ static int mptcp_peek_len(struct socket *sock)
 	return mptcp_inq(sock->sk);
 }
 
+void mptcp_read_done(struct sock *sk, size_t len)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct sk_buff *skb;
+	size_t left;
+	u32 offset;
+
+	msk_owned_by_me(msk);
+
+	if (sk->sk_state == TCP_LISTEN)
+		return;
+
+	left = len;
+	while (left && (skb = mptcp_recv_skb(sk, &offset)) != NULL) {
+		int used;
+
+		used = min_t(size_t, skb->len - offset, left);
+		msk->bytes_consumed += used;
+		msk->copied_seq += used;
+		left -= used;
+
+		if (skb->len > offset + used)
+			break;
+
+		mptcp_eat_recv_skb(sk, skb);
+	}
+
+	/* Clean up data we have read: This will do ACK frames. */
+	if (left != len) {
+		msk->read_copied += len - left;
+		set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
+		mptcp_schedule_work(sk);
+	}
+}
+EXPORT_SYMBOL_GPL(mptcp_read_done);
+
 static const struct proto_ops mptcp_stream_ops = {
 	.family		   = PF_INET,
 	.owner		   = THIS_MODULE,
@@ -5059,3 +5096,9 @@ int __init mptcp_proto_v6_init(void)
 	return err;
 }
 #endif
+
+bool mptcp_check_epollin_ready(const struct sock *sk, int target)
+{
+	return mptcp_epollin_ready(sk);
+}
+EXPORT_SYMBOL_GPL(mptcp_check_epollin_ready);

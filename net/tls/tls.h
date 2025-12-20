@@ -388,4 +388,48 @@ struct tls_skb_cb {
 
 static_assert(offsetof(struct tls_skb_cb, seq) == 0);
 
+static struct sk_buff *tls_tcp_recv_skb(struct sock *sk, u32 *off)
+{
+	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
+}
+
+static inline struct sk_buff *tls_recv_skb(struct sock *sk, u32 *off)
+{
+	switch (sk->sk_protocol) {
+	case IPPROTO_TCP:
+		return tls_tcp_recv_skb(sk, off);
+	case IPPROTO_MPTCP:
+		return mptcp_recv_skb(sk, off);
+	default:
+		return NULL;
+	}
+}
+
+static inline void tls_read_done(struct sock *sk, size_t len)
+{
+	switch (sk->sk_protocol) {
+	case IPPROTO_TCP:
+		tcp_read_done(sk, len);
+		return;
+	case IPPROTO_MPTCP:
+		mptcp_read_done(sk, len);
+		return;
+	default:
+		return;
+	}
+
+}
+
+static inline bool tls_epollin_ready(const struct sock *sk, int target)
+{
+	switch (sk->sk_protocol) {
+	case IPPROTO_TCP:
+		return tcp_epollin_ready(sk, target);
+	case IPPROTO_MPTCP:
+		return mptcp_check_epollin_ready(sk, target);
+	default:
+		return false;
+	}
+}
+
 #endif
