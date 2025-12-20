@@ -134,6 +134,13 @@ struct tls_strparser {
 	struct work_struct work;
 };
 
+struct tls_strparser_ops {
+	int		protocol;
+	bool (*recv_ready)(const struct sock *sk);
+	struct sk_buff *(*recv_skb)(struct sock *sk, u32 *off);
+	void (*read_done)(struct sock *sk, size_t len);
+};
+
 struct tls_sw_context_rx {
 	struct crypto_aead *aead_recv;
 	struct crypto_wait async_wait;
@@ -148,6 +155,7 @@ struct tls_sw_context_rx {
 	u8 empty_run;
 
 	struct tls_strparser strp;
+	const struct tls_strparser_ops *strp_ops;
 
 	atomic_t decrypt_pending;
 	struct sk_buff_head async_hold;
