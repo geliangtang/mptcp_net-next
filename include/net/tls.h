@@ -220,6 +220,47 @@ struct tls_prot_info {
 	u16 tail_size;
 };
 
+#define TLS_PROT_OPS_NAME_MAX	16
+
+struct tls_prot_ops {
+	char			name[TLS_PROT_OPS_NAME_MAX];
+
+	int (*inq)(struct sock *sk);
+	int (*sendmsg_locked)(struct sock *sk, struct msghdr *msg, size_t size);
+	struct sk_buff *(*recv_skb)(struct sock *sk, u32 seq, u32 *off);
+	void (*read_done)(struct sock *sk, size_t len);
+	u32 (*get_seq)(struct sk_buff *skb);
+	int (*read_sock)(struct sock *sk, read_descriptor_t *desc,
+			 sk_read_actor_t recv_actor);
+	__poll_t (*poll)(struct file *file, struct socket *sock,
+			 struct poll_table_struct *wait);
+	bool (*epollin_ready)(const struct sock *sk, int target);
+};
+
+static inline bool tls_validate_prot_ops(const struct tls_prot_ops *ops)
+{
+	if (ops->inq || ops->sendmsg_locked ||
+	    ops->recv_skb || ops->read_done ||
+	    ops->get_seq || ops->read_sock ||
+	    ops->poll || ops->epollin_ready)
+		return true;
+
+	pr_err("%s does not implement required ops\n", ops->name);
+	return false;
+}
+
+static const struct tls_prot_ops tls_tcp_ops = {
+	.name		= "tcp",
+	.inq		= tcp_inq,
+	.sendmsg_locked	= tcp_sendmsg_locked,
+	.recv_skb	= tcp_recv_skb,
+	.read_done	= tcp_read_done,
+	.get_seq	= tcp_get_seq,
+	.read_sock	= tcp_read_sock,
+	.poll		= tcp_poll,
+	.epollin_ready	= tcp_epollin_ready,
+};
+
 struct tls_context {
 	/* read-only cache line */
 	struct tls_prot_info prot_info;
@@ -258,6 +299,7 @@ struct tls_context {
 	struct sock *sk;
 
 	void (*sk_destruct)(struct sock *sk);
+	const struct tls_prot_ops *ops;
 
 	union tls_crypto_context crypto_send;
 	union tls_crypto_context crypto_recv;
