@@ -245,6 +245,21 @@ void mptcp_sock_set_tos(struct sock *sk);
 void mptcp_sock_set_nodelay(struct sock *sk);
 
 int mptcp_sock_set_syncnt(struct sock *sk, int val);
+
+struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off);
+
+bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
+
+bool mptcp_lock_is_held(struct sock *sk);
+
+void mptcp_read_done(struct sock *sk, size_t len);
+
+u32 mptcp_get_skb_seq(struct sk_buff *skb);
+
+int mptcp_skb_get_header(const struct sk_buff *skb, int off,
+			 void *buf, int len);
+
+void mptcp_check_app_limited(struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
@@ -332,6 +347,40 @@ static inline void mptcp_sock_set_nodelay(struct sock *sk) { }
 static inline int mptcp_sock_set_syncnt(struct sock *sk, int val)
 {
 	return 0;
+}
+
+static inline struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
+{
+	return NULL;
+}
+
+static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
+{
+	return false;
+}
+
+static inline bool mptcp_lock_is_held(struct sock *sk)
+{
+	return false;
+}
+
+static inline void mptcp_read_done(struct sock *sk, size_t len)
+{
+}
+
+static inline u32 mptcp_get_skb_seq(struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline int mptcp_skb_get_header(const struct sk_buff *skb, int off,
+				       void *buf, int len)
+{
+	return 0;
+}
+
+static inline void mptcp_check_app_limited(struct sock *sk)
+{
 }
 #endif /* CONFIG_MPTCP */
 

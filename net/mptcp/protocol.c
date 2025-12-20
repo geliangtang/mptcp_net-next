@@ -4680,7 +4680,7 @@ static __poll_t mptcp_poll(struct file *file, struct socket *sock,
 	return mask;
 }
 
-static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
+struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb;
@@ -4699,6 +4699,7 @@ static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(mptcp_recv_skb);
 
 /*
  * Note:
@@ -5082,3 +5083,113 @@ int __init mptcp_proto_v6_init(void)
 	return err;
 }
 #endif
+
+bool mptcp_lock_is_held(struct sock *sk)
+{
+	return sock_owned_by_user_nocheck(sk) ||
+	       mptcp_data_is_locked(sk);
+}
+EXPORT_SYMBOL_GPL(mptcp_lock_is_held);
+
+void mptcp_read_done(struct sock *sk, size_t len)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct sk_buff *skb;
+	size_t left;
+	u32 offset;
+
+	msk_owned_by_me(msk);
+
+	if (sk->sk_state == TCP_LISTEN)
+		return;
+
+	left = len;
+	while (left && (skb = mptcp_recv_skb(sk, &offset)) != NULL) {
+		int used;
+
+		used = min_t(size_t, skb->len - offset, left);
+		msk->bytes_consumed += used;
+		MPTCP_SKB_CB(skb)->offset += used;
+		MPTCP_SKB_CB(skb)->map_seq += used;
+		left -= used;
+
+		if (skb->len > offset + used)
+			break;
+
+		mptcp_eat_recv_skb(sk, skb);
+	}
+
+	mptcp_rcv_space_adjust(msk, len - left);
+
+	/* Clean up data we have read: This will do ACK frames. */
+	if (left != len)
+		mptcp_cleanup_rbuf(msk, len - left);
+}
+EXPORT_SYMBOL_GPL(mptcp_read_done);
+
+u32 mptcp_get_skb_seq(struct sk_buff *skb)
+{
+	return MPTCP_SKB_CB(skb)->map_seq - MPTCP_SKB_CB(skb)->offset;
+}
+EXPORT_SYMBOL_GPL(mptcp_get_skb_seq);
+
+int mptcp_skb_get_header(const struct sk_buff *skb, int off,
+			 void *buf, int len)
+{
+	const struct sk_buff *iter = skb_shinfo(skb)->frag_list;
+	int copied = 0;
+	int ret = 0;
+
+	if (!iter)
+		return skb_copy_bits(skb, off, buf, len);
+
+	/* Make absolute to positive */
+	off -= MPTCP_SKB_CB(iter)->offset;
+
+	while (iter && copied < len) {
+		int skb_off  = MPTCP_SKB_CB(iter)->offset;
+		int data_len = iter->len - skb_off;
+		int count;
+
+		if (off >= data_len) {
+			off -= data_len; /* MPTCP skb avail data */
+			iter = iter->next;
+			continue;
+		}
+
+		count = min((int)(data_len - off), len - copied);
+		ret = skb_copy_bits(iter, skb_off + off, buf + copied, count);
+		if (ret)
+			break;
+		copied += count;
+		off = 0;
+		iter = iter->next;
+	}
+
+	if (copied < len && !ret)
+		ret = -EFAULT;
+	return ret;
+}
+EXPORT_SYMBOL_GPL(mptcp_skb_get_header);
+
+bool mptcp_check_epollin_ready(const struct sock *sk, int target)
+{
+	return mptcp_epollin_ready(sk);
+}
+EXPORT_SYMBOL_GPL(mptcp_check_epollin_ready);
+
+void mptcp_check_app_limited(struct sock *sk)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct mptcp_subflow_context *subflow;
+
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+		bool slow;
+
+		slow = lock_sock_fast(ssk);
+		tcp_sock_rate_check_app_limited(tcp_sk(ssk));
+		unlock_sock_fast(ssk, slow);
+	}
+}
+EXPORT_SYMBOL_GPL(mptcp_check_app_limited);
