@@ -252,6 +252,12 @@ int mptcp_bpf_strp_read_sock(struct strparser *strp, read_descriptor_t *desc,
 			     sk_read_actor_t recv_actor);
 
 u64 mptcp_sk_copied_seq(struct sock *sk);
+
+struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off);
+
+bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
+
+void mptcp_read_done(struct sock *sk, size_t len);
 #else
 
 static inline void mptcp_init(void)
@@ -347,6 +353,18 @@ static inline u64 mptcp_sk_copied_seq(struct sock *sk)
 {
 	return 0;
 }
+
+static inline struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
+{
+	return NULL;
+}
+
+static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
+{
+	return false;
+}
+
+static inline void mptcp_read_done(struct sock *sk, size_t len) { }
 #endif /* CONFIG_MPTCP */
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
