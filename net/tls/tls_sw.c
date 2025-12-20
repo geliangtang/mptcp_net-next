@@ -2255,7 +2255,7 @@ void tls_rx_msg_maybe_announce(struct tls_strparser *strp)
 		return;
 	strp->msg_announced = 1;
 
-	ctx = container_of(strp, struct tls_sw_context_rx, strp);
+	ctx = tls_sw_rx_from_strp(strp);
 	ctx->saved_data_ready(strp->sk);
 }
 
