@@ -1230,6 +1230,8 @@ static int __init tls_register(void)
 
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
+	tls_strp_ops_init();
+
 	return 0;
 err_strp:
 	tls_strp_dev_exit();
