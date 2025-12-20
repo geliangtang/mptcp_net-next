@@ -233,6 +233,12 @@ static inline bool tls_strp_msg_mixed_decrypted(struct tls_sw_context_rx *ctx)
 	return ctx->strp.mixed_decrypted;
 }
 
+static inline struct tls_sw_context_rx *
+tls_sw_rx_from_strp(const struct tls_strparser *strp)
+{
+	return container_of(strp, struct tls_sw_context_rx, strp);
+}
+
 #ifdef CONFIG_TLS_DEVICE
 int tls_device_init(void);
 void tls_device_cleanup(void);
