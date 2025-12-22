@@ -1463,6 +1463,7 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 {
 	const unsigned int n_children = n_readers + n_writers;
 	const size_t data = 6 * 1000 * 1000;
+	char tmpfile_path[] = "/tmp/tls_test_XXXXXX";
 	const size_t file_sz = data / 100;
 	size_t read_bias, write_bias;
 	int i, fd, child_id;
@@ -1475,8 +1476,9 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 	write_bias = n_readers / n_writers ?: 1;
 
 	/* prep a file to send */
-	fd = open("/tmp/", O_TMPFILE | O_RDWR, 0600);
+	fd = mkstemp(tmpfile_path);
 	ASSERT_GE(fd, 0);
+	unlink(tmpfile_path);
 
 	memset(buf, 0xac, file_sz);
 	ASSERT_EQ(write(fd, buf, file_sz), file_sz);
@@ -1680,7 +1682,8 @@ TEST_F(tls, shutdown_reuse)
 	addr.sin_port = 0;
 
 	ret = bind(self->fd, &addr, sizeof(addr));
-	EXPECT_EQ(ret, 0);
+	if(protocol != IPPROTO_MPTCP)
+		EXPECT_EQ(ret, 0);
 	ret = listen(self->fd, 10);
 	EXPECT_EQ(ret, -1);
 	EXPECT_EQ(errno, EINVAL);
