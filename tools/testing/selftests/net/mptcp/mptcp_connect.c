@@ -275,7 +275,6 @@ static int do_ulp_so(int sock, const char *name)
 	return setsockopt(sock, IPPROTO_TCP, TCP_ULP, name, strlen(name));
 }
 
-#if 0
 static int is_mptcp(int fd)
 {
 	socklen_t optlen;
@@ -287,7 +286,6 @@ static int is_mptcp(int fd)
 
 	return mptcp;
 }
-#endif
 
 static void do_setsockopt_tls(int fd)
 {
@@ -306,8 +304,8 @@ static void do_setsockopt_tls(int fd)
 	int so_buf = 6553500;
 	int err;
 
-	//if (!is_mptcp(fd))
-	//	return;
+	if (!is_mptcp(fd))
+		return;
 
 	if (cfg_disconnect || cfg_sockopt_types.mptfo)
 		return;
