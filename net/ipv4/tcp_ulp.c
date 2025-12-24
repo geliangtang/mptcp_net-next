@@ -135,11 +135,8 @@ static int __tcp_set_ulp(struct sock *sk, const struct tcp_ulp_ops *ulp_ops)
 	int err;
 
 	err = -EEXIST;
-	if (icsk->icsk_ulp_ops) {
-		pr_info("%s sk=%p icsk=%p icsk->icsk_ulp_ops=%p ulp_ops->name=%s\n",
-			__func__, sk, icsk, icsk->icsk_ulp_ops, icsk->icsk_ulp_ops->name);
+	if (icsk->icsk_ulp_ops)
 		goto out_err;
-	}
 
 	if (sk->sk_socket)
 		clear_bit(SOCK_SUPPORT_ZC, &sk->sk_socket->flags);
