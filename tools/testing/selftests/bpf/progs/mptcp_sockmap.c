@@ -16,7 +16,7 @@ struct {
 } sock_map SEC(".maps");
 
 SEC("sockops")
-int mptcp_sockmap_inject(struct bpf_sock_ops *skops)
+int mptcp_sockmap_update(struct bpf_sock_ops *skops)
 {
 	struct bpf_sock *sk;
 

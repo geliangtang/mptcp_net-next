@@ -553,11 +553,11 @@ end:
 	close(listen_fd);
 }
 
-/* Test sockmap rejection of MPTCP sockets - both server and client sides. */
-static void test_sockmap_reject_mptcp(struct mptcp_sockmap *skel)
+/* Test sockmap on MPTCP sockets - both server and client sides. */
+static void test_sockmap_with_mptcp(struct mptcp_sockmap *skel)
 {
 	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
-	int err, zero = 0;
+	int err, zero = 0, one = 1;
 
 	/* start server with MPTCP enabled */
 	listen_fd = start_mptcp_server(AF_INET, NULL, 0, 0);
@@ -578,13 +578,13 @@ static void test_sockmap_reject_mptcp(struct mptcp_sockmap *skel)
 	server_fd = accept(listen_fd, NULL, 0);
 	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
 				  &zero, &server_fd, BPF_NOEXIST);
-	if (!ASSERT_EQ(err, -EOPNOTSUPP, "server should be disallowed"))
+	if (!ASSERT_EQ(err, 0, "server should be allowed"))
 		goto end;
 
-	/* MPTCP client should also be disallowed */
+	/* MPTCP client should also be allowed */
 	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
-				  &zero, &client_fd1, BPF_NOEXIST);
-	if (!ASSERT_EQ(err, -EOPNOTSUPP, "client should be disallowed"))
+				  &one, &client_fd1, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, 0, "client should be allowed"))
 		goto end;
 end:
 	if (client_fd1 >= 0)
@@ -608,9 +608,9 @@ static void test_mptcp_sockmap(void)
 	if (!ASSERT_OK_PTR(skel, "skel_open_load: mptcp_sockmap"))
 		goto close_cgroup;
 
-	skel->links.mptcp_sockmap_inject =
-		bpf_program__attach_cgroup(skel->progs.mptcp_sockmap_inject, cgroup_fd);
-	if (!ASSERT_OK_PTR(skel->links.mptcp_sockmap_inject, "attach sockmap"))
+	skel->links.mptcp_sockmap_update =
+		bpf_program__attach_cgroup(skel->progs.mptcp_sockmap_update, cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.mptcp_sockmap_update, "attach sockmap"))
 		goto skel_destroy;
 
 	err = bpf_prog_attach(bpf_program__fd(skel->progs.mptcp_sockmap_redirect),
@@ -627,7 +627,7 @@ static void test_mptcp_sockmap(void)
 		goto close_netns;
 
 	test_sockmap_with_mptcp_fallback(skel);
-	test_sockmap_reject_mptcp(skel);
+	test_sockmap_with_mptcp(skel);
 
 close_netns:
 	netns_free(netns);
