@@ -261,7 +261,7 @@ do_mptcp_sockopt_tests()
 		return
 	fi
 
-	ip netns exec "$ns_sbox" ./mptcp_sockopt
+	ip netns exec "$ns1" ./mptcp_sockopt -s 1
 	lret=$?
 
 	print_title "SOL_MPTCP sockopt v4"
