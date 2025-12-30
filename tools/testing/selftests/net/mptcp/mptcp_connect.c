@@ -80,6 +80,7 @@ static char *cfg_input;
 static int cfg_repeat = 1;
 static int cfg_truncate;
 static int cfg_rcv_trunc;
+static bool cfg_disconnect;
 
 struct cfg_cmsg_types {
 	unsigned int cmsg_enabled:1;
@@ -274,6 +275,18 @@ static int do_ulp_so(int sock, const char *name)
 	return setsockopt(sock, IPPROTO_TCP, TCP_ULP, name, strlen(name));
 }
 
+static int is_mptcp(int fd)
+{
+	socklen_t optlen;
+	int mptcp = 0;
+
+	optlen = sizeof(mptcp);
+	if (getsockopt(fd, IPPROTO_TCP, TCP_IS_MPTCP, &mptcp, &optlen) == -1)
+		perror("TCP_IS_MPTCP");
+
+	return mptcp;
+}
+
 static void do_setsockopt_tls(int fd)
 {
 	struct tls12_crypto_info_aes_gcm_128 tls_tx = {
@@ -290,6 +303,12 @@ static void do_setsockopt_tls(int fd)
 	};
 	int so_buf = 6553500;
 	int err;
+
+	if (!is_mptcp(fd))
+		return;
+
+	if (cfg_disconnect || cfg_sockopt_types.mptfo)
+		return;
 
 	err = do_ulp_so(fd, "tls");
 	if (err)
@@ -314,11 +333,14 @@ static void sock_test_tcpulp(int sock, int proto, unsigned int line)
 	char buf[8] = "";
 	int ret = getsockopt(sock, IPPROTO_TCP, TCP_ULP, buf, &buflen);
 
+	if (cfg_sockopt_types.tls)
+		return;
+
 	if (ret != 0)
 		X("getsockopt");
 
 	if (buflen > 0) {
-		if (strcmp(buf, "mptcp") != 0 && strcmp(buf, "tls") != 0)
+		if (strcmp(buf, "mptcp") != 0)
 			xerror("unexpected ULP '%s' for proto %d at line %u", buf, proto, line);
 		ret = do_ulp_so(sock, "espintcp");
 		if (ret == 0)
@@ -1591,6 +1613,7 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'I':
 			cfg_repeat = atoi(optarg);
+			cfg_disconnect = true;
 			break;
 		case 'l':
 			listen_mode = true;
