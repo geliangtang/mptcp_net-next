@@ -10,7 +10,7 @@
 
 time_start=$(date +%s)
 
-optstring="S:R:d:e:l:r:h4cm:f:tC"
+optstring="S:R:d:e:l:r:h4cm:f:tCx"
 ret=0
 final_ret=0
 sin=""
@@ -33,6 +33,7 @@ do_tcp=0
 checksum=false
 filesize=0
 connect_per_transfer=1
+tls=false
 port=$((10000 - 1))
 
 if [ $tc_loss -eq 100 ];then
@@ -58,6 +59,7 @@ usage() {
 	echo -e "\t-R: set rcvbuf value (default: use kernel default)"
 	echo -e "\t-m: test mode (poll, sendfile; default: poll)"
 	echo -e "\t-t: also run tests with TCP (use twice to non-fallback tcp)"
+	echo -e "\t-x: enable tls"
 	echo -e "\t-C: enable the MPTCP data checksum"
 }
 
@@ -118,6 +120,9 @@ while getopts "$optstring" option;do
 		;;
 	"C")
 		checksum=true
+		;;
+	"x")
+		tls=true
 		;;
 	"?")
 		usage $0
@@ -345,6 +350,10 @@ do_transfer()
 
 	if [ -n "$testmode" ]; then
 		extra_args+=" -m $testmode"
+	fi
+
+	if "$tls"; then
+		extra_args+=" -o TLS"
 	fi
 
 	if [ -n "$extra_args" ] && $options_log; then
