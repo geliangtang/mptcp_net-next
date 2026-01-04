@@ -1142,6 +1142,8 @@ run_tests()
 	local listener_ns="$1"
 	local connector_ns="$2"
 	local connect_addr="$3"
+	local cl_proto="${4:-MPTCP}"
+	local srv_proto="${5:-MPTCP}"
 
 	local size
 	local test_linkfail=${test_linkfail:-0}
@@ -1186,7 +1188,7 @@ run_tests()
 		make_file "$sinfail" "server" $size
 	fi
 
-	do_transfer ${listener_ns} ${connector_ns} MPTCP MPTCP ${connect_addr}
+	do_transfer ${listener_ns} ${connector_ns} ${cl_proto} ${srv_proto} ${connect_addr}
 }
 
 _dump_stats()
@@ -4500,6 +4502,13 @@ rcvbuf_tests()
 
 tls_tests()
 {
+	# single subflow, tls, TCP
+	if reset "single subflow, tls, TCP"; then
+		test_linkfail=128 tls=1 \
+			run_tests $ns1 $ns2 10.0.1.1 TCP TCP
+		chk_join_nr 0 0 0
+	fi
+
 	# multiple subflows, tls
 	if reset "multiple subflows, tls"; then
 		pm_nl_set_limits $ns1 0 2

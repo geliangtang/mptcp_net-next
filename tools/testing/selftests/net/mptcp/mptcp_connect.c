@@ -288,6 +288,7 @@ static void do_setsockopt_tls(int fd)
 			.cipher_type = TLS_CIPHER_AES_GCM_128,
 		},
 	};
+	int so_buf = 6553500;
 	int err;
 
 	err = do_ulp_so(fd, "tls");
@@ -301,6 +302,9 @@ static void do_setsockopt_tls(int fd)
 	err = setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
 	if (err)
 		xerror("setsockopt TLS_RX");
+
+	set_sndbuf(fd, so_buf);
+	set_rcvbuf(fd, so_buf);
 }
 
 #define X(m)	xerror("%s:%u: %s: failed for proto %d at line %u", __FILE__, __LINE__, (m), proto, line)
