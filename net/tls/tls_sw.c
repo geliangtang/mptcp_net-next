@@ -282,26 +282,35 @@ static int tls_do_decryption(struct sock *sk,
 					  CRYPTO_TFM_REQ_MAY_BACKLOG,
 					  crypto_req_done, &wait);
 		ret = crypto_aead_decrypt(aead_req);
-		if (ret == -EINPROGRESS || ret == -EBUSY)
+		if (ret == -EINPROGRESS || ret == -EBUSY) {
 			ret = crypto_wait_req(ret, &wait);
+			pr_info("%s return 0 ret=%d\n", __func__, ret);
+		}
+		if (ret < 0)
+			pr_info("%s return 1 ret=%d\n", __func__, ret);
 		return ret;
 	}
 
 	ret = crypto_aead_decrypt(aead_req);
-	if (ret == -EINPROGRESS)
+	if (ret == -EINPROGRESS) {
+		pr_info("%s return 2\n", __func__);
 		return 0;
+	}
 
 	if (ret == -EBUSY) {
 		ret = tls_decrypt_async_wait(ctx);
 		darg->async_done = true;
 		/* all completions have run, we're not doing async anymore */
 		darg->async = false;
+		pr_info("%s return 3\n", __func__);
 		return ret;
 	}
 
 	atomic_dec(&ctx->decrypt_pending);
 	darg->async = false;
 
+	if (ret < 0)
+		pr_info("%s return 4 ret=%d\n", __func__, ret);
 	return ret;
 }
 
@@ -1271,8 +1280,10 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 
 	n_sgin = skb_nsg(skb, rxm->offset + prot->prepend_size,
 			 rxm->full_len - prot->prepend_size);
-	if (n_sgin < 1)
+	if (n_sgin < 1) {
+		pr_info("%s return 1 n_sgin=%d\n", __func__, n_sgin);
 		return n_sgin ?: -EBADMSG;
+	}
 
 	if (darg->zc && (out_iov || out_sg)) {
 		clear_skb = NULL;
@@ -1286,8 +1297,10 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 		darg->zc = false;
 
 		clear_skb = tls_alloc_clrtxt_skb(sk, skb, rxm->full_len);
-		if (!clear_skb)
+		if (!clear_skb) {
+			pr_info("%s return 2 NOMEM\n", __func__);
 			return -ENOMEM;
+		}
 
 		n_sgout = 1 + skb_shinfo(clear_skb)->nr_frags;
 	}
@@ -1305,6 +1318,7 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 		      sk->sk_allocation);
 	if (!mem) {
 		err = -ENOMEM;
+		pr_info("%s return 3\n", __func__);
 		goto exit_free_skb;
 	}
 
@@ -1353,8 +1367,10 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 	err = skb_to_sgvec(skb, &sgin[1],
 			   rxm->offset + prot->prepend_size,
 			   rxm->full_len - prot->prepend_size);
-	if (err < 0)
+	if (err < 0) {
+		pr_info("%s return 4\n", __func__);
 		goto exit_free;
+	}
 
 	if (clear_skb) {
 		sg_init_table(sgout, n_sgout);
@@ -1362,16 +1378,20 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 
 		err = skb_to_sgvec(clear_skb, &sgout[1], prot->prepend_size,
 				   data_len + prot->tail_size);
-		if (err < 0)
+		if (err < 0) {
+			pr_info("%s return 5\n", __func__);
 			goto exit_free;
+		}
 	} else if (out_iov) {
 		sg_init_table(sgout, n_sgout);
 		sg_set_buf(&sgout[0], dctx->aad, prot->aad_size);
 
 		err = tls_setup_from_iter(out_iov, data_len, &pages, &sgout[1],
 					  (n_sgout - 1 - tail_pages));
-		if (err < 0)
+		if (err < 0) {
+			pr_info("%s return 6\n", __func__);
 			goto exit_free_pages;
+		}
 
 		if (prot->tail_size) {
 			sg_unmark_end(&sgout[pages]);
@@ -1388,8 +1408,11 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 	err = tls_do_decryption(sk, sgin, sgout, dctx->iv,
 				data_len + prot->tail_size, aead_req, darg);
 	if (err) {
-		if (darg->async_done)
+		if (darg->async_done) {
+			pr_info("%s return 7\n", __func__);
 			goto exit_free_skb;
+		}
+		pr_info("%s return 8\n", __func__);
 		goto exit_free_pages;
 	}
 
@@ -1402,6 +1425,7 @@ static int tls_decrypt_sg(struct sock *sk, struct iov_iter *out_iov,
 			err = tls_decrypt_async_wait(ctx);
 			darg->async = false;
 		}
+		pr_info("%s return 9\n", __func__);
 		return err;
 	}
 
@@ -1435,6 +1459,7 @@ tls_decrypt_sw(struct sock *sk, struct tls_context *tls_ctx,
 	if (err < 0) {
 		if (err == -EBADMSG)
 			TLS_INC_STATS(sock_net(sk), LINUX_MIB_TLSDECRYPTERROR);
+		pr_info("%s return 1 err=%d\n", __func__, err);
 		return err;
 	}
 	/* keep going even for ->async, the code below is TLS 1.3 */
@@ -1446,13 +1471,16 @@ tls_decrypt_sw(struct sock *sk, struct tls_context *tls_ctx,
 		if (!darg->tail)
 			TLS_INC_STATS(sock_net(sk), LINUX_MIB_TLSRXNOPADVIOL);
 		TLS_INC_STATS(sock_net(sk), LINUX_MIB_TLSDECRYPTRETRY);
-		return tls_decrypt_sw(sk, tls_ctx, msg, darg);
+		err = tls_decrypt_sw(sk, tls_ctx, msg, darg);
+		pr_info("%s return 2 err=%d\n", __func__, err);
+		return err;
 	}
 
 	pad = tls_padding_length(prot, darg->skb, darg);
 	if (pad < 0) {
 		if (darg->skb != tls_strp_msg(ctx))
 			consume_skb(darg->skb);
+		pr_info("%s return 3 pad=%d\n", __func__, pad);
 		return pad;
 	}
 
@@ -1471,8 +1499,10 @@ tls_decrypt_device(struct sock *sk, struct msghdr *msg,
 	struct strp_msg *rxm;
 	int pad, err;
 
-	if (tls_ctx->rx_conf != TLS_HW)
+	if (tls_ctx->rx_conf != TLS_HW) {
+		//pr_info("%s not TLS_HW\n", __func__);
 		return 0;
+	}
 
 	err = tls_device_decrypted(sk, tls_ctx);
 	if (err <= 0)
