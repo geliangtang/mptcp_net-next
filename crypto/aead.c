@@ -95,6 +95,7 @@ EXPORT_SYMBOL_GPL(crypto_aead_encrypt);
 int crypto_aead_decrypt(struct aead_request *req)
 {
 	struct crypto_aead *aead = crypto_aead_reqtfm(req);
+	int ret;
 
 	if (crypto_aead_get_flags(aead) & CRYPTO_TFM_NEED_KEY)
 		return -ENOKEY;
@@ -102,7 +103,10 @@ int crypto_aead_decrypt(struct aead_request *req)
 	if (req->cryptlen < crypto_aead_authsize(aead))
 		return -EINVAL;
 
-	return crypto_aead_alg(aead)->decrypt(req);
+	ret = crypto_aead_alg(aead)->decrypt(req);
+	if (ret < 0)
+		pr_info("%s ret=%d\n", __func__, ret);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(crypto_aead_decrypt);
 
