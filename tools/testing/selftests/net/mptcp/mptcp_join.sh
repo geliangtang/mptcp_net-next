@@ -4504,7 +4504,7 @@ tls_tests()
 {
 	# single subflow, tls, TCP
 	if reset "single subflow, tls, TCP"; then
-		test_linkfail=128 tls=1 \
+		test_linkfail=10240 tls=1 \
 			run_tests $ns1 $ns2 10.0.1.1 TCP TCP
 		chk_join_nr 0 0 0
 	fi
@@ -4515,7 +4515,7 @@ tls_tests()
 		pm_nl_set_limits $ns2 0 2
 		pm_nl_add_endpoint $ns2 10.0.2.2 flags subflow
 		pm_nl_add_endpoint $ns2 10.0.3.2 flags subflow
-		test_linkfail=1024 tls=1 \
+		test_linkfail=10240 tls=1 \
 			run_tests $ns1 $ns2 10.0.1.1
 		chk_join_nr 2 2 2
 	fi
@@ -4527,7 +4527,7 @@ tls_tests()
 		pm_nl_set_limits $ns2 1 3
 		pm_nl_add_endpoint $ns2 10.0.3.2 dev ns2eth3 flags subflow
 		pm_nl_add_endpoint $ns2 10.0.4.2 dev ns2eth4 flags subflow
-		test_linkfail=2048 tls=1 \
+		test_linkfail=10240 tls=1 \
 			run_tests $ns1 $ns2 10.0.1.1
 		chk_join_nr 3 3 3
 		chk_add_nr 1 1

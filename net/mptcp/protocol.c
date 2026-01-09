@@ -4585,6 +4585,7 @@ static __poll_t mptcp_check_writeable(struct mptcp_sock *msk)
 	if (__mptcp_stream_is_writeable(sk, 1))
 		return EPOLLOUT | EPOLLWRNORM;
 
+	sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
 	set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 	smp_mb__after_atomic(); /* NOSPACE is changed by mptcp_write_space() */
 	if (__mptcp_stream_is_writeable(sk, 1))
