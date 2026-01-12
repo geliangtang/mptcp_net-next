@@ -4999,9 +4999,14 @@ static u32 mptcp_get_skb_seq(struct sk_buff *skb)
 	return MPTCP_SKB_CB(skb)->map_seq;
 }
 
-u32 mptcp_get_copied_seq(struct sock *sk)
+static u32 mptcp_get_copied_seq(struct sock *sk)
 {
 	return mptcp_sk(sk)->bytes_consumed;
+}
+
+static u64 mptcp_get_write_seq(struct sock *sk)
+{
+	return mptcp_sk(sk)->write_seq;
 }
 
 static void mptcp_check_app_limited(struct sock *sk)
@@ -5019,6 +5024,39 @@ static void mptcp_check_app_limited(struct sock *sk)
 	}
 }
 
+static void mptcp_clean_acked_enable(struct sock *sk,
+				     void (*cad)(struct sock *sk, u32 ack_seq))
+{
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct mptcp_subflow_context *subflow;
+
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+
+		lock_sock(ssk);
+		clean_acked_data_enable(tcp_sk(ssk), cad);
+		release_sock(ssk);
+	}
+#endif
+}
+
+static void mptcp_clean_acked_disable(struct sock *sk)
+{
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct mptcp_subflow_context *subflow;
+
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+
+		lock_sock(ssk);
+		clean_acked_data_disable(tcp_sk(ssk));
+		release_sock(ssk);
+	}
+#endif
+}
+
 struct tls_prot_ops tls_mptcp_ops = {
 	.protocol		= IPPROTO_MPTCP,
 	.inq			= mptcp_inq,
@@ -5029,8 +5067,12 @@ struct tls_prot_ops tls_mptcp_ops = {
 	.read_done		= mptcp_read_done,
 	.get_skb_off		= mptcp_get_skb_off,
 	.get_skb_seq		= mptcp_get_skb_seq,
+	.get_copied_seq		= mptcp_get_copied_seq,
+	.get_write_seq		= mptcp_get_write_seq,
 	.poll			= mptcp_poll,
 	.epollin_ready		= mptcp_epollin_ready,
 	.check_app_limited	= mptcp_check_app_limited,
+	.clean_acked_enable	= mptcp_clean_acked_enable,
+	.clean_acked_disable	= mptcp_clean_acked_disable,
 };
 EXPORT_SYMBOL(tls_mptcp_ops);
