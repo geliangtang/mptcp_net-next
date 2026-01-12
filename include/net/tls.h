@@ -236,10 +236,15 @@ struct tls_prot_ops {
 	u32 (*get_skb_seq)(struct sk_buff *skb);
 	int (*skb_copy_bits)(const struct sk_buff *skb, int offset,
 			     void *to, int len);
+	u32 (*get_copied_seq)(struct sock *sk);
+	u64 (*get_write_seq)(struct sock *sk);
 	__poll_t (*poll)(struct file *file, struct socket *sock,
 			 struct poll_table_struct *wait);
 	bool (*epollin_ready)(const struct sock *sk);
 	void (*check_app_limited)(struct sock *sk);
+	void (*clean_acked_enable)(struct sock *sk,
+				   void (*cad)(struct sock *sk, u32 ack_seq));
+	void (*clean_acked_disable)(struct sock *sk);
 };
 
 struct tls_prot {

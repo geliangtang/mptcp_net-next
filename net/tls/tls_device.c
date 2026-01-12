@@ -206,7 +206,7 @@ void tls_device_sk_destruct(struct sock *sk)
 			destroy_record(ctx->open_record);
 		delete_all_records(ctx);
 		crypto_free_aead(ctx->aead_send);
-		clean_acked_data_disable(tcp_sk(sk));
+		tls_ctx->prot->ops->clean_acked_disable(sk);
 	}
 
 	tls_device_queue_ctx_destruction(tls_ctx);
@@ -283,16 +283,16 @@ static int tls_push_record(struct sock *sk,
 			   int flags)
 {
 	struct tls_prot_info *prot = &ctx->prot_info;
-	struct tcp_sock *tp = tcp_sk(sk);
+	u64 write_seq = ctx->prot->ops->get_write_seq(sk);
 	skb_frag_t *frag;
 	int i;
 
-	record->end_seq = tp->write_seq + record->len;
+	record->end_seq = write_seq + record->len;
 	list_add_tail_rcu(&record->list, &offload_ctx->records_list);
 	offload_ctx->open_record = NULL;
 
 	if (test_bit(TLS_TX_SYNC_SCHED, &ctx->flags))
-		tls_device_resync_tx(sk, ctx, tp->write_seq);
+		tls_device_resync_tx(sk, ctx, write_seq);
 
 	tls_advance_record_sn(sk, prot, &ctx->tx);
 
@@ -805,7 +805,7 @@ void tls_device_rx_resync_new_rec(struct sock *sk, u32 rcd_len, u32 seq)
 		/* head of next rec is already in, note that the sock_inq will
 		 * include the currently parsed message when called from parser
 		 */
-		sock_data = tcp_inq(sk);
+		sock_data = tls_ctx->prot->ops->inq(sk);
 		if (sock_data > rcd_len) {
 			trace_tls_device_rx_resync_nh_delay(sk, sock_data,
 							    rcd_len);
@@ -864,7 +864,7 @@ static void tls_device_core_ctrl_rx_resync(struct tls_context *tls_ctx,
 	rxm = strp_msg(skb);
 
 	/* head of next rec is already in, parser will sync for us */
-	if (tcp_inq(sk) > rxm->full_len) {
+	if (tls_ctx->prot->ops->inq(sk) > rxm->full_len) {
 		trace_tls_device_rx_resync_nh_schedule(sk);
 		ctx->resync_nh_do_now = 1;
 	} else {
@@ -874,7 +874,7 @@ static void tls_device_core_ctrl_rx_resync(struct tls_context *tls_ctx,
 		memcpy(rcd_sn, tls_ctx->rx.rec_seq, prot->rec_seq_size);
 		tls_bigint_increment(rcd_sn, prot->rec_seq_size);
 
-		tls_device_resync_rx(tls_ctx, sk, tcp_sk(sk)->copied_seq,
+		tls_device_resync_rx(tls_ctx, sk, tls_ctx->prot->ops->get_copied_seq(sk),
 				     rcd_sn);
 	}
 }
@@ -911,7 +911,9 @@ tls_device_reencrypt(struct sock *sk, struct tls_context *tls_ctx)
 	sg_init_table(sg, 1);
 	sg_set_buf(&sg[0], buf,
 		   rxm->full_len + TLS_HEADER_SIZE + cipher_desc->iv);
-	err = skb_copy_bits(skb, offset, buf, TLS_HEADER_SIZE + cipher_desc->iv);
+	err = tls_ctx->prot->ops->skb_copy_bits(skb, offset, buf,
+						TLS_HEADER_SIZE +
+						cipher_desc->iv);
 	if (err)
 		goto free_buf;
 
@@ -987,7 +989,7 @@ int tls_device_decrypted(struct sock *sk, struct tls_context *tls_ctx)
 		is_encrypted = 0;
 	}
 
-	trace_tls_device_decrypted(sk, tcp_sk(sk)->copied_seq - rxm->full_len,
+	trace_tls_device_decrypted(sk, tls_ctx->prot->ops->get_copied_seq(sk) - rxm->full_len,
 				   tls_ctx->rx.rec_seq, rxm->full_len,
 				   is_encrypted, is_decrypted);
 
@@ -1069,6 +1071,7 @@ int tls_set_device_offload(struct sock *sk)
 	struct net_device *netdev;
 	struct tls_context *ctx;
 	char *iv, *rec_seq;
+	u64 write_seq;
 	int rc;
 
 	ctx = tls_get_ctx(sk);
@@ -1129,12 +1132,13 @@ int tls_set_device_offload(struct sock *sk)
 	if (rc)
 		goto free_offload_ctx;
 
-	start_marker_record->end_seq = tcp_sk(sk)->write_seq;
+	write_seq = ctx->prot->ops->get_write_seq(sk);
+	start_marker_record->end_seq = write_seq;
 	start_marker_record->len = 0;
 	start_marker_record->num_frags = 0;
 	list_add_tail(&start_marker_record->list, &offload_ctx->records_list);
 
-	clean_acked_data_enable(tcp_sk(sk), &tls_tcp_clean_acked);
+	ctx->prot->ops->clean_acked_enable(sk, &tls_tcp_clean_acked);
 	ctx->push_pending_record = tls_device_push_pending_record;
 
 	/* TLS offload is greatly simplified if we don't send
@@ -1160,9 +1164,9 @@ int tls_set_device_offload(struct sock *sk)
 	ctx->priv_ctx_tx = offload_ctx;
 	rc = netdev->tlsdev_ops->tls_dev_add(netdev, sk, TLS_OFFLOAD_CTX_DIR_TX,
 					     &ctx->crypto_send.info,
-					     tcp_sk(sk)->write_seq);
+					     write_seq);
 	trace_tls_device_offload_set(sk, TLS_OFFLOAD_CTX_DIR_TX,
-				     tcp_sk(sk)->write_seq, rec_seq, rc);
+				     write_seq, rec_seq, rc);
 	if (rc)
 		goto release_lock;
 
@@ -1180,7 +1184,7 @@ int tls_set_device_offload(struct sock *sk)
 
 release_lock:
 	up_read(&device_offload_lock);
-	clean_acked_data_disable(tcp_sk(sk));
+	ctx->prot->ops->clean_acked_disable(sk);
 	crypto_free_aead(offload_ctx->aead_send);
 free_offload_ctx:
 	kfree(offload_ctx);
@@ -1197,6 +1201,7 @@ int tls_set_device_offload_rx(struct sock *sk, struct tls_context *ctx)
 	struct tls12_crypto_info_aes_gcm_128 *info;
 	struct tls_offload_context_rx *context;
 	struct net_device *netdev;
+	u32 copied_seq;
 	int rc = 0;
 
 	if (sk->sk_protocol == IPPROTO_MPTCP)
@@ -1242,12 +1247,13 @@ int tls_set_device_offload_rx(struct sock *sk, struct tls_context *ctx)
 	if (rc)
 		goto release_ctx;
 
+	copied_seq = ctx->prot->ops->get_copied_seq(sk);
 	rc = netdev->tlsdev_ops->tls_dev_add(netdev, sk, TLS_OFFLOAD_CTX_DIR_RX,
 					     &ctx->crypto_recv.info,
-					     tcp_sk(sk)->copied_seq);
+					     copied_seq);
 	info = (void *)&ctx->crypto_recv.info;
 	trace_tls_device_offload_set(sk, TLS_OFFLOAD_CTX_DIR_RX,
-				     tcp_sk(sk)->copied_seq, info->rec_seq, rc);
+				     copied_seq, info->rec_seq, rc);
 	if (rc)
 		goto free_sw_resources;
 

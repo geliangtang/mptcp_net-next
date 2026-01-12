@@ -1380,8 +1380,10 @@ static int tls_validate_prot_ops(const struct tls_prot_ops *ops)
 	    !ops->recv_skb || !ops->lock_is_held ||
 	    !ops->read_sock || !ops->read_done ||
 	    !ops->get_skb_seq || !ops->skb_copy_bits ||
+	    !ops->get_copied_seq || !ops->get_write_seq ||
 	    !ops->poll || !ops->epollin_ready ||
-	    !ops->check_app_limited) {
+	    !ops->check_app_limited ||
+	    !ops->clean_acked_enable || !ops->clean_acked_disable) {
 		pr_err("%d does not implement required ops\n", ops->protocol);
 		return -EINVAL;
 	}
@@ -1434,9 +1436,34 @@ static u32 tls_tcp_get_skb_seq(struct sk_buff *skb)
 	return TCP_SKB_CB(skb)->seq;
 }
 
+static u32 tls_tcp_get_copied_seq(struct sock *sk)
+{
+	return tcp_sk(sk)->copied_seq;
+}
+
+static u64 tls_tcp_get_write_seq(struct sock *sk)
+{
+	return tcp_sk(sk)->write_seq;
+}
+
 static bool tls_tcp_epollin_ready(const struct sock *sk)
 {
 	return tcp_epollin_ready(sk, INT_MAX);
+}
+
+static void tls_tcp_clean_acked_enable(struct sock *sk,
+				       void (*cad)(struct sock *sk, u32 ack_seq))
+{
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+	clean_acked_data_enable(tcp_sk(sk), cad);
+#endif
+}
+
+static void tls_tcp_clean_acked_disable(struct sock *sk)
+{
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+	clean_acked_data_disable(tcp_sk(sk));
+#endif
 }
 
 static struct tls_prot_ops tls_tcp_ops = {
@@ -1450,9 +1477,13 @@ static struct tls_prot_ops tls_tcp_ops = {
 	.read_done		= tcp_read_done,
 	.get_skb_seq		= tls_tcp_get_skb_seq,
 	.skb_copy_bits		= skb_copy_bits,
+	.get_copied_seq		= tls_tcp_get_copied_seq,
+	.get_write_seq		= tls_tcp_get_write_seq,
 	.poll			= tcp_poll,
 	.epollin_ready		= tls_tcp_epollin_ready,
 	.check_app_limited	= tcp_rate_check_app_limited,
+	.clean_acked_enable	= tls_tcp_clean_acked_enable,
+	.clean_acked_disable	= tls_tcp_clean_acked_disable,
 };
 
 static int __init tls_register(void)
