@@ -1020,7 +1020,7 @@ static void __wait_for_test(struct __test_metadata *t)
 	if (timed_out) {
 		t->exit_code = KSFT_FAIL;
 		fprintf(TH_LOG_STREAM,
-			"# %s: Test terminated by timeout\n", t->name);
+			"# %s: Test terminated by timeout %d\n", t->name, t->timeout);
 	} else if (WIFEXITED(status)) {
 		if (WEXITSTATUS(status) == KSFT_SKIP ||
 		    WEXITSTATUS(status) == KSFT_XPASS ||
