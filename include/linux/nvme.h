@@ -119,6 +119,13 @@ enum {
 	NVMF_TCP_SECTYPE_INVALID = 0xff,
 };
 
+/* TSAS PROTTYPE for TCP transport */
+enum {
+	NVMF_TCP_PROTTYPE_TCP = 0,	/* TCP */
+	NVMF_TCP_PROTTYPE_MPTCP = 1,	/* MPTCP */
+	NVMF_TCP_PROTTYPE_INVALID = 0xff,
+};
+
 #define NVME_AQ_DEPTH		32
 #define NVME_NR_AEN_COMMANDS	1
 #define NVME_AQ_BLK_MQ_DEPTH	(NVME_AQ_DEPTH - NVME_NR_AEN_COMMANDS)
@@ -1690,6 +1697,7 @@ struct nvmf_disc_rsp_page_entry {
 		} rdma;
 		struct tcp {
 			__u8	sectype;
+			__u8	prottype;
 		} tcp;
 	} tsas;
 };
