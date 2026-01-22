@@ -381,6 +381,7 @@ static void nvmet_port_init_tsas_rdma(struct nvmet_port *port)
 static void nvmet_port_init_tsas_tcp(struct nvmet_port *port, int sectype)
 {
 	port->disc_addr.tsas.tcp.sectype = sectype;
+	port->disc_addr.tsas.tcp.prottype = NVMF_TCP_PROTTYPE_TCP;
 }
 
 static ssize_t nvmet_addr_trtype_store(struct config_item *item,
