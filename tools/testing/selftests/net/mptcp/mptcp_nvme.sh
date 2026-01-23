@@ -237,9 +237,9 @@ init()
 		keyctl list %:.nvme
 		keyctl show
 
-		ip netns exec "$ns1" /usr/sbin/tlshd &
+		ip netns exec "$ns1" /usr/sbin/tlshd & #-c ./tlshd.conf -s &
 		tlshd_pid_ns1=$!
-		ip netns exec "$ns2" /usr/sbin/tlshd &
+		ip netns exec "$ns2" /usr/sbin/tlshd & #-c ./tlshd.conf -s &
 		tlshd_pid_ns2=$!
 	fi
 }
