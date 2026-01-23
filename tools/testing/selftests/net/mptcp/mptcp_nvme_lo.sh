@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0
 
 trtype="${1:-mptcp}"
+tls=${2:-""}
 traddr="127.0.0.1"
 ns=1
 port=1234
@@ -20,6 +21,10 @@ cleanup()
 	rmdir /sys/kernel/config/nvmet/subsystems/${nqn}
 	losetup -d /dev/loop100
 	rm -rf /tmp/test.raw
+	if [ -n "$tls" ]; then
+		kill "$tlshd_pid" 2>/dev/null
+		wait "$tlshd_pid" 2>/dev/null
+	fi
 }
 
 check_error()
@@ -49,6 +54,24 @@ echo ${trtype} > addr_trtype
 echo ipv4 > addr_adrfam
 echo 0.0.0.0 > addr_traddr
 echo ${trsvcid} > addr_trsvcid
+
+if [ -n "$tls" ]; then
+	echo "tls1.3" > addr_tsas
+
+	keyctl clear @s
+	key=$(nvme gen-tls-key --subsysnqn=${nqn})
+
+	nvme check-tls-key --subsysnqn=${nqn} -i -d ${key}
+	nvme check-tls-key --subsysnqn=nqn.2014-08.org.nvmexpress.discovery -i -d ${key}
+
+	/usr/sbin/tlshd &
+	tlshd_pid=$!
+
+	keyctl list %:.nvme
+	keyctl show
+
+	extra="--tls"
+fi
 
 cd subsystems
 ln -s ../../../subsystems/${nqn} ${trtype}subsys
