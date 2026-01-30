@@ -4689,6 +4689,8 @@ static int __mptcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 			break;
 
 		mptcp_eat_recv_skb(sk, skb);
+		if (!desc->count)
+			break;
 	}
 
 	if (noack)
