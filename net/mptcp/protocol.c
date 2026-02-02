@@ -4319,6 +4319,7 @@ static void mptcp_splice_eof(struct socket *sock)
 	struct sock *sk = sock->sk, *ssk;
 	struct mptcp_sock *msk;
 
+	pr_info("%s\n", __func__);
 	msk = mptcp_sk(sk);
 
 	lock_sock(sk);
