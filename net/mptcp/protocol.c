@@ -4534,6 +4534,7 @@ static void mptcp_splice_eof(struct socket *sock)
 			continue;
 
 		lock_sock_nested(ssk, SINGLE_DEPTH_NESTING);
+		pr_info("%s\n", __func__);
 		tp = tcp_sk(ssk);
 		mss_now = tcp_send_mss(ssk, &size_goal, 0);
 		tcp_push(ssk, 0, mss_now, tp->nonagle, size_goal);
