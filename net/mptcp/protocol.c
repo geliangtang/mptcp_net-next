@@ -4300,6 +4300,27 @@ static int mptcp_bpf_update_proto(struct sock *sk,
 }
 #endif
 
+static void mptcp_splice_eof(struct socket *sock)
+{
+	struct mptcp_subflow_context *subflow;
+	struct sock *sk = sock->sk, *ssk;
+	struct mptcp_sock *msk;
+
+	msk = mptcp_sk(sk);
+
+	lock_sock(sk);
+	mptcp_rps_record_subflows(msk);
+	mptcp_for_each_subflow(msk, subflow) {
+		ssk = mptcp_subflow_tcp_sock(subflow);
+
+		if (ssk->sk_state == TCP_CLOSE)
+			continue;
+
+		do_tcp_splice_eof(ssk);
+	}
+	release_sock(sk);
+}
+
 static struct proto mptcp_prot = {
 	.name		= "MPTCP",
 	.owner		= THIS_MODULE,
@@ -4334,6 +4355,7 @@ static struct proto mptcp_prot = {
 #ifdef CONFIG_BPF_SYSCALL
 	.psock_update_sk_prot	= mptcp_bpf_update_proto,
 #endif
+	.splice_eof	= mptcp_splice_eof,
 };
 
 #ifdef CONFIG_BPF_SYSCALL
@@ -4837,6 +4859,7 @@ static const struct proto_ops mptcp_stream_ops = {
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
 	.splice_read	   = mptcp_splice_read,
+	.splice_eof	   = inet_splice_eof,
 };
 
 static struct inet_protosw mptcp_protosw = {
@@ -4949,6 +4972,7 @@ static const struct proto_ops mptcp_v6_stream_ops = {
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
 	.splice_read	   = mptcp_splice_read,
+	.splice_eof	   = inet_splice_eof,
 };
 
 static struct proto mptcp_v6_prot;
