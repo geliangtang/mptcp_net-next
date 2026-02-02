@@ -1470,6 +1470,7 @@ void do_tcp_splice_eof(struct sock *sk)
 		return;
 
 	lock_sock(sk);
+	pr_info("%s\n", __func__);
 	mss_now = tcp_send_mss(sk, &size_goal, 0);
 	tcp_push(sk, 0, mss_now, tp->nonagle, size_goal);
 	release_sock(sk);
