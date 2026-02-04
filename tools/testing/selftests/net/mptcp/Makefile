@@ -30,6 +30,7 @@ TEST_GEN_FILES := \
 	mptcp_connect \
 	mptcp_diag \
 	mptcp_sockopt \
+	multi_chunk \
 	pm_nl_ctl \
 	restore_ipv4 \
 	restore_ipv6 \
