@@ -26,6 +26,7 @@ TEST_GEN_FILES := \
 	mptcp_diag \
 	mptcp_inq \
 	mptcp_sockopt \
+	multi_chunk \
 	pm_nl_ctl \
 	tls \
 # end of TEST_GEN_FILES
