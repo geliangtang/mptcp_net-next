@@ -35,6 +35,18 @@ ns2_cleanup()
 	nvme disconnect -n "${nqn}" || true
 }
 
+check_error()
+{
+	ss -N "$ns1" -Mtia > ns1_"${1}".log
+	ss -N "$ns2" -Mtia > ns2_"${1}".log
+	if dmesg | grep -E -q "starting error recovery|Buffer I/O error|fatal error occurred|failed nvme_keep_alive_end_io"; then
+		echo "Test error at ${1}"
+		ret="${KSFT_FAIL}"
+	fi
+	rm -rf ns1_"${1}".log ns2_"${1}".log
+	echo "${1} done"
+}
+
 # This function is used in the cleanup trap
 #shellcheck disable=SC2317,SC2329
 cleanup()
@@ -56,13 +68,15 @@ cleanup()
 	fi
 	rm -rf "${temp_file}"
 
+	check_error "cleanup"
+
 	mptcp_lib_ns_exit "$ns1" "$ns2"
 
-	kill "$monitor_pid_ns1" 2>/dev/null
-	wait "$monitor_pid_ns1" 2>/dev/null
+	#kill "$monitor_pid_ns1" 2>/dev/null
+	#wait "$monitor_pid_ns1" 2>/dev/null
 
-	kill "$monitor_pid_ns2" 2>/dev/null
-	wait "$monitor_pid_ns2" 2>/dev/null
+	#kill "$monitor_pid_ns2" 2>/dev/null
+	#wait "$monitor_pid_ns2" 2>/dev/null
 
 	if [ -n "$tls" ]; then
 		kill "$tlshd_pid_ns1" 2>/dev/null
@@ -93,6 +107,8 @@ cleanup()
 
 init()
 {
+	dmesg -C
+
 	mptcp_lib_ns_init ns1 ns2
 
 	# ns1		ns2
@@ -133,10 +149,10 @@ init()
 	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.3.2 flags subflow
 	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.4.2 flags subflow
 
-	ip -n "${ns1}" mptcp monitor &
-	monitor_pid_ns1=$!
-	ip -n "${ns2}" mptcp monitor &
-	monitor_pid_ns2=$!
+	#ip -n "${ns1}" mptcp monitor &
+	#monitor_pid_ns1=$!
+	#ip -n "${ns2}" mptcp monitor &
+	#monitor_pid_ns2=$!
 
 	if [ -n "$tls" ]; then
 		local key=$(nvme gen-tls-key)
@@ -287,6 +303,7 @@ run_test()
 }
 
 run_test "$@"
+check_error "run_test"
 
 mptcp_lib_result_print_all_tap
 exit "$ret"
