@@ -4532,6 +4532,31 @@ tls_tests()
 		chk_join_nr 3 3 3
 		chk_add_nr 1 1
 	fi
+
+	# mptcp tls tests
+	if reset "mptcp tls tests"; then
+		pm_nl_set_limits $ns1 8 8
+		pm_nl_add_endpoint $ns1 10.0.2.1 flags subflow
+		pm_nl_add_endpoint $ns1 10.0.3.1 flags subflow
+		pm_nl_add_endpoint $ns1 10.0.4.1 flags subflow
+
+		ip netns exec $ns1 ./tls -v 12_aes_gcm_mptcp \
+					 -v 13_aes_gcm_mptcp \
+					 -v 12_chacha_mptcp \
+					 -v 13_chacha_mptcp \
+					 -v 13_sm4_gcm_mptcp \
+					 -v 13_sm4_ccm_mptcp \
+					 -v 12_aes_ccm_mptcp \
+					 -v 13_aes_ccm_mptcp \
+					 -v 12_aes_gcm_256_mptcp \
+					 -v 13_aes_gcm_256_mptcp \
+					 -v 13_nopad_mptcp \
+					 -v 12_aria_gcm_mptcp \
+					 -v 12_aria_gcm_256_mptcp &
+		pid=$!
+		wait $pid
+		#chk_join_nr 3 0 0
+	fi
 }
 
 backlog_tests()
