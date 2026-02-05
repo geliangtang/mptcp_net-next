@@ -4525,6 +4525,23 @@ tls_tests()
 	fi
 }
 
+backlog_tests()
+{
+	# backlog tests
+	if reset "backlog tests"; then
+		pm_nl_set_limits $ns1 8 8
+		pm_nl_add_endpoint $ns1 10.0.2.1 flags subflow
+		pm_nl_add_endpoint $ns1 10.0.3.1 flags subflow
+		pm_nl_add_endpoint $ns1 10.0.4.1 flags subflow
+
+		ip netns exec $ns1 ./multi_chunk &
+		pid=$!
+		wait $pid
+
+		#chk_join_nr 3 0 0
+	fi
+}
+
 # [$1: error message]
 usage()
 {
@@ -4577,6 +4594,7 @@ all_tests_sorted=(
 	I@endpoint_tests
 	R@rcvbuf_tests
 	c@tls_tests
+	x@backlog_tests
 )
 
 all_tests_args=""
