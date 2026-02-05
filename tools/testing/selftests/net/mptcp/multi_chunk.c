@@ -90,7 +90,7 @@ int main()
 	}
 
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(TEST_PORT);
 
 	if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
