@@ -879,19 +879,6 @@ static inline bool mptcp_epollin_ready(const struct sock *sk)
 }
 
 int mptcp_set_rcvlowat(struct sock *sk, int val);
-int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len);
-int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
-		  int flags);
-void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied);
-void __mptcp_cleanup_rbuf(struct mptcp_sock *msk, int copied, bool lock);
-int mptcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
-		      int flags, int *addr_len);
-int mptcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size);
-int mptcp_bpf_recvmsg_parser(struct sock *sk,
-			     struct msghdr *msg,
-			     size_t len,
-			     int flags,
-			     int *addr_len);
 
 static inline bool __tcp_can_send(const struct sock *ssk)
 {
