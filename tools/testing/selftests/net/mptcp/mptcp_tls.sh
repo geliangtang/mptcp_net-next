@@ -39,7 +39,96 @@ mptcp_lib_check_mptcp
 trap cleanup EXIT
 
 init
+ip -n "${ns1}" mptcp limits
+mptcp_lib_pm_nl_show_endpoints "$ns1"
 
+#ip netns exec "$ns1" ./tls -t nonblocking &
+#ip netns exec "$ns1" ./tls -t shutdown_reuse &
+#ip netns exec "$ns1" ./tls -t mutliproc_even \
+#			 -t mutliproc_readers \
+#			 -t mutliproc_writers \
+#			 -t mutliproc_sendpage_even \
+#			 -t mutliproc_sendpage_readers \
+#			 -t mutliproc_sendpage_writers &
+#ip netns exec "$ns1" ./tls \
+#-r tls.12_aes_gcm_mptcp.mutliproc_even \
+#-r tls.12_aes_gcm_mptcp.mutliproc_readers \
+#-r tls.12_aes_gcm_mptcp.mutliproc_writers \
+#-r tls.12_aes_gcm_mptcp.mutliproc_sendpage_even \
+#-r tls.12_aes_gcm_mptcp.mutliproc_sendpage_readers \
+#-r tls.12_aes_gcm_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_aes_gcm_mptcp.mutliproc_even \
+#-r tls.13_aes_gcm_mptcp.mutliproc_readers \
+#-r tls.13_aes_gcm_mptcp.mutliproc_writers \
+#-r tls.13_aes_gcm_mptcp.mutliproc_sendpage_even \
+#-r tls.13_aes_gcm_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_aes_gcm_mptcp.mutliproc_sendpage_writers \
+#-r tls.12_chacha_mptcp.mutliproc_even \
+#-r tls.12_chacha_mptcp.mutliproc_readers \
+#-r tls.12_chacha_mptcp.mutliproc_writers \
+#-r tls.12_chacha_mptcp.mutliproc_sendpage_even \
+#-r tls.12_chacha_mptcp.mutliproc_sendpage_readers \
+#-r tls.12_chacha_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_chacha_mptcp.mutliproc_even \
+#-r tls.13_chacha_mptcp.mutliproc_readers \
+#-r tls.13_chacha_mptcp.mutliproc_writers \
+#-r tls.13_chacha_mptcp.mutliproc_sendpage_even \
+#-r tls.13_chacha_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_chacha_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_sm4_gcm_mptcp.mutliproc_even \
+#-r tls.13_sm4_gcm_mptcp.mutliproc_readers \
+#-r tls.13_sm4_gcm_mptcp.mutliproc_writers \
+#-r tls.13_sm4_gcm_mptcp.mutliproc_sendpage_even \
+#-r tls.13_sm4_gcm_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_sm4_gcm_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_sm4_ccm_mptcp.mutliproc_even \
+#-r tls.13_sm4_ccm_mptcp.mutliproc_readers \
+#-r tls.13_sm4_ccm_mptcp.mutliproc_writers \
+#-r tls.13_sm4_ccm_mptcp.mutliproc_sendpage_even \
+#-r tls.13_sm4_ccm_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_sm4_ccm_mptcp.mutliproc_sendpage_writers \
+#-r tls.12_aes_ccm_mptcp.mutliproc_even \
+#-r tls.12_aes_ccm_mptcp.mutliproc_readers \
+#-r tls.12_aes_ccm_mptcp.mutliproc_writers \
+#-r tls.12_aes_ccm_mptcp.mutliproc_sendpage_even \
+#-r tls.12_aes_ccm_mptcp.mutliproc_sendpage_readers \
+#-r tls.12_aes_ccm_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_aes_ccm_mptcp.mutliproc_even \
+#-r tls.13_aes_ccm_mptcp.mutliproc_readers \
+#-r tls.13_aes_ccm_mptcp.mutliproc_writers \
+#-r tls.13_aes_ccm_mptcp.mutliproc_sendpage_even \
+#-r tls.13_aes_ccm_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_aes_ccm_mptcp.mutliproc_sendpage_writers \
+#-r tls.12_aes_gcm_256_mptcp.mutliproc_even \
+#-r tls.12_aes_gcm_256_mptcp.mutliproc_readers \
+#-r tls.12_aes_gcm_256_mptcp.mutliproc_writers \
+#-r tls.12_aes_gcm_256_mptcp.mutliproc_sendpage_even \
+#-r tls.12_aes_gcm_256_mptcp.mutliproc_sendpage_readers \
+#-r tls.12_aes_gcm_256_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_aes_gcm_256_mptcp.mutliproc_even \
+#-r tls.13_aes_gcm_256_mptcp.mutliproc_readers \
+#-r tls.13_aes_gcm_256_mptcp.mutliproc_writers \
+#-r tls.13_aes_gcm_256_mptcp.mutliproc_sendpage_even \
+#-r tls.13_aes_gcm_256_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_aes_gcm_256_mptcp.mutliproc_sendpage_writers \
+#-r tls.13_nopad_mptcp.mutliproc_even \
+#-r tls.13_nopad_mptcp.mutliproc_readers \
+#-r tls.13_nopad_mptcp.mutliproc_writers \
+#-r tls.13_nopad_mptcp.mutliproc_sendpage_even \
+#-r tls.13_nopad_mptcp.mutliproc_sendpage_readers \
+#-r tls.13_nopad_mptcp.mutliproc_sendpage_writers \
+#-r tls.12_aria_gcm_mptcp.mutliproc_even \
+#-r tls.12_aria_gcm_mptcp.mutliproc_readers \
+#-r tls.12_aria_gcm_mptcp.mutliproc_writers \
+#-r tls.12_aria_gcm_mptcp.mutliproc_sendpage_even \
+#-r tls.12_aria_gcm_mptcp.mutliproc_sendpage_readers \
+#-r tls.12_aria_gcm_mptcp.mutliproc_sendpage_writers \
+#-r tls.12_aria_gcm_256_mptcp.mutliproc_even \
+#-r tls.12_aria_gcm_256_mptcp.mutliproc_readers \
+#-r tls.12_aria_gcm_256_mptcp.mutliproc_writers \
+#-r tls.12_aria_gcm_256_mptcp.mutliproc_sendpage_even \
+#-r tls.12_aria_gcm_256_mptcp.mutliproc_sendpage_readers \
+#-r tls.12_aria_gcm_256_mptcp.mutliproc_sendpage_writers &
 ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
 			   -v 13_aes_gcm_mptcp \
 			   -v 12_chacha_mptcp \
