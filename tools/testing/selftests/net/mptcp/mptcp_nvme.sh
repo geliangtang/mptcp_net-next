@@ -89,6 +89,8 @@ ns1_cleanup()
 ns2_cleanup()
 {
 	nvme disconnect -n "${nqn}" || true
+
+	sleep 1
 }
 
 check_error()
@@ -125,6 +127,8 @@ cleanup()
 	then
 		echo "ns1_cleanup failed" >&2
 	fi
+
+	sleep 1
 
 	if [ -n "${loop_dev}" ] && [ -b "${loop_dev}" ]; then
 		losetup -d "${loop_dev}" 2>/dev/null || true
@@ -446,6 +450,8 @@ run_test()
 	then
 		ret="${KSFT_FAIL}"
 	fi
+
+	sleep 1
 
 	if ! ip netns exec "$ns2" bash <<- EOF
 		$(declare -f set_io_policy)
