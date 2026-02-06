@@ -303,7 +303,7 @@ static int sock_map_link(struct bpf_map *map, struct sock *sk)
 
 	write_lock_bh(&sk->sk_callback_lock);
 	if (stream_parser && stream_verdict && !psock->saved_data_ready) {
-		if (sk_is_tcp(sk) || sk_is_msk(sk))
+		if (sk_is_tcp(sk))
 			ret = sk_psock_init_strp(sk, psock);
 		else
 			ret = -EOPNOTSUPP;
@@ -527,7 +527,7 @@ static bool sock_map_op_okay(const struct bpf_sock_ops_kern *ops)
 
 static bool sock_map_redirect_allowed(const struct sock *sk)
 {
-	if (sk_is_tcp(sk) || sk_is_msk(sk))
+	if (sk_is_tcp(sk))
 		return sk->sk_state != TCP_LISTEN;
 	else
 		return READ_ONCE(sk->sk_state) == TCP_ESTABLISHED;
@@ -540,7 +540,7 @@ static bool sock_map_sk_is_suitable(const struct sock *sk)
 
 static bool sock_map_sk_state_allowed(const struct sock *sk)
 {
-	if (sk_is_tcp(sk) || sk_is_msk(sk))
+	if (sk_is_tcp(sk))
 		return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_LISTEN);
 	if (sk_is_stream_unix(sk))
 		return (1 << READ_ONCE(sk->sk_state)) & TCPF_ESTABLISHED;
@@ -600,7 +600,6 @@ static long sock_map_update_elem(struct bpf_map *map, void *key,
 	struct sock *sk = (struct sock *)value;
 	int ret;
 
-	pr_info("%s\n", __func__);
 	if (unlikely(!sk || !sk_fullsock(sk)))
 		return -EINVAL;
 
@@ -682,7 +681,7 @@ BPF_CALL_4(bpf_msg_redirect_map, struct sk_msg *, msg,
 	sk = __sock_map_lookup_elem(map, key);
 	if (unlikely(!sk || !sock_map_redirect_allowed(sk)))
 		return SK_DROP;
-	if (!(flags & BPF_F_INGRESS) && !(sk_is_tcp(sk) || sk_is_msk(sk)))
+	if (!(flags & BPF_F_INGRESS) && !sk_is_tcp(sk))
 		return SK_DROP;
 	if (sk_is_vsock(sk))
 		return SK_DROP;
@@ -1288,7 +1287,7 @@ BPF_CALL_4(bpf_msg_redirect_hash, struct sk_msg *, msg,
 	sk = __sock_hash_lookup_elem(map, key);
 	if (unlikely(!sk || !sock_map_redirect_allowed(sk)))
 		return SK_DROP;
-	if (!(flags & BPF_F_INGRESS) && !(sk_is_tcp(sk) || sk_is_msk(sk)))
+	if (!(flags & BPF_F_INGRESS) && !sk_is_tcp(sk))
 		return SK_DROP;
 	if (sk_is_vsock(sk))
 		return SK_DROP;
