@@ -239,7 +239,7 @@ static inline int socket_loopback_reuseport(int family, int sotype, int progfd)
 
 	init_addr_loopback(family, &addr, &len);
 
-	s = xsocket(family, sotype, ((family == AF_INET || family == AF_INET6) && (sotype & SOCK_STREAM)) ? IPPROTO_MPTCP : 0);
+	s = xsocket(family, sotype, 0);
 	if (s == -1)
 		return -1;
 
@@ -340,7 +340,7 @@ static inline int create_pair(int family, int sotype, int *p0, int *p1)
 	if (s < 0)
 		return s;
 
-	c = xsocket(family, sotype, ((family == AF_INET || family == AF_INET6) && (sotype & SOCK_STREAM)) ? IPPROTO_MPTCP : 0);
+	c = xsocket(family, sotype, 0);
 	if (c < 0)
 		return c;
 
