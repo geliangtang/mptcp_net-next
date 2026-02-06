@@ -1195,11 +1195,6 @@ int sk_psock_init_strp(struct sock *sk, struct sk_psock *psock)
 	if (sk_is_tcp(sk)) {
 		psock->strp.cb.read_sock = tcp_bpf_strp_read_sock;
 		psock->copied_seq = tcp_sk(sk)->copied_seq;
-#ifdef CONFIG_MPTCP
-	} else if (sk_is_msk(sk)) {
-		psock->strp.cb.read_sock = mptcp_bpf_strp_read_sock;
-		psock->copied_seq = mptcp_get_copied_seq(sk);
-#endif
 	}
 	return ret;
 }
