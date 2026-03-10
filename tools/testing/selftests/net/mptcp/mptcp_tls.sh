@@ -50,6 +50,12 @@ mptcp_lib_pm_nl_show_endpoints "$ns1"
 #			 -t mutliproc_sendpage_even \
 #			 -t mutliproc_sendpage_readers \
 #			 -t mutliproc_sendpage_writers &
+#ip netns exec "$ns1" ./tls -t pollin \
+#			   -t poll_wait	\
+#			   -t poll_wait_split \
+#			   -t poll_partial_rec \
+#			   -t epoll_partial_rec \
+#			   -t poll_partial_rec_async &
 #ip netns exec "$ns1" ./tls \
 #-r tls.12_aes_gcm_mptcp.mutliproc_even \
 #-r tls.12_aes_gcm_mptcp.mutliproc_readers \
