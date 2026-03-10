@@ -1704,7 +1704,6 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 			left -= res;
 		}
 	}
-	close(fd);
 }
 
 TEST_F(tls, mutliproc_even)
