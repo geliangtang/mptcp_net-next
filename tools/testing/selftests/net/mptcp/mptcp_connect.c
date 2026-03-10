@@ -35,6 +35,7 @@
 #include <linux/sockios.h>
 #include <linux/errqueue.h>
 #include <linux/compiler.h>
+#include <linux/tls.h>
 
 extern int optind;
 
@@ -81,6 +82,7 @@ static char *cfg_input;
 static int cfg_repeat = 1;
 static int cfg_truncate;
 static int cfg_rcv_trunc;
+static bool cfg_disconnect;
 
 struct cfg_cmsg_types {
 	unsigned int cmsg_enabled:1;
@@ -91,6 +93,7 @@ struct cfg_cmsg_types {
 struct cfg_sockopt_types {
 	unsigned int transparent:1;
 	unsigned int mptfo:1;
+	unsigned int tls:1;
 };
 
 struct tcp_inq_state {
@@ -274,12 +277,47 @@ static int do_ulp_so(int sock, const char *name)
 	return setsockopt(sock, IPPROTO_TCP, TCP_ULP, name, strlen(name));
 }
 
+static void do_setsockopt_tls(int fd)
+{
+	struct tls12_crypto_info_aes_gcm_128 tls_tx = {
+		.info = {
+			.version     = TLS_1_3_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	struct tls12_crypto_info_aes_gcm_128 tls_rx = {
+		.info = {
+			.version     = TLS_1_3_VERSION,
+			.cipher_type = TLS_CIPHER_AES_GCM_128,
+		},
+	};
+	int err;
+
+	if (cfg_disconnect || cfg_sockopt_types.mptfo)
+		return;
+
+	err = do_ulp_so(fd, "tls");
+	if (err)
+		xerror("setsockopt TCP_ULP");
+
+	err = setsockopt(fd, SOL_TLS, TLS_TX, (void *)&tls_tx, sizeof(tls_tx));
+	if (err)
+		xerror("setsockopt TLS_TX");
+
+	err = setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
+	if (err)
+		xerror("setsockopt TLS_RX");
+}
+
 #define X(m)	xerror("%s:%u: %s: failed for proto %d at line %u", __FILE__, __LINE__, (m), proto, line)
 static void sock_test_tcpulp(int sock, int proto, unsigned int line)
 {
 	socklen_t buflen = 8;
 	char buf[8] = "";
 	int ret = getsockopt(sock, IPPROTO_TCP, TCP_ULP, buf, &buflen);
+
+	if (cfg_sockopt_types.tls)
+		return;
 
 	if (ret != 0)
 		X("getsockopt");
@@ -426,8 +464,11 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 		sock = -1;
 	}
 
-	if (sock != -1)
+	if (sock != -1) {
 		SOCK_TEST_TCPULP(sock, proto);
+		if (cfg_sockopt_types.tls)
+			do_setsockopt_tls(sock);
+	}
 	return sock;
 }
 
@@ -688,6 +729,8 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 
 			/* Else, still have data to transmit */
 			} else if (len < 0) {
+				if (errno == EAGAIN)
+					continue;
 				if (cfg_rcv_trunc)
 					return 0;
 				perror("read");
@@ -1410,6 +1453,8 @@ again:
 		}
 
 		SOCK_TEST_TCPULP(remotesock, 0);
+		if (cfg_sockopt_types.tls)
+			do_setsockopt_tls(remotesock);
 
 		memset(&winfo, 0, sizeof(winfo));
 		err = copyfd_io(fd, remotesock, 1, true, &winfo);
@@ -1511,6 +1556,11 @@ static void parse_setsock_options(const char *name)
 
 	if (strncmp(name, "MPTFO", len) == 0) {
 		cfg_sockopt_types.mptfo = 1;
+		return;
+	}
+
+	if (strncmp(name, "TLS", len) == 0) {
+		cfg_sockopt_types.tls = 1;
 		return;
 	}
 
@@ -1749,6 +1799,7 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'I':
 			cfg_repeat = atoi(optarg);
+			cfg_disconnect = true;
 			break;
 		case 'l':
 			listen_mode = true;
