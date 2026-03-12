@@ -460,10 +460,10 @@ do_transfer()
 		return 1
 	fi
 
-	#mptcp_lib_check_transfer $sin $cout "file received by client"
-	#retc=$?
-	#mptcp_lib_check_transfer $cin $sout "file received by server"
-	#rets=$?
+	mptcp_lib_check_transfer $sin $cout "file received by client"
+	retc=$?
+	mptcp_lib_check_transfer $cin $sout "file received by server"
+	rets=$?
 
 	local extra=""
 	local stat_synrx
@@ -563,7 +563,7 @@ do_transfer()
 	fi
 
 	cat "$capout"
-	#[ $retc -eq 0 ] && [ $rets -eq 0 ]
+	[ $retc -eq 0 ] && [ $rets -eq 0 ]
 }
 
 make_file()
@@ -945,6 +945,9 @@ mptcp_lib_pr_info "Using ${tc_info}on ns3eth4"
 
 tc -net "$ns3" qdisc add dev ns3eth4 root netem delay ${reorder_delay}ms $tc_reorder
 
+run_tests_tls
+log_if_error "Tests with TLS have failed"
+
 TEST_GROUP="loopback v4"
 run_tests_lo "$ns1" "$ns1" 10.0.1.1 1
 stop_if_error "Could not even run loopback test"
@@ -998,8 +1001,8 @@ log_if_error "Tests with tproxy have failed"
 run_tests_disconnect
 log_if_error "Tests of the full disconnection have failed"
 
-run_tests_tls
-log_if_error "Tests with TLS have failed"
+#run_tests_tls
+#log_if_error "Tests with TLS have failed"
 
 display_time
 mptcp_lib_result_print_all_tap
