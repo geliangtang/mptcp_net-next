@@ -2210,3 +2210,7 @@ void __init mptcp_subflow_init(void)
 	if (tcp_register_ulp(&subflow_ulp_ops) != 0)
 		panic("MPTCP: failed to register subflows to ULP\n");
 }
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("MPTCP subflow");
+MODULE_ALIAS_TCP_ULP("mptcp");
