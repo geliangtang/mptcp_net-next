@@ -3211,6 +3211,7 @@ static int mptcp_init_sock(struct sock *sk)
 	struct net *net = sock_net(sk);
 	int ret;
 
+	pr_info("%s current=%d\n", __func__, current->pid);
 	__mptcp_init_sock(sk);
 
 	if (!mptcp_is_enabled(net))
