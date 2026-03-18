@@ -968,9 +968,20 @@ void mptcp_data_ready(struct sock *sk, struct sock *ssk)
 	mptcp_rcv_rtt_update(msk, subflow);
 	if (!sock_owned_by_user(sk)) {
 		/* Wake-up the reader only for in-sequence data */
-		if ((move_skbs_to_msk(msk, ssk) ||
-		     move_skbs_from_backlog(sk)) &&
-		    mptcp_epollin_ready(sk))
+		bool cond1, cond2;
+		cond1 = move_skbs_to_msk(msk, ssk) ||
+			move_skbs_from_backlog(sk);
+		if (cond1)
+			cond2 = mptcp_epollin_ready(sk);
+		//if ((move_skbs_to_msk(msk, ssk) ||
+		//     move_skbs_from_backlog(sk)) &&
+		//    mptcp_epollin_ready(sk))
+		//pr_err("cond1:%d, cond2:%d \n", cond1, cond2);
+		if (cond1 && !cond2) {
+			pr_err("this may occur stall\n");
+			pr_err("Clear");
+		}
+		if (cond1 && cond2)
 			sk->sk_data_ready(sk);
 	} else {
 		__mptcp_move_skbs_from_subflow(msk, ssk, false);
