@@ -67,8 +67,10 @@ int sk_stream_wait_connect(struct sock *sk, long *timeo_p)
 		int err = sock_error(sk);
 		if (err)
 			return err;
-		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV))
+		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+			pr_info("%s EPIPE sk_state=%d\n", __func__, sk->sk_state);
 			return -EPIPE;
+		}
 		if (!*timeo_p)
 			return -EAGAIN;
 		if (signal_pending(tsk))
