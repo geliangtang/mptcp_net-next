@@ -1990,23 +1990,31 @@ static int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len)
 
 		ret = mptcp_sendmsg_fastopen(sk, msg, len, &copied_syn);
 		copied += copied_syn;
-		if (ret == -EINPROGRESS && copied_syn > 0)
+		if (ret == -EINPROGRESS && copied_syn > 0) {
+			pr_info("%s EINPROGRESS\n", __func__);
 			goto out;
-		else if (ret)
+		}
+		else if (ret) {
+			pr_info("%s fastopen ret=%d\n", __func__, ret);
 			goto do_error;
+		}
 	}
 
 	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
 		ret = sk_stream_wait_connect(sk, &timeo);
-		if (ret)
+		if (ret) {
+			pr_info("%s wait connect do_error ret=%d\n", __func__, ret);
 			goto do_error;
+		}
 	}
 
 	ret = -EPIPE;
-	if (unlikely(sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN)))
+	if (unlikely(sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))) {
+		pr_info("%s sk_err ret=%d\n", __func__, ret);
 		goto do_error;
+	}
 
 	pfrag = sk_page_frag(sk);
 
@@ -2050,8 +2058,10 @@ static int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len)
 
 		ret = do_copy_data_nocache(sk, psize, &msg->msg_iter,
 					   page_address(dfrag->page) + offset);
-		if (ret)
+		if (ret) {
+			pr_info("%s copy data error ret=%d\n", __func__, ret);
 			goto do_error;
+		}
 
 		/* data successfully copied into the write queue */
 		sk_forward_alloc_add(sk, -total_ts);
@@ -2081,8 +2091,10 @@ wait_for_memory:
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		__mptcp_push_pending(sk, msg->msg_flags);
 		ret = sk_stream_wait_memory(sk, &timeo);
-		if (ret)
+		if (ret) {
+			pr_info("%s wait memory do_error ret=%d\n", __func__, ret);
 			goto do_error;
+		}
 	}
 
 	if (copied) {
@@ -2104,6 +2116,7 @@ do_error:
 		goto out;
 
 	copied = sk_stream_error(sk, msg->msg_flags, ret);
+	pr_info("%s sk_stream_error=%d\n", __func__, (int)copied);
 	goto out;
 }
 
