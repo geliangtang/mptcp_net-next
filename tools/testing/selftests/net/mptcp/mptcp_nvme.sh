@@ -246,6 +246,8 @@ run_host()
 	echo "${iopolicy}" > /sys/class/nvme-subsystem/"${subname}"/iopolicy
 	cat /sys/class/nvme-subsystem/"${subname}"/iopolicy
 
+	sleep 1
+
 	echo "fio randread /dev/${devname}n1"
 	fio --name=global --direct=1 --norandommap --randrepeat=0 \
 	    --ioengine=libaio --thread=1 --blocksize=4k --runtime=10 \
@@ -255,6 +257,8 @@ run_host()
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
+
+	nvme flush /dev/"${devname}"n1
 
 	sleep 1
 

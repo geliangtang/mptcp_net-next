@@ -1793,6 +1793,7 @@ static bool wait_for_tcp_close(struct __test_metadata *_metadata,
 		ASSERT_EQ(ret, 0);
 		if (info.tcpi_state == TCP_CLOSE)
 			return true;
+		fprintf(stderr, "%s i=%d\n", __func__, i);
 		usleep(1000);
 	}
 
