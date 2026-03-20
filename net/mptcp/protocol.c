@@ -2178,6 +2178,7 @@ static int __mptcp_recvmsg_mskq(struct sock *sk, struct msghdr *msg,
 		if (!(flags & MSG_TRUNC)) {
 			err = skb_copy_datagram_msg(skb, offset, msg, count);
 			if (unlikely(err < 0)) {
+				pr_info("%s err=%d\n", __func__, err);
 				if (!copied)
 					return err;
 				break;
@@ -2453,7 +2454,7 @@ static int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 			}
 		}
 
-		pr_debug("block timeout %ld\n", timeo);
+		pr_info("block timeout %ld\n", timeo);
 		mptcp_cleanup_rbuf(msk, copied);
 		err = sk_wait_data(sk, &timeo, last);
 		if (err < 0) {
@@ -2480,6 +2481,8 @@ out_err:
 		 msk, skb_queue_empty(&sk->sk_receive_queue), copied);
 
 	release_sock(sk);
+	if (copied < 0)
+		pr_info("%s copied=%d\n", __func__, copied);
 	return copied;
 }
 

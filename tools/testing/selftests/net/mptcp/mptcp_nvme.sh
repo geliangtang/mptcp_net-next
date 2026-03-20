@@ -401,6 +401,8 @@ run_host()
 		return 1
 	fi
 
+	nvme flush "/dev/${devname}"
+
 	sleep 1
 
 	echo "fio randwrite /dev/${devname}"
