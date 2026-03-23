@@ -1641,9 +1641,11 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 	}
 
 	if (sock_flag(sk, SOCK_LINGER)) {
+		pr_info("%s SOCK_LINGER\n", __func__);
 		ssk->sk_lingertime = sk->sk_lingertime;
 		sock_set_flag(ssk, SOCK_LINGER);
 	} else {
+		pr_info("%s no SOCK_LINGER\n", __func__);
 		sock_reset_flag(ssk, SOCK_LINGER);
 	}
 

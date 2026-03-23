@@ -3854,7 +3854,7 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority,
 {
 	struct sk_buff *skb;
 
-	pr_info("%s sk=%p\n", __func__, sk);
+	pr_info("%s sk=%p sock_flag(sk, SOCK_LINGER)=%u\n", __func__, sk, sock_flag(sk, SOCK_LINGER));
 	TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTRSTS);
 
 	/* NOTE: No TCP options attached and we never retransmit this. */
