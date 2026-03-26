@@ -1758,6 +1758,7 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	 */
 	proto->no_linger(sock->sk);
 
+	pr_info("%s so_priority=%d inet->rcv_tos=%d\n", __func__, so_priority, inet->rcv_tos);
 	if (so_priority > 0)
 		proto->set_priority(sock->sk, so_priority);
 
@@ -2165,6 +2166,7 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 	port->sock->sk->sk_data_ready = nvmet_tcp_listen_data_ready;
 	port->proto->set_reuseaddr(port->sock->sk);
 	port->proto->set_nodelay(port->sock->sk);
+	//port->proto->no_linger(port->sock->sk);
 	if (so_priority > 0)
 		port->proto->set_priority(port->sock->sk, so_priority);
 
