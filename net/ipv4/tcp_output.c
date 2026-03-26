@@ -3844,6 +3844,11 @@ void tcp_send_fin(struct sock *sk)
 	__tcp_push_pending_frames(sk, tcp_current_mss(sk), TCP_NAGLE_OFF);
 }
 
+static bool tcp_sock_get_nodelay(const struct sock *sk)
+{
+	return !!(tcp_sk(sk)->nonagle & TCP_NAGLE_OFF);
+}
+
 /* We get here when a process closes a file descriptor (either due to
  * an explicit close() or as a byproduct of exit()'ing) and there
  * was unread data in the receive queue.  This behavior is recommended
@@ -3854,7 +3859,8 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority,
 {
 	struct sk_buff *skb;
 
-	pr_info("%s sk=%p sock_flag(sk, SOCK_LINGER)=%u\n", __func__, sk, sock_flag(sk, SOCK_LINGER));
+	pr_info("%s sk=%p sock_flag(sk, SOCK_LINGER)=%u tcp_sock_get_nodelay(sk)=%u\n",
+		__func__, sk, sock_flag(sk, SOCK_LINGER), tcp_sock_get_nodelay(sk));
 	TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTRSTS);
 
 	/* NOTE: No TCP options attached and we never retransmit this. */

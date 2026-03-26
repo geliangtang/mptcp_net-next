@@ -1641,7 +1641,6 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 	}
 
 	if (sock_flag(sk, SOCK_LINGER)) {
-		pr_info("%s SOCK_LINGER\n", __func__);
 		ssk->sk_lingertime = sk->sk_lingertime;
 		sock_set_flag(ssk, SOCK_LINGER);
 	} else {
@@ -1693,6 +1692,9 @@ void mptcp_sockopt_sync_locked(struct mptcp_sock *msk, struct sock *ssk)
 		sync_socket_options(msk, ssk);
 
 		subflow->setsockopt_seq = msk->setsockopt_seq;
+	} else {
+		pr_info("%s subflow->setsockopt_seq=%u msk->setsockopt_seq=%u\n",
+			__func__, READ_ONCE(subflow->setsockopt_seq), msk->setsockopt_seq);
 	}
 }
 

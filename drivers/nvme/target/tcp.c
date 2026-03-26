@@ -1734,6 +1734,7 @@ static void print_sockaddr(struct sockaddr *addr)
 static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 {
 	struct socket *sock = queue->sock;
+	struct inet_sock *inet = inet_sk(sock->sk);
 	int ret;
 
 	ret = kernel_getsockname(sock,
@@ -1757,6 +1758,7 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	 */
 	queue->proto->no_linger(sock->sk);
 
+	pr_info("%s so_priority=%d inet->rcv_tos=%d\n", __func__, so_priority, inet->rcv_tos);
 	if (so_priority > 0)
 		queue->proto->set_priority(sock->sk, so_priority);
 
@@ -2206,6 +2208,7 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 	port->sock->sk->sk_data_ready = nvmet_tcp_listen_data_ready;
 	ops->set_reuseaddr(port->sock->sk);
 	ops->set_nodelay(port->sock->sk);
+	//ops->no_linger(port->sock->sk);
 	if (so_priority > 0)
 		ops->set_priority(port->sock->sk, so_priority);
 
