@@ -2092,7 +2092,8 @@ wait_for_memory:
 		__mptcp_push_pending(sk, msg->msg_flags);
 		ret = sk_stream_wait_memory(sk, &timeo);
 		if (ret) {
-			pr_info("%s wait memory do_error ret=%d\n", __func__, ret);
+			if (ret != -EAGAIN)
+				pr_info("%s wait memory do_error ret=%d\n", __func__, ret);
 			goto do_error;
 		}
 	}
@@ -2116,7 +2117,8 @@ do_error:
 		goto out;
 
 	copied = sk_stream_error(sk, msg->msg_flags, ret);
-	pr_info("%s sk_stream_error=%d\n", __func__, (int)copied);
+	if (copied != -EAGAIN)
+		pr_info("%s sk_stream_error=%d\n", __func__, (int)copied);
 	goto out;
 }
 
@@ -2481,7 +2483,7 @@ out_err:
 		 msk, skb_queue_empty(&sk->sk_receive_queue), copied);
 
 	release_sock(sk);
-	if (copied < 0)
+	if (copied < 0 && copied != -EAGAIN)
 		pr_info("%s copied=%d\n", __func__, copied);
 	return copied;
 }
