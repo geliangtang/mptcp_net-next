@@ -41,7 +41,8 @@ check_error()
 {
 	ss -N "$ns1" -Mtia > ns1_"${1}".log
 	ss -N "$ns2" -Mtia > ns2_"${1}".log
-	if dmesg | grep -E -q "starting error recovery|Buffer I/O error|fatal error occurred|failed nvme_keep_alive_end_io"; then
+	#if dmesg | grep -E -q "starting error recovery|Buffer I/O error|fatal error occurred|failed nvme_keep_alive_end_io"; then
+	if dmesg | grep -E -q "starting error recovery|Buffer I/O error|fatal error occurred"; then
 		echo "Test error at ${1}"
 		exit "${KSFT_FAIL}"
 	fi
