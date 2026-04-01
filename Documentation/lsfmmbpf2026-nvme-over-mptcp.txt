@@ -1,0 +1,713 @@
+[
+1
+
+NVMe over MPTCP
+
+ - Multi-Fold Acceleration for NVMe over TCP in Multi-NIC Environments
+
+    Geliang Tang - MPTCP community
+                   Kylin Software
+
+                   LSF/MM/BPF 2026
+                   Zagreb, May 2026
+]
+
+Hello everyone. I'm Geliang from the MPTCP community. I'm one of the
+core upstream developers of MPTCP since 2020. I live in Beijing, China
+and work at a Chinese Linux distribution company, called Kylin Software.
+
+Here I bring a proposal to add MPTCP support for NVMe. This approach
+achieves a multi-fold /ˈmʌl.tɪ.fəʊld/ performance improvement over using NVMe TCP in
+multiple /ˈmʌl.tɪ.pl/ network devices environments.
+
+[
+2
+
+Thanks to Hannes Reinecke, Matthieu Baerts, Mat Martineau, Paolo Abeni,
+Coly Li, Barry Song, Ming Lei, Zhenwei Pi, Jason Xing, Hui Zhu, Gang Yan,
+and others for their help during the development of NVMe over MPTCP.
+
+]
+
+First of all, I want to say thanks to everyone who helped me during the
+development of this feature.
+
+[
+3
+
+Agenda
+
+ - Introduction to MPTCP
+ - Motivation
+ - Current Status /ˈsteɪ.təs/
+ - Performance Evaluation
+ - Implementation
+ - Discussion
+
+]
+
+And here is the agenda /əˈdʒen.də/. First, I'll give a very brief introduction to MPTCP.
+Then the motivations of NVMe MPTCP. Next, I'll show the patch list of all
+the changes. Then I'll show a demo /ˈde.məʊ/ of how to use NVMe MPTCP, and
+what the benefit is. Next, how NVMe MPTCP is implemented. And the last is the
+discussion (/dɪˈskʌʃ.ən/).
+
+[
+4
+
+Introduction to MPTCP
+
+- Multipath TCP or MPTCP is an extension to the standard TCP and is
+  described in RFC 8684.
+- MPTCP is implemented via TCP Options, kind number of MPTCP is 30.
+- It allows a device to make use of multiple interfaces at once to send
+  and receive TCP packets over a single MPTCP connection.
+- MPTCP can aggregate the bandwidth of multiple interfaces or prefer the
+  one with the lowest latency. It also allows a fail-over if one path is
+  down, and the traffic is seamlessly reinjected on other paths.
+- Introduced in Linux kernel v5.6
+- How to use it?
+  - Address config: ip mptcp (manual) or mptcpd daemon (automatic)
+  - Create socket: socket(AF_INET, SOCK_STREAM, IPPROTO_MPTCP) or force with BPF (no code change)
+  - Use: same as TCP sockets; kernel creates multiple TCP subflows to send and receive data
+
+For more details, please visit the project website: https://www.mptcp.dev
+
+]
+
+Here I will give a very brief introduction to MPTCP.
+
+MPTCP, or Multipath TCP, is an extension to the standard TCP and is
+defined in RFC 8684. MPTCP is implemented via TCP options. A dedicated
+TCP option is defined for MPTCP, and its kind number is 30. It allows a
+device to use multiple network interfaces at the same time to send and
+receive TCP packets /ˈpæk.ɪt/ over a single connection.
+
+MPTCP can be used for combining the bandwidth of multiple interfaces or
+choosing the best path with the lowest latency. It also supports
+fail-over /ˈfeɪl/: if one path goes down, traffic is smoothly switched to another
+path without interruption.
+
+It was introduced in Linux kernel 5.6. After more than six years of
+development, it has become mature /məˈtʃʊə/ and stable, and more and more
+network applications already support MPTCP.
+
+How to use it?
+
+First, we need to do address /əˈdres/ configuration, which is handled by
+the path manager. We can use 'ip mptcp' commands to do it manually,
+or we can use the MPTCP daemon (ˈdiː.mən) (mptcpd) to do it automatically.
+
+Then, we need to create MPTCP sockets both on the server side and client side.
+If only one side uses MPTCP, the connection will fall back /fɔːl bæk/ to TCP.
+We need to explicitly pass the protocol number IPPROTO_MPTCP (that is 262)
+as the third parameter of socket() syscall to create an MPTCP socket.
+Or, without changing any code, we can use the BPF tool to force a TCP
+application to use MPTCP.
+
+After the MPTCP sockets are created, we can use them just like TCP sockets,
+with no difference. Inside the MPTCP protocol stack /stæk/, multiple TCP
+sockets are created in kernel space to send and receive data, based on the
+address configuration; we call each TCP socket a subflow.
+
+For more details, please visit the project website: mptcp.dev
+
+[
+5
+
+Motivation
+
+- Provide a kernel‑space use case for MPTCP
+  -> Drives missing MPTCP features forward: .read_sock, KTLS, etc.
+
+- Achieve multi‑fold bandwidth aggregation in multi‑NIC environments
+  -> Break the single-device bottleneck of NVMe TCP
+
+- Improve reliability with transparent fail-over across network paths
+  -> Without adding complexity to NVMe layer
+
+]
+
+Why do we need NVMe MPTCP?
+
+First, all current use cases for MPTCP are in userspace. NVMe TCP runs
+in kernel-space. So adding MPTCP support to NVMe provides the first
+kernel‑space use case for MPTCP. This helps us verify the functionality
+of MPTCP from kernel space and add missing features - like read_sock
+interface and TLS encryption - which were not implemented in MPTCP before.
+
+Second, in multiple network device environments, NVMe TCP can
+only use a single network device, so the bandwidth is limited by
+the speed of that single device. With MPTCP, we can aggregate
+the bandwidth of all available devices on both the target side and
+the host side, achieving a multi‑fold performance improvement -
+as we will see in the demo.
+
+Third, MPTCP allows a fail-over. If a path fails, traffic switches
+to another path without breaking the NVMe connection. So we get better
+reliability without adding complexity to NVMe layer.
+
+These are the main motivations behind this work.
+
+[
+6
+
+Current Status
+
+The modifications in the NVMe subsystem are minimal.
+Most of the changes are on the MPTCP side.
+
+Here are the patchsets:
+
+- mptcp: implement .read_sock	(Mainlined)
+- NVMe over MPTCP		(Under Review) (bold characters)
+- MPTCP KTLS support		(Under Review)
+- Enable KTLS for NVMe MPTCP	(Under development)
+- User space changes		(Under development)
+- Fixes for MPTCP corner cases	(Under Review)
+
+]
+
+I started working on this feature about a year ago. Currently, the
+implementation and testing are mostly done. Some code is upstreamed,
+while most remains under review on MPTCP side, in RFC stage.
+
+The modifications in the NVMe subsystem are minimal. Most of the code
+changes are on the MPTCP side.
+
+Here are the patchsets:
+
+1 mptcp: implement .read_sock (/riːd/ underscore)
+
+NVMe TCP uses read_sock interface for receiving data. However, it was
+not implemented in MPTCP before /bɪˈfɔː(r)/, since all current use cases for MPTCP
+are in userspace, where read_sock is not used. So my first task was to
+implement this interface for MPTCP.
+
+After several rounds of iteration, this set was merged into Linux kernel
+in February this year. With this interface, we can add MPTCP support
+/səˈpɔːt/ for NVMe now.
+
+2 NVMe over MPTCP
+
+This set adds basic MPTCP support for NVMe, but without TLS encryption /ɪnˈkrɪp.ʃən/.
+It defines a new transport /ˈtræn.spɔːt/ type for MPTCP, which creates /kriˈeɪt/ MPTCP sockets
+between the target (ˈtɑːɡɪt) and the host instead of TCP sockets.
+
+This set is currently under review on MPTCP side, and today's discussion
+is mainly about this set.
+
+3 MPTCP KTLS support
+
+MPTCP did not support TLS before. They conflict with each other to
+some extent. Because both MPTCP and TLS use ULP, Upper Layer Protocol.
+ULP settings, including TLS settings, are disabled in MPTCP. If you set
+TLS for an MPTCP socket, you will get an error code of 'NOT SUPPORTED'.
+But now NVMe needs to use TLS for encryption, it's time to enable it.
+
+I finally found a solution to make MPTCP and TLS compatible, and
+implemented MPTCP support on the TLS side and enabled TLS settings on
+the MPTCP side. Need to say, only software TLS encryption is supported
+for MPTCP right now; hardware TLS has not yet been developed.
+
+This set is currently under review on MPTCP side, and I believe it will
+be upstreamed this year.
+
+4 Enable KTLS for NVMe MPTCP
+
+Once TLS is supported /səˈpɔː.tɪd/ for MPTCP, using TLS for NVMe MPTCP becomes
+straightforward /ˌstreɪtˈfɔː.wəd/. Only need to enable TLS setting in configfs
+for the MPTCP transport type.
+
+5 The next is about user space changes
+
+User space libraries (ˈlaɪ.brər.i) and tools, including libnvme (lɪb),
+nvme-cli, and ktls-utils, also need to add MPTCP support.
+
+6 The last is fixes for MPTCP corner cases
+
+During the development of NVMe MPTCP, some MPTCP corner‑cases were
+triggered, and these bugs needed to be fixed.
+
+That's all the patch list.
+
+[
+7
+
+Performance Evaluation (NVMe TCP)
+
+This demo is the selftest script for NVMe over MPTCP
+
+# ns1 (target)  ns2 (host)
+# 10.1.1.1      10.1.1.2
+# 10.1.2.1      10.1.2.2
+# 10.1.3.1      10.1.3.2
+# 10.1.4.1      10.1.4.2
+
+Each network device is limited to a speed of 100MiB/s
+
+ # ./mptcp_nvme.sh tcp numa tls
+  READ: bw=112MiB/s (118MB/s), 112MiB/s-112MiB/s (118MB/s-118MB/s),
+		io=1123MiB (1177MB), run=10018-10018msec
+  WRITE: bw=112MiB/s (117MB/s), 112MiB/s-112MiB/s (117MB/s-117MB/s),
+		io=1118MiB (1173MB), run=10018-10018msec
+
+]
+
+Now let's look at a demo.
+
+This demo is the selftest script for NVMe MPTCP, it is the last patch
+in the 'NVMe over MPTCP' patch set. This script takes three arguments.
+The first is the transport type, which can be set to 'tcp' or 'mptcp'.
+The second is the I/O policy, which can be set to 'numa',
+'round-robin'(ˈrɒb.ɪn), or 'queue-depth'. The third is 'tls', which
+controls whether TLS encryption is used.
+
+This test creates two network namespaces. One is used to run the NVMe
+target, that is the server side, and the other is used to run the NVMe
+host, that is the client side. Each namespace has four virtual /ˈvɜː.tʃu.əl/ network
+devices, and each network device is limited to a speed of 100 megabytes /ˈmeɡ.ə.baɪts/
+per second.
+
+When we run NVMe TCP in this environment, the 'fio' benchmark shows the
+speed is about 100 megabytes per second, as we expected. That means
+only the first network device on both sides is used for NVMe TCP
+communication, and the other three network devices are unused and not
+involved.
+
+When we use NVMe MPTCP in the next slide, this is not the case at all.
+
+[
+8
+
+Performance Evaluation (NVMe MPTCP)
+
+target:
+# ip mptcp endpoint add 10.1.2.1 signal
+# ip mptcp endpoint add 10.1.3.1 signal
+# ip mptcp endpoint add 10.1.4.1 signal
+
+host:
+# ip mptcp endpoint add 10.1.2.2 subflow
+# ip mptcp endpoint add 10.1.3.2 subflow
+# ip mptcp endpoint add 10.1.4.2 subflow
+
+ # ./mptcp_nvme.sh mptcp numa tls
+  READ: bw=427MiB/s (448MB/s), 427MiB/s-427MiB/s (448MB/s-448MB/s),
+		io=4286MiB (4494MB), run=10039-10039msec
+  WRITE: bw=387MiB/s (406MB/s), 387MiB/s-387MiB/s (406MB/s-406MB/s),
+		io=3885MiB (4073MB), run=10043-10043msec
+
+In a four-network-device environment, MPTCP achieves a four times
+performance improvement.
+
+]
+
+Before running NVMe MPTCP, we need to do some configuration to
+tell MPTCP which IP addresses are available.
+
+We do that with the 'ip mptcp endpoint add' commands. On both sides, we
+add the IP addresses of the second, third, and fourth network devices
+into the address list of MPTCP path manager. The difference is, on the
+target side, we use the 'signal' flags, while on the host side, we use
+the 'subflow' flags.
+
+After this configuration, we can run NVMe MPTCP now. The 'fio' benchmark
+shows the speed reached about 400 megabytes per second. That means all
+four network devices on both sides are used for the NVMe MPTCP
+communication. It also means that in a four-network-device environment,
+NVMe MPTCP achieves a four times performance improvement.
+
+I also did similar experiments in environments on real machines with real
+network devices, and obtained the same conclusion.
+
+How is all this achieved? Let's go to the next slide.
+
+[
+9
+
+Implementation
+
+TCP is currently hardcoded in a few places:
+
+Target:
+ 	ret = sock_create(port->addr.ss_family, SOCK_STREAM,
+				IPPROTO_TCP, &port->sock);
+
+	tcp_sock_set_nodelay(port->sock->sk); (list_add corruption)
+	sock_set_reuseaddr(port->sock->sk);   (Address already in use)
+	sock_set_priority(port->sock->sk, so_priority);
+	sock_no_linger(sock->sk);
+	ip_sock_set_tos(sock->sk, inet->rcv_tos);
+
+Host:
+        ret = sock_create_kern(current->nsproxy->net_ns,
+                        ctrl->addr.ss_family, SOCK_STREAM,
+                        IPPROTO_TCP, &queue->sock);
+
+	tcp_sock_set_syncnt(queue->sock->sk, 1);
+	tcp_sock_set_nodelay(queue->sock->sk);
+	sock_no_linger(queue->sock->sk);      (nvme disconnect)
+	sock_set_priority(queue->sock->sk, so_priority);
+	ip_sock_set_tos(queue->sock->sk, nctrl->opts->tos);
+
+]
+
+I took a very practical, engineering-style approach to implement this
+feature, I first modified the socket creation code for both the target
+side and host side, hardcoding the protocol number from IPPROTO_TCP to
+IPPROTO_MPTCP to create MPTCP sockets by force, and then I wrote a test
+script to run it, and got some failures.
+
+The first is a crash of 'list_add corruption'. Debugging showed it
+happened inside tcp_sock_set_nodelay. We cannot use the TCP version of
+the set_nodelay helper on MPTCP sockets; that causes a crash. I need
+to implement an MPTCP‑specific version of this helper, and use it for MPTCP sockets.
+
+After fixing that, I continued testing. I got another error 'Address
+already in use' from 'bind()' on the target side, indicating that the
+reuse address (set_reuseaddr) behavior was not set correctly, so I then
+implemented an MPTCP‑specific version of set_reuseaddr helper too, and used it
+for MPTCP sockets.
+
+Then on the host side the 'nvme disconnect' command sometimes failed.
+That turned out to be no_linger behavior not being set correctly for
+MPTCP sockets. So I implemented an MPTCP‑specific version of no_linger helper
+too, and used it for MPTCP sockets.
+
+In the end, I realized that all the helpers used to change the behavior
+of NVMe sockets needed to have MPTCP‑specific versions and to be used
+for MPTCP sockets. They are six helpers in total. After switching to
+using all six MPTCP‑specific helpers, the tests worked well and became
+stable.
+
+Then I thought all the changes were done. I went back to think about the
+code architecture.
+
+I abstracted all the places that needed to be changed from TCP to MPTCP
+into a structure, which can describe all the differences between using
+TCP and MPTCP in NVMe. It includes the protocol number and the six
+interfaces that change socket behavior, and then defines two different
+instances of this structure, one for TCP and the other for MPTCP, and then
+switches between them based on the transport type.
+
+However, there are slight differences between the interfaces on the target
+side and the host side. set_reuseaddr interface is only used on the target,
+while set_syncnt is only used on the host. It ended up being separated into
+two structures: one for the target (nvmet_tcp_proto) and the other for the host
+(nvme_tcp_proto).
+
+Let's look at the target one first.
+
+[
+10
+
+Target Implementation
+
+Define a target tcp_proto structure:
+
++struct nvmet_tcp_proto {
++	int			protocol;
++	void (*set_reuseaddr)(struct sock *sk);
++	void (*set_nodelay)(struct sock *sk);
++	void (*set_priority)(struct sock *sk, u32 priority);
++	void (*no_linger)(struct sock *sk);
++	void (*set_tos)(struct sock *sk, int val);
++	const struct nvmet_fabrics_ops *ops;
++};
+
+Define instances nvmet_tcp_proto and nvmet_mptcp_proto for TCP and
+MPTCP:
+
++static const struct nvmet_tcp_proto nvmet_mptcp_proto = {
++	.protocol	= IPPROTO_MPTCP,
++	.set_reuseaddr	= mptcp_sock_set_reuseaddr,
++	.set_nodelay	= mptcp_sock_set_nodelay,
++	.set_priority	= mptcp_sock_set_priority,
++	.no_linger	= mptcp_sock_no_linger,
++	.set_tos	= mptcp_sock_set_tos,
++	.ops		= &nvmet_mptcp_ops,
++};
+
+Add a pointer to this structure in tcp_port:
+
+ struct nvmet_tcp_port {
++	struct rcu_head		rcu;
+	... ...
+ 	void (*data_ready)(struct sock *);
++	const struct nvmet_tcp_proto *proto;
+ };
+
+Define a new MPTCP transport type, and a new MPTCP fabrics ops:
+
++static const struct nvmet_fabrics_ops nvmet_mptcp_ops = {
++	.owner			= THIS_MODULE,
++	.type			= NVMF_TRTYPE_MPTCP,
++	.msdbd			= 1,
++	.add_port		= nvmet_tcp_add_port,
+	... ...
++};
+
+Initialize the pointer to a different instance based on the
+transport type is TCP or MPTCP in add_port callback:
+ 
+ 	if (nport->disc_addr.trtype == NVMF_TRTYPE_TCP) {
+ 		port->proto = &nvmet_tcp_proto;
+	} else if (nport->disc_addr.trtype == NVMF_TRTYPE_MPTCP) {
+		port->proto = &nvmet_mptcp_proto;
+	}
+
+Access the instance through the pointer in tcp_port, and use this
+instance afterwards:
+
+ 	ret = sock_create(port->addr.ss_family, SOCK_STREAM,
++				port->proto->protocol, &port->sock);
+
++	port->proto->set_reuseaddr(port->sock->sk);
++	port->proto->set_nodelay(port->sock->sk);
+
+]
+
+On the target side, we define a NVMe target tcp_proto structure, and
+put the protocol number and the five interfaces to change the behavior
+of the socket into it, and define two instances of this structure for
+TCP and MPTCP. Add a pointer to this structure in nvme target tcp_port.
+
+Define a new MPTCP transport type, and a new MPTCP fabrics ops. This ops
+is the same as the TCP one, only the transport type is different.
+
+When adding a port, the add_port callback is called for both TCP and
+MPTCP. In this callback, initialize the pointer in tcp_port to a
+different instance based on whether the transport type is TCP or MPTCP.
+
+Afterwards, we access the instance through the pointer in tcp_port, and
+use the protocol number of this instance to create the socket and call
+the corresponding interfaces of this instance to change the socket
+behavior.
+
+That is the implementation of the target side.
+
+[
+11
+
+Host Implementation
+
+Define a host tcp_proto structure:
+
++struct nvme_tcp_proto {
++	int			protocol;
++	int (*set_syncnt)(struct sock *sk, int val);
++	void (*set_nodelay)(struct sock *sk);
++	void (*no_linger)(struct sock *sk);
++	void (*set_priority)(struct sock *sk, u32 priority);
++	void (*set_tos)(struct sock *sk, int val);
++	const struct nvme_ctrl_ops *ops;
++};
+
+Define instances nvme_tcp_proto and nvme_mptcp_proto for TCP and MPTCP:
+
++static const struct nvme_tcp_proto nvme_mptcp_proto = {
++	.protocol	= IPPROTO_MPTCP,
++	.set_syncnt	= mptcp_sock_set_syncnt,
++	.set_nodelay	= mptcp_sock_set_nodelay,
++	.no_linger	= mptcp_sock_no_linger,
++	.set_priority	= mptcp_sock_set_priority,
++	.set_tos	= mptcp_sock_set_tos,
++	.ops		= &nvme_mptcp_ctrl_ops,
++};
+
+Add a pointer to this structure in tcp_ctrl:
+
+ struct nvme_tcp_ctrl {
++	struct rcu_head		rcu;
+	... ...
+ 	u32			io_queues[HCTX_MAX_TYPES];
++	const struct nvme_tcp_proto *proto;
+ };
+
+Define a new MPTCP transport ops:
+
++static struct nvmf_transport_ops nvme_mptcp_transport = {
++	.name		= "mptcp",
++	.module		= THIS_MODULE,
++	.required_opts	= NVMF_OPT_TRADDR,
++	.allowed_opts	= ... ...,
++	.create_ctrl	= nvme_tcp_create_ctrl,
++};
+
+Initialize the pointer to a different instance based on the transport
+name is "tcp" or "mptcp" in nvme_tcp_alloc_ctrl:
+ 
+ 	if (!strcmp(ctrl->ctrl.opts->transport, "tcp")) {
+ 		rcu_assign_pointer(ctrl->proto, &nvme_tcp_proto);
+	} else if (!strcmp(ctrl->ctrl.opts->transport, "mptcp")) {
+		rcu_assign_pointer(ctrl->proto, &nvme_mptcp_proto);
+ 	}
+
+Access the instance through the pointer in tcp_ctrl, and use this
+instance afterwards:
+
+	ret = sock_create_kern(current->nsproxy->net_ns,
+ 			ctrl->addr.ss_family, SOCK_STREAM,
++			proto->protocol, &queue->sock);
+
++	proto->set_syncnt(queue->sock->sk, 1);
++	proto->set_nodelay(queue->sock->sk);
+
+]
+
+The implementation on the host side is similar.
+
+Define a NVMe tcp_proto structure, and put the protocol number and the five
+interfaces to change the behavior of the socket into it, and define two
+instances of this structure for TCP and MPTCP. Add a pointer to this structure
+in NVMe tcp_ctrl. Then, define a new MPTCP transport ops, which is the same
+as the TCP one, only the name is different. When allocating a new tcp_ctrl,
+initialize its pointer to a different instance based on the transport name is
+"tcp" or "mptcp". Afterwards, we access the instance through the pointer in
+tcp_ctrl, use this instance to create the socket and change its behavior.
+
+What do you think of this approach?
+
+[
+12
+
+Discussion
+
+- mptcpize/mptcpify tools do not work on NVMe TCP
+
+Keep the NVMe code unchanged, can we just use MPTCP tools to convert NVMe TCP
+to use MPTCP by force? The answer is no.
+
+- NVMe MPTCP vs. NVMe multipath
+
+Can NVMe MPTCP work with NVMe multipath? Both names contain
+'multipath'. The answer is yes. (I/O Policy)
+
+- NVMe MPTCP vs. Block multiqueue
+
+Can NVMe MPTCP work with Block multiqueue? The answer is yes.
+All queues - both the admin queue and the I/O queues - are MPTCP connections.
+
+- How to select MPTCP?
+   -> A new transport type?
+   -> A TCP variant?
+
+  A new transport type:
+    + straightforward
+    - Update of the NVMe protocol -> How?
+
+  A new TCP 'variant':
+    + smaller update of the protocol
+   -> How: using Transport Specific Address Subtype (TSAS) to represent
+      a new Protocol Type
+
+]
+
+Here I have listed several frequently asked questions:
+
+1 Can we, keep the NVMe code unchanged, just use MPTCP tools to convert
+NVMe TCP to use MPTCP by force?
+
+The answer is no. Tools like mptcpize and BCC mptcpify allow legacy
+(ˈleɡ.ə.si old) TCP programs to use MPTCP without code changes - they
+dynamically replace TCP socket creation with MPTCP socket creation at
+runtime in the path of the socket syscall. NVMe TCP creates sockets
+directly from kernel space and does not invoke socket syscalls, so these
+tools have no effect. We do need to change the NVMe code to add MPTCP
+support.
+
+2 Can NVMe MPTCP work with NVMe multipath? Both of their names contain
+'multipath'.
+
+The answer is yes. They work together at different layers. The selftest
+of NVMe MPTCP shows that NVME MPTCP can work with different I/O policies,
+that is NVMe multipath. They can work together with no conflict.
+
+3 Can NVMe MPTCP work with Block multiqueue?
+
+The answer is yes too. There is not just one TCP connection between
+the target and host - NVMe TCP uses block multiqueue to establish several
+TCP connections between them. It includes one admin queue for management
+traffic and several I/O queues for data traffic. NVMe MPTCP changes all
+these TCP connections to MPTCP connections, both the admin queue and the
+I/O queues.
+
+4 How to select MPTCP? A new transport type? or A TCP variant?
+
+The current approach is to define a new transport type for MPTCP.
+That is straightforward.
+
+Another option is to declare MPTCP as a TCP 'variant'. For example, in
+the TSAS (Transport Specific Address Subtype), just as SECTYPE
+represents the versions of TLS (1.2 or 1.3), a new PROTOTYPE can be
+added here to represent the protocol is TCP, MPTCP or other future
+protocols.
+
+[
+13
+
+Contact (ˈkɒn.tækt) information
+
+GitHub:
+@geliangtang
+
+Email:
+geliang@kernel.org
+
+MPTCP Community:
+Website:        https://www.mptcp.dev/
+Repositories:   https://github.com/multipath-tcp/
+Mailing List:   mptcp@lists.linux.dev
+
+]
+
+Here is the contact information for myself and the MPTCP community.
+You can find me on GitHub, and you can send me an email.
+
+[
+14
+
+References
+
+[1] NVMe over MPTCP
+https://lore.kernel.org/all/cover.1775047736.git.tanggeliang@kylinos.cn/
+
+[2] implement mptcp read_sock
+https://lore.kernel.org/all/20260130-net-next-mptcp-splice-v2-0-31332ba70d7f@kernel.org/
+
+[3] MPTCP KTLS support
+https://lore.kernel.org/all/cover.1776924681.git.tanggeliang@kylinos.cn/
+
+[4] libnvme: add mptcp trtype
+https://lore.kernel.org/all/99f6e63b5c9677f29a9bc8cdd87b2064b258435f.1764206766.git.tanggeliang@kylinos.cn/
+
+[5] fabrics: add mptcp support
+https://github.com/linux-nvme/nvme-cli/commit/f468531d0592ad22b71760d883409363b1f8a9d6
+
+[6] tlshd: add mptcp support
+https://github.com/oracle/ktls-utils/commit/8fd3c7071e195206c4119575f40546f7243cc4c1
+
+[7] [LSF/MM/BPF TOPIC] NVMe over MPTCP
+https://lore.kernel.org/linux-nvme/a9f115aa5719e1088702a3fdeee766a3166611b1.camel@kernel.org/
+
+]
+
+Here are references. If you want to use this feature,
+you can find all the patches here.
+
+The last one is the email thread for this topic.
+Feel free to reply with any thoughts, suggestions, or questions.
+
+[
+15
+
+Questions?
+
+]
+
+If you have any questions, we can address them here.
+If I can't answer it immediately, I'll follow up with you by email or some other way.
+
+Thank you very much for your interest in NVMe MPTCP.
+I know the process will take a long time, but I'll do my best to push this feature upstream.
