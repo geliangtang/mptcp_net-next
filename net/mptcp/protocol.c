@@ -2275,8 +2275,9 @@ static bool __mptcp_move_skbs(struct sock *sk, struct list_head *skbs, u32 *delt
 	}
 
 	__mptcp_ofo_queue(msk);
-	if (moved)
-		mptcp_check_data_fin((struct sock *)msk);
+	if (moved && mptcp_pending_data_fin(sk, NULL))
+		mptcp_schedule_work(sk);
+
 	return moved;
 }
 
