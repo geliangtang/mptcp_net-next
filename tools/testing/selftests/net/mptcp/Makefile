@@ -35,6 +35,7 @@ TEST_GEN_FILES := \
 	restore_mptcp_ipv4 \
 	restore_mptcp_ipv6 \
 	tls \
+	test_tls_mptcp_race \
 # end of TEST_GEN_FILES
 
 TEST_FILES := \
