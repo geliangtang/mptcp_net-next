@@ -119,14 +119,63 @@ CHECK_CIPHER_DESC(TLS_CIPHER_SM4_CCM, tls12_crypto_info_sm4_ccm);
 CHECK_CIPHER_DESC(TLS_CIPHER_ARIA_GCM_128, tls12_crypto_info_aria_gcm_128);
 CHECK_CIPHER_DESC(TLS_CIPHER_ARIA_GCM_256, tls12_crypto_info_aria_gcm_256);
 
-static const struct proto *saved_tcpv6_prot;
-static DEFINE_MUTEX(tcpv6_prot_mutex);
-static const struct proto *saved_tcpv4_prot;
-static DEFINE_MUTEX(tcpv4_prot_mutex);
-static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
-static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+struct tls_proto_cache {
+	struct list_head list;
+	const struct proto *base;
+	struct proto prots[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+	struct proto_ops proto_ops[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+};
+static LIST_HEAD(tls_proto_cache);
+static DEFINE_MUTEX(tls_proto_cache_mutex);
+
+static struct tls_proto_cache *tls_cache_find(const struct proto *base)
+{
+	struct tls_proto_cache *cache;
+
+	list_for_each_entry(cache, &tls_proto_cache, list) {
+		if (cache->base == base)
+			return cache;
+	}
+	return NULL;
+}
+
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 			 const struct proto *base);
+static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
+			    const struct proto_ops *base);
+
+static struct tls_proto_cache *tls_cache_get_or_create(struct sock *sk)
+{
+	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
+	const struct proto *base = READ_ONCE(sk->sk_prot);
+	struct tls_proto_cache *cache;
+
+	cache = tls_cache_find(base);
+	if (cache)
+		return cache;
+
+	mutex_lock(&tls_proto_cache_mutex);
+	/* Re-check under lock */
+	cache = tls_cache_find(base);
+	if (cache) {
+		mutex_unlock(&tls_proto_cache_mutex);
+		return cache;
+	}
+
+	cache = kzalloc(sizeof(*cache), GFP_KERNEL);
+	if (!cache) {
+		mutex_unlock(&tls_proto_cache_mutex);
+		return NULL;
+	}
+
+	cache->base = base;
+	build_protos(cache->prots[ip_ver], base);
+	build_proto_ops(cache->proto_ops[ip_ver], sk->sk_socket->ops);
+	list_add(&cache->list, &tls_proto_cache);
+	mutex_unlock(&tls_proto_cache_mutex);
+
+	return cache;
+}
 
 static DEFINE_SPINLOCK(tls_prot_ops_lock);
 static LIST_HEAD(tls_prot_ops_list);
@@ -150,11 +199,12 @@ static struct tls_prot_ops *tls_prot_ops_find(int protocol)
 void update_sk_prot(struct sock *sk, struct tls_context *ctx)
 {
 	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
+	struct tls_proto_cache *cache = ctx->proto_cache;
 
 	WRITE_ONCE(sk->sk_prot,
-		   &tls_prots[ip_ver][ctx->tx_conf][ctx->rx_conf]);
+		   &cache->prots[ip_ver][ctx->tx_conf][ctx->rx_conf]);
 	WRITE_ONCE(sk->sk_socket->ops,
-		   &tls_proto_ops[ip_ver][ctx->tx_conf][ctx->rx_conf]);
+		   &cache->proto_ops[ip_ver][ctx->tx_conf][ctx->rx_conf]);
 }
 
 int wait_on_pending_writer(struct sock *sk, long *timeo)
@@ -988,37 +1038,6 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 #endif
 }
 
-static void tls_build_proto(struct sock *sk)
-{
-	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
-	struct proto *prot = READ_ONCE(sk->sk_prot);
-
-	/* Build IPv6 TLS whenever the address of tcpv6 _prot changes */
-	if (ip_ver == TLSV6 &&
-	    unlikely(prot != smp_load_acquire(&saved_tcpv6_prot))) {
-		mutex_lock(&tcpv6_prot_mutex);
-		if (likely(prot != saved_tcpv6_prot)) {
-			build_protos(tls_prots[TLSV6], prot);
-			build_proto_ops(tls_proto_ops[TLSV6],
-					sk->sk_socket->ops);
-			smp_store_release(&saved_tcpv6_prot, prot);
-		}
-		mutex_unlock(&tcpv6_prot_mutex);
-	}
-
-	if (ip_ver == TLSV4 &&
-	    unlikely(prot != smp_load_acquire(&saved_tcpv4_prot))) {
-		mutex_lock(&tcpv4_prot_mutex);
-		if (likely(prot != saved_tcpv4_prot)) {
-			build_protos(tls_prots[TLSV4], prot);
-			build_proto_ops(tls_proto_ops[TLSV4],
-					sk->sk_socket->ops);
-			smp_store_release(&saved_tcpv4_prot, prot);
-		}
-		mutex_unlock(&tcpv4_prot_mutex);
-	}
-}
-
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 			 const struct proto *base)
 {
@@ -1066,10 +1085,9 @@ static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 
 static int tls_init(struct sock *sk)
 {
+	struct tls_proto_cache *cache;
 	struct tls_context *ctx;
 	int rc = 0;
-
-	tls_build_proto(sk);
 
 #ifdef CONFIG_TLS_TOE
 	if (tls_toe_bypass(sk))
@@ -1085,6 +1103,11 @@ static int tls_init(struct sock *sk)
 	if (sk->sk_state != TCP_ESTABLISHED)
 		return -ENOTCONN;
 
+	/* Must be done outside write_lock_bh: may sleep (mutex + GFP_KERNEL) */
+	cache = tls_cache_get_or_create(sk);
+	if (!cache)
+		return -ENOMEM;
+
 	/* allocate tls context */
 	write_lock_bh(&sk->sk_callback_lock);
 	ctx = tls_ctx_create(sk);
@@ -1092,6 +1115,7 @@ static int tls_init(struct sock *sk)
 		rc = -ENOMEM;
 		goto out;
 	}
+	ctx->proto_cache = cache;
 
 	ctx->tx_conf = TLS_BASE;
 	ctx->rx_conf = TLS_BASE;

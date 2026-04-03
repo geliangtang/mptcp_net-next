@@ -284,6 +284,7 @@ struct tls_context {
 
 	void (*sk_destruct)(struct sock *sk);
 	const struct tls_prot_ops *ops;
+	struct tls_proto_cache *proto_cache;
 
 	union tls_crypto_context crypto_send;
 	union tls_crypto_context crypto_recv;
