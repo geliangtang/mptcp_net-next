@@ -38,10 +38,7 @@ mptcp_lib_check_mptcp
 
 trap cleanup EXIT
 
-# Temporarily set max to '0' to disable multipath testing,
-# as it depends on "mptcp: fix stall because of data_ready" series of fixes.
-# It will be re-enabled together with that series later as a squash-to patch.
-init 0
+init
 
 ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
 			   -v 13_aes_gcm_mptcp \
