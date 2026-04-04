@@ -124,8 +124,13 @@ static struct tls_proto *tls_proto_find(const struct proto *prot,
 					int ip_ver)
 {
 	struct tls_proto *proto, *ret = NULL;
+	int i = 0;
 
 	rcu_read_lock();
+	list_for_each_entry_rcu(proto, &tls_proto_list, list) {
+		pr_info("%s show proto->prot->name=%s i=%d\n", __func__, proto->prot->name, i++);
+	}
+
 	list_for_each_entry_rcu(proto, &tls_proto_list, list) {
 		if (proto->prot == prot && proto->ip_ver == ip_ver) {
 			if (refcount_inc_not_zero(&proto->refcnt))
@@ -143,6 +148,7 @@ static void tls_proto_cleanup(void)
 
 	spin_lock_bh(&tls_proto_lock);
 	list_for_each_entry_safe(prot, tmp, &tls_proto_list, list) {
+		pr_info("%s kfree name=%s\n", __func__, prot->prot->name);
 		list_del_rcu(&prot->list);
 		kfree(prot);
 	}
@@ -1360,6 +1366,7 @@ static int tls_register_prot_ops(struct tls_prot_ops *ops)
 static void tls_unregister_prot_ops(struct tls_prot_ops *ops)
 {
 	spin_lock(&tls_prot_ops_lock);
+	pr_info("%s del protocol=%d\n", __func__, ops->protocol);
 	list_del_rcu(&ops->list);
 	spin_unlock(&tls_prot_ops_lock);
 
