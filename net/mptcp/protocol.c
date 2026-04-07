@@ -2195,7 +2195,7 @@ static int __mptcp_recvmsg_mskq(struct sock *sk, struct msghdr *msg,
 		copied += count;
 
 		if (!(flags & MSG_PEEK)) {
-			msk->bytes_consumed += count;
+			WRITE_ONCE(msk->bytes_consumed, msk->bytes_consumed + count);
 			if (count < data_len) {
 				MPTCP_SKB_CB(skb)->offset += count;
 				MPTCP_SKB_CB(skb)->map_seq += count;
@@ -4715,7 +4715,7 @@ static int __mptcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 
 		copied += count;
 
-		msk->bytes_consumed += count;
+		WRITE_ONCE(msk->bytes_consumed, msk->bytes_consumed + count);
 		if (count < data_len) {
 			MPTCP_SKB_CB(skb)->offset += count;
 			MPTCP_SKB_CB(skb)->map_seq += count;
@@ -5220,3 +5220,12 @@ struct tls_prot_ops tls_mptcp_ops = {
 	.clean_acked_disable	= mptcp_clean_acked_disable,
 };
 EXPORT_SYMBOL(tls_mptcp_ops);
+
+void mptcp_nvme_debug(struct sock *sk)
+{
+	const struct mptcp_sock *msk = mptcp_sk(sk);
+
+	pr_info("%s rcv_empty:%d backlog_len:%d", __func__, skb_queue_empty(&sk->sk_receive_queue), msk->backlog_len);
+	pr_info("%s bytes_received=%llu bytes_consumed=%llu sk->sk_rcvlowat=%d tcp_under_memory_pressure(sk)=%u sk_state=%u\n", __func__,
+		READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed), sk->sk_rcvlowat, tcp_under_memory_pressure(sk), sk->sk_state);
+}

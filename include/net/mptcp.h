@@ -263,6 +263,8 @@ void mptcp_sock_set_reuseaddr(struct sock *sk);
 void mptcp_sock_set_nodelay(struct sock *sk);
 
 int mptcp_sock_set_syncnt(struct sock *sk, int val);
+
+void mptcp_nvme_debug(struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
