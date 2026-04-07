@@ -5195,3 +5195,12 @@ struct tls_prot_ops tls_mptcp_ops = {
 	.clean_acked_disable	= mptcp_clean_acked_disable,
 };
 EXPORT_SYMBOL(tls_mptcp_ops);
+
+void mptcp_nvme_debug(struct sock *sk)
+{
+	const struct mptcp_sock *msk = mptcp_sk(sk);
+
+	pr_info("%s rcv_empty:%d backlog_len:%d", __func__, skb_queue_empty(&sk->sk_receive_queue), msk->backlog_len);
+	pr_info("%s bytes_received=%llu bytes_consumed=%llu sk->sk_rcvlowat=%d tcp_under_memory_pressure(sk)=%u sk_state=%u\n", __func__,
+		READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed), sk->sk_rcvlowat, tcp_under_memory_pressure(sk), sk->sk_state);
+}
