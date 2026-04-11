@@ -4247,7 +4247,7 @@ static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
 
 	prot[MPTCP_BPF_TX]			= prot[MPTCP_BPF_BASE];
 	prot[MPTCP_BPF_RX]			= prot[MPTCP_BPF_BASE];
-	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_TX];
+	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_BASE];
 }
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
@@ -4280,8 +4280,8 @@ static int mptcp_bpf_assert_proto_ops(struct proto *ops)
 	 * into ops if e.g. a psock is not present. Make sure they are
 	 * indeed valid assumptions.
 	 */
-	return ops->recvmsg  == mptcp_recvmsg &&
-	       ops->sendmsg  == mptcp_sendmsg ? 0 : -EOPNOTSUPP;
+	return ops->recvmsg == mptcp_recvmsg &&
+	       ops->sendmsg == mptcp_sendmsg ? 0 : -EOPNOTSUPP;
 }
 #endif
 
@@ -4314,7 +4314,7 @@ static int mptcp_bpf_update_proto(struct sock *sk,
 	}
 #endif
 
-	/* Pairs with lockless read in sk_clone_lock() */
+	/* Pairs with lockless read in sk_clone() */
 	sock_replace_proto(sk, &mptcp_bpf_prots[family][config]);
 	return 0;
 }
@@ -5223,9 +5223,53 @@ EXPORT_SYMBOL(tls_mptcp_ops);
 
 void mptcp_nvme_debug(struct sock *sk)
 {
-	const struct mptcp_sock *msk = mptcp_sk(sk);
+        const struct mptcp_sock *msk = mptcp_sk(sk);
+        struct sk_buff *skb;
+        int i = 0;
 
-	pr_info("%s rcv_empty:%d backlog_len:%d", __func__, skb_queue_empty(&sk->sk_receive_queue), msk->backlog_len);
-	pr_info("%s bytes_received=%llu bytes_consumed=%llu sk->sk_rcvlowat=%d tcp_under_memory_pressure(sk)=%u sk_state=%u\n", __func__,
-		READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed), sk->sk_rcvlowat, tcp_under_memory_pressure(sk), sk->sk_state);
+        pr_info("=== mptcp_nvme_debug START ===");
+
+        /* MPTCP layer */
+        pr_info("[MPTCP] rcv_empty:%d backlog_len:%d bytes_received=%llu bytes_consumed=%llu gap=%lld ack_seq:%llu",
+                skb_queue_empty(&sk->sk_receive_queue), msk->backlog_len,
+                READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed),
+                (s64)(READ_ONCE(msk->bytes_received) - READ_ONCE(msk->bytes_consumed)), msk->ack_seq);
+        pr_info("[MPTCP] sk_rcvlowat=%d tcp_under_memory_pressure=%u sk_state=%u sk_data_ready=%ps",
+                sk->sk_rcvlowat, tcp_under_memory_pressure(sk), sk->sk_state,
+                sk->sk_data_ready);
+
+        skb_queue_walk(&sk->sk_receive_queue, skb) {
+                pr_info("[MPTCP] skb[%d] len=%u offset=%u map_seq=%llu end_seq=%llu",
+                        i, skb->len, MPTCP_SKB_CB(skb)->offset,
+                        MPTCP_SKB_CB(skb)->map_seq, MPTCP_SKB_CB(skb)->end_seq);
+                        pr_info("[MPTCP] ... more skb skipped");
+                        break;
+        }
+
+        /* TLS layer */
+        if (sk_is_inet(sk) && inet_test_bit(IS_ICSK, sk)) {
+                struct tls_context *tls_ctx = tls_get_ctx(sk);
+
+                if (tls_ctx) {
+                        struct tls_sw_context_rx *rx_ctx = tls_sw_ctx_rx(tls_ctx);
+
+                        if (rx_ctx) {
+                                pr_info("[TLS] rx_list_qlen=%u msg_ready=%d strp_stopped=%d copy_mode=%d decrypt_pending=%d",
+                                        skb_queue_len(&rx_ctx->rx_list),
+                                        READ_ONCE(rx_ctx->strp.msg_ready),
+                                        rx_ctx->strp.stopped,
+                                        rx_ctx->strp.copy_mode,
+                                        atomic_read(&rx_ctx->decrypt_pending));
+                                pr_info("[TLS] stm.full_len=%u stm.offset=%u stm.arrived=%u",
+                                        rx_ctx->strp.stm.full_len,
+                                        rx_ctx->strp.stm.offset,
+                                        rx_ctx->strp.stm.full_len ? rx_ctx->strp.anchor->len : 0);
+                                pr_info("[TLS] saved_data_ready=%ps",
+                                        rx_ctx->saved_data_ready);
+                        }
+                }
+        }
+
+        pr_info("=== mptcp_nvme_debug END ===");
 }
+
