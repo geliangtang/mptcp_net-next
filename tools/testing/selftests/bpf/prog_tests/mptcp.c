@@ -498,8 +498,8 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
-/* Test sockmap on MPTCP server handling non-mp-capable clients. */
-static void test_sockmap_with_mptcp_fallback(struct mptcp_sockmap *skel)
+/* Test sockmap on MPTCP server handling MPTCP clients. */
+static void test_sockmap_with_mptcp(struct mptcp_sockmap *skel)
 {
 	int listen_fd = -1, client_fd1 = -1, client_fd2 = -1;
 	int server_fd1 = -1, server_fd2 = -1, sent, recvd;
@@ -513,8 +513,8 @@ static void test_sockmap_with_mptcp_fallback(struct mptcp_sockmap *skel)
 
 	skel->bss->trace_port = ntohs(get_socket_local_port(listen_fd));
 	skel->bss->sk_index = 0;
-	/* create client without MPTCP enabled */
-	client_fd1 = connect_to_fd_opts(listen_fd, NULL);
+	/* create client with MPTCP enabled */
+	client_fd1 = connect_to_fd(listen_fd, 0);
 	if (!ASSERT_OK_FD(client_fd1, "sockmap-fb:connect_to_fd"))
 		goto end;
 
@@ -535,7 +535,7 @@ static void test_sockmap_with_mptcp_fallback(struct mptcp_sockmap *skel)
 
 	/* try to recv more bytes to avoid truncation check */
 	recvd = recv(client_fd2, rcv, sizeof(rcv), 0);
-	if (!ASSERT_EQ(recvd, sizeof(snd), "sockmap-fb:recv(client_fd2)"))
+	if (!ASSERT_EQ(recvd, -1, "sockmap-fb:recv(client_fd2)"))
 		goto end;
 
 end:
@@ -623,7 +623,7 @@ static void test_mptcp_sockmap(void)
 	if (endpoint_init("subflow", 2) < 0)
 		goto close_netns;
 
-	test_sockmap_with_mptcp_fallback(skel);
+	test_sockmap_with_mptcp(skel);
 	test_sockmap_mptcp_support(skel);
 
 close_netns:
