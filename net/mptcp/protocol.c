@@ -4516,7 +4516,7 @@ static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
 
 	prot[MPTCP_BPF_TX]			= prot[MPTCP_BPF_BASE];
 	prot[MPTCP_BPF_RX]			= prot[MPTCP_BPF_BASE];
-	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_TX];
+	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_BASE];
 }
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
@@ -4549,8 +4549,8 @@ static int mptcp_bpf_assert_proto_ops(struct proto *ops)
 	 * into ops if e.g. a psock is not present. Make sure they are
 	 * indeed valid assumptions.
 	 */
-	return ops->recvmsg  == mptcp_recvmsg &&
-	       ops->sendmsg  == mptcp_sendmsg ? 0 : -EOPNOTSUPP;
+	return ops->recvmsg == mptcp_recvmsg &&
+	       ops->sendmsg == mptcp_sendmsg ? 0 : -EOPNOTSUPP;
 }
 #endif
 
@@ -4583,7 +4583,7 @@ static int mptcp_bpf_update_proto(struct sock *sk,
 	}
 #endif
 
-	/* Pairs with lockless read in sk_clone_lock() */
+	/* Pairs with lockless read in sk_clone() */
 	sock_replace_proto(sk, &mptcp_bpf_prots[family][config]);
 	return 0;
 }
