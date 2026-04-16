@@ -8,6 +8,7 @@ trtype="${1:-mptcp}"
 path="${2:-1}"
 iopolicy=${3:-"numa"} # round-robin, queue-depth
 loss=${4:-0}
+tls=${5:-""}
 nqn="nqn.2014-08.org.nvmexpress.${trtype}dev.$$.${RANDOM}"
 ns=1
 port=$((RANDOM % 10000 + 20000))
@@ -20,6 +21,7 @@ loop_dev=""
 export trtype path nqn ns port trsvcid
 export loop_dev temp_file
 export iopolicy loss
+export tls
 
 usage()
 {
@@ -27,12 +29,13 @@ usage()
 
 Usage:
 
-	$(basename "$0") [trtype] [path] [iopolicy] [loss]
+	$(basename "$0") [trtype] [path] [iopolicy] [loss] [tls]
 
 	trtype   Transport type (tcp|mptcp) - default: mptcp
 	path     Number of multipath (1-4) - default: 1
 	iopolicy I/O policy (numa|round-robin|queue-depth) - default: numa
 	loss     Enable packet loss (0|1) - default: 0
+	tls      Enable TLS (any non-empty value) - default: ""
 
 EOF
 exit ${KSFT_FAIL}
@@ -118,9 +121,26 @@ cleanup()
 
 	mptcp_lib_ns_exit "$ns1" "$ns2"
 
+	if [ -n "$tls" ]; then
+		kill "$tlshd_pid_ns1" 2>/dev/null
+		wait "$tlshd_pid_ns1" 2>/dev/null
+
+		kill "$tlshd_pid_ns2" 2>/dev/null
+		wait "$tlshd_pid_ns2" 2>/dev/null
+
+		for keyid in $(keyctl list %:.nvme 2>/dev/null |
+			       grep -E "psk:.*(${nqn}|discovery)" |
+			       awk -F: '{print $1}' |
+			       tr -d ' '); do
+			keyctl unlink "$keyid" %:.nvme 2>/dev/null &&
+			echo "remove key $keyid"
+		done
+	fi
+
 	unset -v trtype path nqn ns port trsvcid
 	unset -v loop_dev temp_file
 	unset -v iopolicy loss
+	unset -v tls
 }
 
 # $tc_args needs word splitting to pass multiple arguments to netem
@@ -177,6 +197,24 @@ init()
 	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.2.2 flags subflow
 	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.3.2 flags subflow
 	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.4.2 flags subflow
+
+	if [ -n "$tls" ]; then
+		local key
+
+		keyctl clear @s
+		key=$(nvme gen-tls-key)
+		nvme check-tls-key --subsysnqn="${nqn}" -i -d "${key}"
+		nvme check-tls-key \
+			--subsysnqn=nqn.2014-08.org.nvmexpress.discovery \
+			-i -d "${key}"
+		keyctl list %:.nvme
+		keyctl show
+
+		ip netns exec "$ns1" /usr/sbin/tlshd &
+		tlshd_pid_ns1=$!
+		ip netns exec "$ns2" /usr/sbin/tlshd &
+		tlshd_pid_ns2=$!
+	fi
 }
 
 # This function is invoked indirectly
@@ -206,6 +244,10 @@ run_target()
 			echo "10.1.${i}.1" > addr_traddr
 		fi
 		echo "${trsvcid}" > addr_trsvcid
+
+		if [ -n "$tls" ]; then
+			echo "tls1.3" > addr_tsas
+		fi
 
 		mkdir -p subsystems
 		ln -sf "../../subsystems/${nqn}" "subsystems/${nqn}"
@@ -261,19 +303,25 @@ run_host()
 {
 	local traddr=10.1.1.1
 	local devname
+	local extra=""
 
-	echo "nvme discover -a ${traddr}"
+	if [ -n "$tls" ]; then
+		extra="--tls"
+	fi
+
+	echo "nvme discover -a ${traddr} ${extra}"
 	if ! nvme discover -t "${trtype}" -a "${traddr}" \
-			   -s "${trsvcid}"; then
+			   -s "${trsvcid}" "${extra}"; then
 		echo "Failed to discover ${traddr}"
 		return 1
 	fi
 
 	for i in $(seq 1 "${path}"); do
 		traddr=10.1.${i}.1
-		echo "Connecting to ${traddr}:${trsvcid}"
+		echo "Connecting to ${traddr}:${trsvcid} ${extra}"
 		if ! nvme connect -t "${trtype}" -a "${traddr}" \
-				  -s "${trsvcid}" -n "${nqn}"; then
+				  -s "${trsvcid}" -n "${nqn}" \
+				  "${extra}"; then
 			echo "Failed to connect to ${traddr}"
 			return 1
 		fi
@@ -338,7 +386,7 @@ run_host()
 	nvme flush "/dev/${devname}"
 }
 
-mptcp_lib_check_tools nvme fio
+mptcp_lib_check_tools nvme fio keyctl tlshd
 validate_params
 
 if ! temp_file=$(mktemp --suffix=.raw /tmp/nvme_test.XXXXXX); then
