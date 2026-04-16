@@ -542,6 +542,18 @@ mptcp_lib_check_tools() {
 				exit ${KSFT_SKIP}
 			fi
 			;;
+		"keyctl")
+			if ! keyctl --version &> /dev/null; then
+				mptcp_lib_pr_skip "keyctl tool not found"
+				exit ${KSFT_SKIP}
+			fi
+			;;
+		"tlshd")
+			if ! tlshd --version &> /dev/null; then
+				mptcp_lib_pr_skip "tlshd tool not found"
+				exit ${KSFT_SKIP}
+			fi
+			;;
 		*)
 			mptcp_lib_pr_fail "Internal error: unsupported tool: ${tool}"
 			exit ${KSFT_FAIL}
