@@ -6,6 +6,7 @@
 ret=0
 trtype="${1:-mptcp}"
 iopolicy=${2:-"numa"} # round-robin, queue-depth
+tls=${3:-""}
 nqn="nqn.2014-08.org.nvmexpress.${trtype}dev.$$.${RANDOM}"
 ns=1
 port=$((RANDOM % 10000 + 20000))
@@ -63,7 +64,31 @@ cleanup()
 	kill "$monitor_pid_ns2" 2>/dev/null
 	wait "$monitor_pid_ns2" 2>/dev/null
 
+	if [ -n "$tls" ]; then
+		kill "$tlshd_pid_ns1" 2>/dev/null
+		wait "$tlshd_pid_ns1" 2>/dev/null
+
+		kill "$tlshd_pid_ns2" 2>/dev/null
+		wait "$tlshd_pid_ns2" 2>/dev/null
+
+		for keyid in $(keyctl list %:.nvme 2>/dev/null |
+			       grep "psk:.*$nqn" |
+			       awk -F: '{print $1}' |
+			       tr -d ' '); do
+			keyctl unlink "$keyid" %:.nvme 2>/dev/null &&
+			echo "remove key $keyid for $nqn"
+		done
+		for keyid in $(keyctl list %:.nvme 2>/dev/null |
+			       grep "psk:.*discovery" |
+			       awk -F: '{print $1}' |
+			       tr -d ' '); do
+			keyctl unlink "$keyid" %:.nvme 2>/dev/null &&
+			echo "remove key $keyid for discovery"
+		done
+	fi
+
 	unset -v trtype nqn ns port trsvcid
+	unset tls
 }
 
 init()
@@ -112,6 +137,21 @@ init()
 	monitor_pid_ns1=$!
 	ip -n "${ns2}" mptcp monitor &
 	monitor_pid_ns2=$!
+
+	if [ -n "$tls" ]; then
+		local key=$(nvme gen-tls-key)
+
+		keyctl clear @s
+		nvme check-tls-key --subsysnqn=${nqn} -i -d ${key}
+		nvme check-tls-key --subsysnqn=nqn.2014-08.org.nvmexpress.discovery -i -d ${key}
+		keyctl list %:.nvme
+		keyctl show
+
+		ip netns exec "$ns1" /usr/sbin/tlshd &
+		tlshd_pid_ns1=$!
+		ip netns exec "$ns2" /usr/sbin/tlshd &
+		tlshd_pid_ns2=$!
+	fi
 }
 
 run_target()
@@ -134,6 +174,10 @@ run_target()
 	echo 0.0.0.0 > addr_traddr
 	echo "${trsvcid}" > addr_trsvcid
 
+	if [ -n "$tls" ]; then
+		echo "tls1.3" > addr_tsas
+	fi
+
 	cd subsystems || exit
 	ln -sf ../../../subsystems/"${nqn}" "${trtype}"subsys
 }
@@ -144,16 +188,22 @@ run_host()
 	local output
 	local devname
 	local subname
+	local extra=""
 
-	echo "nvme discover -a ${traddr}"
-	nvme discover -t "${trtype}" -a "${traddr}" -s "${trsvcid}"
+	if [ -n "$tls" ]; then
+		extra="--tls"
+	fi
+
+	echo "nvme discover -a ${traddr} ${extra}"
+	nvme discover -t "${trtype}" -a "${traddr}" -s "${trsvcid}" "${extra}"
 	if [ $? -ne 0 ]; then
 		return 1
 	fi
 
-	echo "nvme connect"
+	echo "nvme connect ${extra}"
 	output=$(nvme connect -t "${trtype}" -a "${traddr}" \
-			      -s "${trsvcid}" -n "${nqn}" 2>&1)
+			      -s "${trsvcid}" -n "${nqn}" \
+			      "${extra}" 2>&1)
 	if [ $? -ne 0 ]; then
 		echo "nvme connect failed: $output" >&2
 		return 1
@@ -213,7 +263,7 @@ run_test()
 {
 	export trtype nqn ns port trsvcid
 	export loop_dev temp_file
-	export iopolicy
+	export iopolicy tls
 
 	if ! ip netns exec "$ns1" bash <<- EOF
 		$(declare -f run_target)
