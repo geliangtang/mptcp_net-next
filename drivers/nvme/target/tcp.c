@@ -1060,7 +1060,7 @@ static int nvmet_tcp_done_recv_pdu(struct nvmet_tcp_queue *queue)
 {
 	struct nvme_tcp_hdr *hdr = &queue->pdu.cmd.hdr;
 	struct nvme_command *nvme_cmd = &queue->pdu.cmd.cmd;
-	const struct nvmet_fabrics_ops *ops;
+	struct nvmet_tcp_port *port;
 	struct nvmet_req *req;
 	int ret;
 
@@ -1099,9 +1099,14 @@ static int nvmet_tcp_done_recv_pdu(struct nvmet_tcp_queue *queue)
 	memcpy(req->cmd, nvme_cmd, sizeof(*nvme_cmd));
 
 	rcu_read_lock();
-	ops = rcu_dereference(queue->port)->proto->ops;
+	port = rcu_dereference(queue->port);
+	if (!port || !port->proto) {
+		rcu_read_unlock();
+		nvmet_tcp_fatal_error(queue);
+		return -EINVAL;
+	}
 	rcu_read_unlock();
-	if (unlikely(!nvmet_req_init(req, &queue->nvme_sq, ops))) {
+	if (unlikely(!nvmet_req_init(req, &queue->nvme_sq, port->proto->ops))) {
 		pr_err("failed cmd %p id %d opcode %d, data_len: %d, status: %04x\n",
 			req->cmd, req->cmd->common.command_id,
 			req->cmd->common.opcode,
@@ -1741,7 +1746,7 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 {
 	struct socket *sock = queue->sock;
 	struct inet_sock *inet = inet_sk(sock->sk);
-	const struct nvmet_tcp_proto *proto;
+	struct nvmet_tcp_port *port;
 	int ret;
 
 	ret = kernel_getsockname(sock,
@@ -1759,7 +1764,11 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	print_sockaddr((struct sockaddr *)&queue->sockaddr_peer);
 
 	rcu_read_lock();
-	proto = rcu_dereference(queue->port)->proto;
+	port = rcu_dereference(queue->port);
+	if (!port || !port->proto) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
 	rcu_read_unlock();
 
 	/*
@@ -1767,15 +1776,15 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	 * close. This is done to prevent stale data from being sent should
 	 * the network connection be restored before TCP times out.
 	 */
-	proto->no_linger(sock->sk);
+	port->proto->no_linger(sock->sk);
 
 	pr_info("%s so_priority=%d inet->rcv_tos=%d\n", __func__, so_priority, inet->rcv_tos);
 	if (so_priority > 0)
-		proto->set_priority(sock->sk, so_priority);
+		port->proto->set_priority(sock->sk, so_priority);
 
 	/* Set socket type of service */
 	if (inet->rcv_tos > 0)
-		proto->set_tos(sock->sk, inet->rcv_tos);
+		port->proto->set_tos(sock->sk, inet->rcv_tos);
 
 	ret = 0;
 	write_lock_bh(&sock->sk->sk_callback_lock);
@@ -2226,8 +2235,10 @@ static void nvmet_tcp_destroy_port_queues(struct nvmet_tcp_port *port)
 		rcu_read_lock();
 		qport = rcu_dereference(queue->port);
 		rcu_read_unlock();
-		if (qport == port)
+		if (qport == port) {
+			queue->port = NULL;
 			kernel_sock_shutdown(queue->sock, SHUT_RDWR);
+		}
 	}
 	mutex_unlock(&nvmet_tcp_queue_mutex);
 }
