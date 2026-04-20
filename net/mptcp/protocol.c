@@ -5169,6 +5169,7 @@ EXPORT_SYMBOL(tls_mptcp_ops);
 
 void mptcp_nvme_debug(struct sock *sk)
 {
+#if 0
         const struct mptcp_sock *msk = mptcp_sk(sk);
         struct sk_buff *skb;
         int i = 0;
@@ -5191,6 +5192,7 @@ void mptcp_nvme_debug(struct sock *sk)
                         pr_info("[MPTCP] ... more skb skipped");
                         break;
         }
+#endif
 
         /* TLS layer */
         if (sk_is_inet(sk) && inet_test_bit(IS_ICSK, sk)) {
