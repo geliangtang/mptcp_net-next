@@ -25,6 +25,7 @@ TEST_GEN_FILES := \
 	mptcp_inq \
 	mptcp_sockopt \
 	pm_nl_ctl \
+	mptcp_data \
 # end of TEST_GEN_FILES
 
 TEST_FILES := \
