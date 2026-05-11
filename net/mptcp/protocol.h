@@ -867,12 +867,12 @@ static inline u64 mptcp_data_avail(const struct mptcp_sock *msk)
 static inline bool mptcp_epollin_ready(const struct sock *sk)
 {
 	u64 data_avail = mptcp_data_avail(mptcp_sk(sk));
-	const struct mptcp_sock *msk = mptcp_sk(sk);
+	//const struct mptcp_sock *msk = mptcp_sk(sk);
 	bool ret;
 
 	if (!data_avail) {
-		pr_info("%s bytes_received=%llu bytes_consumed=%llu\n", __func__,
-			READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed));
+		//pr_info("%s bytes_received=%llu bytes_consumed=%llu\n", __func__,
+		//	READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed));
 		return false;
 	}
 
@@ -882,8 +882,8 @@ static inline bool mptcp_epollin_ready(const struct sock *sk)
 	ret = (data_avail >= sk->sk_rcvlowat) ||
 		tcp_under_memory_pressure(sk);
 	if (!ret) {
-		pr_info("%s bytes_received=%llu bytes_consumed=%llu data_avail=%llu sk->sk_rcvlowat=%d tcp_under_memory_pressure(sk)=%u\n", __func__,
-			READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed), data_avail, sk->sk_rcvlowat, tcp_under_memory_pressure(sk));
+		//pr_info("%s bytes_received=%llu bytes_consumed=%llu data_avail=%llu sk->sk_rcvlowat=%d tcp_under_memory_pressure(sk)=%u\n", __func__,
+		//	READ_ONCE(msk->bytes_received), READ_ONCE(msk->bytes_consumed), data_avail, sk->sk_rcvlowat, tcp_under_memory_pressure(sk));
 	}
 	return ret;
 }

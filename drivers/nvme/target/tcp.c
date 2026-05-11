@@ -2114,12 +2114,12 @@ static void nvmet_tcp_listen_data_ready(struct sock *sk)
 
 	trace_sk_data_ready(sk);
 
-	pr_info("[NVMET] listen_data_ready sk=%p state=%d\n",
-			sk, sk->sk_state);
+	//pr_info("[NVMET] listen_data_ready sk=%p state=%d\n",
+	//		sk, sk->sk_state);
 
 	if (sk->sk_state != TCP_LISTEN) {
-		pr_warn("[NVMET] listen_data_ready: sk NOT in LISTEN state, state=%d\n",
-				sk->sk_state);
+		//pr_warn("[NVMET] listen_data_ready: sk NOT in LISTEN state, state=%d\n",
+		//		sk->sk_state);
 		return;
 	}
 
@@ -2127,8 +2127,8 @@ static void nvmet_tcp_listen_data_ready(struct sock *sk)
 	port = sk->sk_user_data;
 	if (port)
 		queue_work(nvmet_wq, &port->accept_work);
-	else
-		pr_warn("[NVMET] listen_data_ready: port=NULL, sk_user_data cleared!\n");
+	//else
+	//	pr_warn("[NVMET] listen_data_ready: port=NULL, sk_user_data cleared!\n");
 
 	read_unlock_bh(&sk->sk_callback_lock);
 }
