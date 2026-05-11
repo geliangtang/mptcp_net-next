@@ -1102,7 +1102,7 @@ static int nvmet_tcp_done_recv_pdu(struct nvmet_tcp_queue *queue)
 	port = rcu_dereference(queue->port);
 	if (!port || !port->proto) {
 		rcu_read_unlock();
-		nvmet_tcp_fatal_error(queue);
+		//nvmet_tcp_fatal_error(queue);
 		return -EINVAL;
 	}
 	rcu_read_unlock();
