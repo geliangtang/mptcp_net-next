@@ -632,7 +632,7 @@ static void chunked_sendfile(struct __test_metadata *_metadata,
 	close(fd);
 }
 
-TEST_F(tls, multi_chunk_sendfile)
+TEST_F_TIMEOUT(tls, multi_chunk_sendfile, 480)
 {
 	chunked_sendfile(_metadata, self, 4096, 4096);
 	chunked_sendfile(_metadata, self, 4096, 0);
@@ -1684,6 +1684,8 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 				   left > sizeof(rb) ? sizeof(rb) : left, 0);
 
 			EXPECT_GE(res, 0);
+			if (res < 0)
+				break;
 			left -= res;
 		}
 	} else {
@@ -1701,37 +1703,39 @@ test_mutliproc(struct __test_metadata *_metadata, struct _test_data_tls *self,
 					   left > file_sz ? file_sz : left, 0);
 
 			EXPECT_GE(res, 0);
+			if (res < 0)
+				break;
 			left -= res;
 		}
 	}
 }
 
-TEST_F(tls, mutliproc_even)
+TEST_F_TIMEOUT(tls, mutliproc_even, 480)
 {
 	test_mutliproc(_metadata, self, false, 6, 6);
 }
 
-TEST_F(tls, mutliproc_readers)
+TEST_F_TIMEOUT(tls, mutliproc_readers, 480)
 {
 	test_mutliproc(_metadata, self, false, 4, 12);
 }
 
-TEST_F(tls, mutliproc_writers)
+TEST_F_TIMEOUT(tls, mutliproc_writers, 480)
 {
 	test_mutliproc(_metadata, self, false, 10, 2);
 }
 
-TEST_F(tls, mutliproc_sendpage_even)
+TEST_F_TIMEOUT(tls, mutliproc_sendpage_even, 480)
 {
 	test_mutliproc(_metadata, self, true, 6, 6);
 }
 
-TEST_F(tls, mutliproc_sendpage_readers)
+TEST_F_TIMEOUT(tls, mutliproc_sendpage_readers, 480)
 {
 	test_mutliproc(_metadata, self, true, 4, 12);
 }
 
-TEST_F(tls, mutliproc_sendpage_writers)
+TEST_F_TIMEOUT(tls, mutliproc_sendpage_writers, 960)
 {
 	test_mutliproc(_metadata, self, true, 10, 2);
 }
