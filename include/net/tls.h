@@ -245,6 +245,7 @@ struct tls_prot_ops {
 };
 
 struct tls_proto {
+	struct rcu_head			rcu;
 	refcount_t			refcnt;
 	struct list_head		list;
 	int				ip_ver;

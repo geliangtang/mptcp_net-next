@@ -369,6 +369,13 @@ static void tls_write_space(struct sock *sk)
 	ctx->sk_write_space(sk);
 }
 
+static void tls_proto_free(struct rcu_head *rcu)
+{
+	struct tls_proto *proto = container_of(rcu, struct tls_proto, rcu);
+
+	kfree(proto);
+}
+
 static void tls_proto_put(struct tls_proto *proto)
 {
 	if (refcount_dec_and_test(&proto->refcnt)) {
@@ -376,7 +383,8 @@ static void tls_proto_put(struct tls_proto *proto)
 		list_del(&proto->list);
 		spin_unlock_bh(&tls_proto_lock);
 		module_put(proto->ops->owner);
-		kfree(proto);
+
+		call_rcu(&proto->rcu, tls_proto_free);
 	}
 }
 
@@ -1351,9 +1359,9 @@ static int tls_register_prot_ops(struct tls_prot_ops *ops)
 	if (tls_prot_ops_find(ops->protocol))
 		return -EEXIST;
 
-	spin_lock(&tls_proto_lock);
+	spin_lock_bh(&tls_proto_lock);
 	list_add_tail(&ops->list, &tls_prot_ops_list);
-	spin_unlock(&tls_proto_lock);
+	spin_unlock_bh(&tls_proto_lock);
 
 	pr_debug("tls_prot_ops %d registered\n", ops->protocol);
 	return 0;
@@ -1361,10 +1369,10 @@ static int tls_register_prot_ops(struct tls_prot_ops *ops)
 
 static void tls_unregister_prot_ops(struct tls_prot_ops *ops)
 {
-	spin_lock(&tls_proto_lock);
+	spin_lock_bh(&tls_proto_lock);
 	pr_info("%s del protocol=%d\n", __func__, ops->protocol);
 	list_del(&ops->list);
-	spin_unlock(&tls_proto_lock);
+	spin_unlock_bh(&tls_proto_lock);
 }
 
 static struct sk_buff *tls_tcp_recv_skb(struct sock *sk, u32 *off)

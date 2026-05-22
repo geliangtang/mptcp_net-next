@@ -830,6 +830,7 @@ static int mptcp_setsockopt_all_sf(struct mptcp_sock *msk, int level,
 static int mptcp_setsockopt_tcp_ulp(struct sock *sk, sockptr_t optval,
 				    unsigned int optlen)
 {
+	struct mptcp_sock *msk = mptcp_sk(sk);
 	char name[TCP_ULP_NAME_MAX];
 	int err = 0;
 	size_t len;
@@ -848,6 +849,10 @@ static int mptcp_setsockopt_tcp_ulp(struct sock *sk, sockptr_t optval,
 		return -EOPNOTSUPP;
 
 	sockopt_lock_sock(sk);
+	if (__mptcp_check_fallback(msk)) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
 	if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN)) {
 		err = -ENOTCONN;
 		goto out;
@@ -866,8 +871,6 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 
 	switch (optname) {
 	case TCP_ULP:
-		if (__mptcp_check_fallback(msk))
-			return -EOPNOTSUPP;
 		return mptcp_setsockopt_tcp_ulp(sk, optval, optlen);
 	case TCP_CONGESTION:
 		return mptcp_setsockopt_sol_tcp_congestion(msk, optval, optlen);
