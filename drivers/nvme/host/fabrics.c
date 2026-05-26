@@ -10,6 +10,7 @@
 #include <linux/mutex.h>
 #include <linux/parser.h>
 #include <linux/seq_file.h>
+#include <linux/nsproxy.h>
 #include "nvme.h"
 #include "fabrics.h"
 #include <linux/nvme-keyring.h>
@@ -738,6 +739,10 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 	opts->tls_key = NULL;
 	opts->keyring = NULL;
 	opts->concat = false;
+
+	opts->net = current->nsproxy->net_ns;
+	if (!opts->net)
+		opts->net = &init_net;
 
 	options = o = kstrdup(buf, GFP_KERNEL);
 	if (!options)
