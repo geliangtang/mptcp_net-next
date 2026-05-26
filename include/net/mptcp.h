@@ -242,6 +242,12 @@ void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
+
+void mptcp_sock_no_linger(struct sock *sk);
+
+void mptcp_sock_set_priority(struct sock *sk, u32 priority);
+
+void mptcp_sock_set_tos(struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
@@ -325,6 +331,12 @@ static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
 {
 	return 0;
 }
+
+static inline void mptcp_sock_no_linger(struct sock *sk) { }
+
+static inline void mptcp_sock_set_priority(struct sock *sk, u32 priority) { }
+
+static inline void mptcp_sock_set_tos(struct sock *sk) { }
 #endif /* CONFIG_MPTCP */
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
