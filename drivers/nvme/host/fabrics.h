@@ -114,6 +114,7 @@ enum {
 struct nvmf_ctrl_options {
 	unsigned		mask;
 	int			max_reconnects;
+	struct net		*net;
 	char			*transport;
 	char			*subsysnqn;
 	char			*traddr;
