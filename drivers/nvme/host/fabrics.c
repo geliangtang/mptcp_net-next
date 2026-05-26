@@ -11,6 +11,7 @@
 #include <linux/parser.h>
 #include <linux/seq_file.h>
 #include <linux/nsproxy.h>
+#include <net/net_namespace.h>
 #include "nvme.h"
 #include "fabrics.h"
 #include <linux/nvme-keyring.h>
@@ -1225,6 +1226,7 @@ bool nvmf_ip_options_match(struct nvme_ctrl *ctrl,
 		struct nvmf_ctrl_options *opts)
 {
 	if (!nvmf_ctlr_matches_baseopts(ctrl, opts) ||
+	    !net_eq(opts->net, ctrl->opts->net) ||
 	    strcmp(opts->transport, ctrl->opts->transport) ||
 	    strcmp(opts->traddr, ctrl->opts->traddr) ||
 	    strcmp(opts->trsvcid, ctrl->opts->trsvcid))
