@@ -3250,7 +3250,7 @@ static struct nvme_tcp_ctrl *nvme_tcp_alloc_ctrl(struct device *dev,
 		opts->mask |= NVMF_OPT_TRSVCID;
 	}
 
-	ret = inet_pton_with_scope(&init_net, AF_UNSPEC,
+	ret = inet_pton_with_scope(opts->net, AF_UNSPEC,
 			opts->traddr, opts->trsvcid, &ctrl->addr);
 	if (ret) {
 		pr_err("malformed address passed: %s:%s\n",
@@ -3259,7 +3259,7 @@ static struct nvme_tcp_ctrl *nvme_tcp_alloc_ctrl(struct device *dev,
 	}
 
 	if (opts->mask & NVMF_OPT_HOST_TRADDR) {
-		ret = inet_pton_with_scope(&init_net, AF_UNSPEC,
+		ret = inet_pton_with_scope(opts->net, AF_UNSPEC,
 			opts->host_traddr, NULL, &ctrl->src_addr);
 		if (ret) {
 			pr_err("malformed src address passed: %s\n",
@@ -3269,8 +3269,7 @@ static struct nvme_tcp_ctrl *nvme_tcp_alloc_ctrl(struct device *dev,
 	}
 
 	if (opts->mask & NVMF_OPT_HOST_IFACE) {
-		if (!__dev_get_by_name(current->nsproxy->net_ns,
-				       opts->host_iface)) {
+		if (!__dev_get_by_name(opts->net, opts->host_iface)) {
 			pr_err("invalid interface passed: %s\n",
 			       opts->host_iface);
 			ret = -ENODEV;
