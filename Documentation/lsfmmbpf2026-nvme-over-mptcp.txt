@@ -711,3 +711,67 @@ If I can't answer it immediately, I'll follow up with you by email or some other
 
 Thank you very much for your interest in NVMe MPTCP.
 I know the process will take a long time, but I'll do my best to push this feature upstream.
+
+
+NVMe over TCP
+								             NVMe Multipath
+								(numa, round-robin, queue-depth)
+		     ____________________________________________________________|__________________________________________________________
+		    | ns1eth1 (10.1.1.1)		    | ns1eth2 (10.1.2.1)		    | ns1eth3 (10.1.3.1)		    | ns1eth4 (10.1.4.1)
+		    | nvme0 (multipath1)		    | nvme1 (multipath21)		    | nvme2 (multipath3)		    | nvme3 (multipath4)
+	            | Block Multiqueue		            | Block Multiqueue                      | Block Multiqueue                      | Block Multiqueue
+		    | port 14809			    | port 14809			    | port 14809			    | port 14809
+         ___________|___________	         ___________|___________	   	 ___________|___________		 ___________|___________
+   queue|0    |1    |2    |3... |24             |25   |26   |27   |28...|49             |50   |51   |52   |53...|74             |75   |76   |77   |78...|99
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+        |TCP  |TCP  |TCP  |TCP  |TCP            |TCP  |TCP  |TCP  |TCP  |TCP            |TCP  |TCP  |TCP  |TCP  |TCP            |TCP  |TCP  |TCP  |TCP  |TCP
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+                                                            |
+                                                            |10.1.2.1:14809
+                                                            |
+                                                            |TCP
+                                                            |
+                                                            |10.1.2.2:45088
+                                                            |
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+        |TCP  |TCP  |TCP  |TCP  |TCP            |TCP  |TCP  |TCP  |TCP  |TCP            |TCP  |TCP  |TCP  |TCP  |TCP            |TCP  |TCP  |TCP  |TCP  |TCP
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+   port 48786 48790 48802 48814 37830           45076 45080 45088 45090 45350           38768 38776 38784 38794 38988          39142 39144 39158 39160 39350
+        |_____|_____|_____|_____|               |_____|_____|_____|_____|               |_____|_____|_____|_____|               |_____|_____|_____|_____|
+                    |                                       |                                       |                                       |
+		ns2eth1 (10.1.1.2)			ns2eth2 (10.1.2.2)			ns2eth3 (10.1.3.2)			ns2eth4 (10.1.4.2)
+
+
+NVMe over MPTCP
+								             NVMe Multipath
+								(numa, round-robin, queue-depth)
+		     ____________________________________________________________|__________________________________________________________
+		    | ns1eth1 (10.1.1.1)		    | ns1eth2 (10.1.2.1)		    | ns1eth3 (10.1.3.1)		    | ns1eth4 (10.1.4.1)
+		    | nvme0 (multipath1)		    | nvme1 (multipath21)		    | nvme2 (multipath3)		    | nvme3 (multipath4)
+	            | Block Multiqueue		            | Block Multiqueue                      | Block Multiqueue                      | Block Multiqueue
+		    | port 14809			    | port 14809			    | port 14809			    | port 14809
+         ___________|___________	         ___________|___________	   	 ___________|___________		 ___________|___________
+   queue|0    |1    |2    |3... |24             |25   |26   |27   |28...|49             |50   |51   |52   |53...|74             |75   |76   |77   |78...|99
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+        |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP          |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP          |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP          |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+                                                            |
+                                                            | Multipath TCP
+                                                            | (burst, round-robin)
+                     _______________________________________|_______________________________________________________________________________
+                    |10.1.1.1:14809                         |10.1.2.1:14809                         |10.1.3.1:14809                         |10.1.4.1:14809
+                    |                                       |                                       |                                       |
+                    |TCP                                    |TCP                                    |TCP                                    |TCP
+                    |                                       |                                       |                                       |
+                    |10.1.1.2:45088                         |10.1.2.2:45088                         |10.1.3.2:45088                         |10.1.4.2:45088
+                    |_______________________________________|_______________________________________|_______________________________________|
+                                                            |
+                                                            | Multipath TCP
+                                                            |
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+        |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP          |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP          |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP          |MPTCP|MPTCP|MPTCP|MPTCP|MPTCP
+        |     |     |     |     |               |     |     |     |     |               |     |     |     |     |               |     |     |     |     |
+   port 48786 48790 48802 48814 37830           45076 45080 45088 45090 45350           38768 38776 38784 38794 38988          39142 39144 39158 39160 39350
+        |_____|_____|_____|_____|               |_____|_____|_____|_____|               |_____|_____|_____|_____|               |_____|_____|_____|_____|
+                    |                                       |                                       |                                       |
+		ns2eth1 (10.1.1.2)			ns2eth2 (10.1.2.2)			ns2eth3 (10.1.3.2)			ns2eth4 (10.1.4.2)
