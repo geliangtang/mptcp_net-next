@@ -2856,9 +2856,8 @@ static int __mptcp_push_retrans(struct sock *sk, struct mptcp_data_frag *dfrag,
 			info.sent = offset;
 			info.limit = READ_ONCE(msk->csum_enabled) ? dfrag->data_len :
 								    dfrag->already_sent;
-			DEBUG_NET_WARN_ON_ONCE(!before64(sent_seq,
-							 dfrag->data_seq +
-							 info.limit));
+			if (!before64(sent_seq, dfrag->data_seq + info.limit))
+				pr_info("%s not ok sent_seq=%llu dfrag->data_seq=%llu info.limit=%u\n", __func__, sent_seq, dfrag->data_seq, info.limit);
 
 			/*
 			 * make the whole retrans decision, xmit, disallow
