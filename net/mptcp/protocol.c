@@ -5089,6 +5089,11 @@ static u32 mptcp_get_skb_seq(struct sk_buff *skb)
 	return MPTCP_SKB_CB(skb)->map_seq - MPTCP_SKB_CB(skb)->offset;
 }
 
+static u32 mptcp_get_skb_off(struct sk_buff *skb)
+{
+	return MPTCP_SKB_CB(skb)->offset;
+}
+
 static u32 mptcp_get_copied_seq(struct sock *sk)
 {
 	return mptcp_sk(sk)->bytes_consumed;
@@ -5157,6 +5162,7 @@ struct tls_prot_ops tls_mptcp_ops = {
 	.read_sock		= mptcp_read_sock,
 	.read_done		= mptcp_read_done,
 	.get_skb_seq		= mptcp_get_skb_seq,
+	.get_skb_off		= mptcp_get_skb_off,
 	.get_copied_seq		= mptcp_get_copied_seq,
 	.get_write_seq		= mptcp_get_write_seq,
 	.poll			= mptcp_poll,

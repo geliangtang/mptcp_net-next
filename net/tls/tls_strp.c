@@ -531,6 +531,18 @@ static int tls_strp_read_sock(struct tls_strparser *strp)
 		return tls_strp_read_copy(strp, true);
 
 	tls_strp_load_anchor_with_queue(strp, inq);
+
+	/* If the next skb has non-zero MPTCP offset, skb_copy_bits
+	 * would read stale data. Fallback to copy mode before
+	 * tls_rx_msg_size touches the data.
+	 */
+	if (ctx->proto->ops->get_skb_off) {
+		struct sk_buff *first = skb_shinfo(strp->anchor)->frag_list;
+
+		if (first->next && ctx->proto->ops->get_skb_off(first->next))
+			return tls_strp_read_copy(strp, false);
+	}
+
 	if (!strp->stm.full_len) {
 		sz = tls_rx_msg_size(strp, strp->anchor);
 		if (sz < 0)

@@ -233,6 +233,7 @@ struct tls_prot_ops {
 			 sk_read_actor_t recv_actor);
 	void (*read_done)(struct sock *sk, size_t len);
 	u32 (*get_skb_seq)(struct sk_buff *skb);
+	u32 (*get_skb_off)(struct sk_buff *skb);
 	u32 (*get_copied_seq)(struct sock *sk);
 	u64 (*get_write_seq)(struct sock *sk);
 	__poll_t (*poll)(struct file *file, struct socket *sock,
