@@ -16,6 +16,7 @@ TEST_PROGS := \
 	mptcp_join.sh \
 	mptcp_nvme.sh \
 	mptcp_sockopt.sh \
+	mptcp_tls.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
 	userspace_pm.sh \
@@ -26,6 +27,7 @@ TEST_GEN_FILES := \
 	mptcp_diag \
 	mptcp_sockopt \
 	pm_nl_ctl \
+	tls \
 # end of TEST_GEN_FILES
 
 TEST_FILES := \
