@@ -19,6 +19,7 @@ TEST_PROGS := \
 	mptcp_nvme.sh \
 	mptcp_restore.sh \
 	mptcp_sockopt.sh \
+	mptcp_tls.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
 	userspace_pm.sh \
@@ -33,6 +34,7 @@ TEST_GEN_FILES := \
 	restore_ipv6 \
 	restore_mptcp_ipv4 \
 	restore_mptcp_ipv6 \
+	tls \
 # end of TEST_GEN_FILES
 
 TEST_FILES := \
@@ -84,3 +86,6 @@ $(OUTPUT)/restore_mptcp_ipv4: ../tcp_ao/restore.c $(TCP_AO_LIB)
 
 $(OUTPUT)/restore_mptcp_ipv6: ../tcp_ao/restore.c $(TCP_AO_LIB)
 	$(QUIET_CC)$(CC) $< -D_GNU_SOURCE $(TCP_AO_CFLAGS) -DMPTCP_TEST -DIPV6_TEST $(TCP_AO_LDLIBS) -o $@
+
+$(OUTPUT)/tls: ../tls.c
+	$(QUIET_CC)$(CC) $< $(CFLAGS) $(CPPFLAGS) -o $@
