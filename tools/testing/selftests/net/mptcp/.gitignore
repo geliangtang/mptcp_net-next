@@ -7,4 +7,5 @@ restore_ipv4
 restore_ipv6
 restore_mptcp_ipv4
 restore_mptcp_ipv6
+tls
 *.pcap
