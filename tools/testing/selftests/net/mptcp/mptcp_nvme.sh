@@ -268,7 +268,7 @@ run_target()
 		cd /sys/kernel/config/nvmet/ports || exit
 		mkdir -p "${portdir}"
 		cd "${portdir}" || exit 1
-		echo "mptcp" > addr_trtype
+		echo "${trtype}" > addr_trtype
 		echo ipv4 > addr_adrfam
 		if [ "${path}" -eq 1 ]; then
 			echo "0.0.0.0" > addr_traddr
@@ -348,16 +348,7 @@ run_host()
 		return 1
 	fi
 
-	traddr=10.1.1.1
-	echo "Connecting to ${traddr}:${trsvcid} ${extra}"
-	if ! nvme connect -t "mptcp" -a "${traddr}" \
-			  -s "${trsvcid}" -n "${nqn}" \
-			  "${extra}"; then
-		echo "Failed to connect to ${traddr}"
-		return 1
-	fi
-
-	for i in $(seq 2 "${path}"); do
+	for i in $(seq 1 "${path}"); do
 		traddr=10.1.${i}.1
 		echo "Connecting to ${traddr}:${trsvcid} ${extra}"
 		if ! nvme connect -t "${trtype}" -a "${traddr}" \
