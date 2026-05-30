@@ -1214,9 +1214,20 @@ static void tls_clone(const struct request_sock *req,
 		      struct sock *newsk,
 		      const gfp_t priority)
 {
+	struct tls_context *ctx = tls_get_ctx(req->rsk_listener);
 	struct inet_connection_sock *new_icsk = inet_csk(newsk);
 
+	if (!ctx || !newsk->sk_socket)
+		return;
+
+	/* Clear ULP data and ops */
 	rcu_assign_pointer(new_icsk->icsk_ulp_data, NULL);
+	WRITE_ONCE(new_icsk->icsk_ulp_ops, NULL);
+
+	/* Restore original TCP protocol and socket operations */
+	WRITE_ONCE(newsk->sk_prot, ctx->sk_proto);
+	WRITE_ONCE(newsk->sk_socket->ops,
+		   &ctx->prot->proto_ops[TLS_BASE][TLS_BASE]);
 }
 
 static void tls_update(struct sock *sk, struct proto *p,
