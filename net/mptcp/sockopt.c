@@ -55,6 +55,11 @@ static void sockopt_seq_inc(struct mptcp_sock *msk)
 	msk->setsockopt_seq = sockopt_seq_reset((struct sock *)msk) + seq;
 }
 
+void mptcp_sockopt_seq_inc(struct sock *sk)
+{
+	sockopt_seq_inc(mptcp_sk(sk));
+}
+
 static int mptcp_get_int_option(struct mptcp_sock *msk, sockptr_t optval,
 				unsigned int optlen, int *val)
 {

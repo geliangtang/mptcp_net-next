@@ -264,6 +264,8 @@ void mptcp_sock_set_nodelay(struct sock *sk);
 
 int mptcp_sock_set_syncnt(struct sock *sk, int val);
 
+void mptcp_sockopt_seq_inc(struct sock *sk);
+
 void mptcp_nvme_debug(struct sock *sk);
 #else
 
@@ -370,6 +372,8 @@ static inline int mptcp_sock_set_syncnt(struct sock *sk, int val)
 {
 	return 0;
 }
+
+static inline void mptcp_sockopt_seq_inc(struct sock *sk) { }
 #endif /* CONFIG_MPTCP */
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)

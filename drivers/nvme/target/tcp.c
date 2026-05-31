@@ -1964,7 +1964,7 @@ static const struct nvmet_tcp_proto nvmet_tcp_proto = {
 
 #ifdef CONFIG_MPTCP
 static const struct nvmet_tcp_proto nvmet_mptcp_proto = {
-	.no_linger	= mptcp_sock_no_linger,
+	.no_linger	= sock_no_linger,
 	.set_priority	= mptcp_sock_set_priority,
 	.set_tos	= mptcp_sock_set_tos,
 	.ops		= &nvmet_mptcp_ops,
