@@ -1,0 +1,174 @@
+MPTCP KTLS Support: Bringing TLS to Multipath TCP
+
+Abstract:
+
+Multipath TCP (MPTCP) enables a device to simultaneously utilize multiple
+network interfaces for a single connection, providing enhanced redundancy,
+resilience, and bandwidth aggregation. Currently, an increasing number of
+network applications are beginning to support MPTCP, and some of them
+require TLS for MPTCP. However, MPTCP has historically lacked TLS support
+due to fundamental conflicts in how both protocols manage the Upper Layer
+Protocol (ULP) stack within the Linux kernel.
+
+This proposal presents a solution to make MPTCP and Kernel TLS (KTLS)
+compatible. It implemented MPTCP support on the TLS side by introducing a
+protocol operations abstraction layer that decouples TLS from TCP and
+implements MPTCP-specific functions, and enabled TLS configuration on the
+MPTCP side by applying TLS encryption exclusively at the non-fallback
+MPTCP socket (msk) level, rather than on individual subflows (TCP
+sockets). The implementation has been validated through extensive
+selftests and real-world use cases, including lighttpd and NVMe over
+MPTCP.
+
+The first RFC version of this implementation has recently been sent to
+the netdev mailing list for review:
+
+https://lore.kernel.org/all/cover.1782123118.git.tanggeliang@kylinos.cn/
+
+Problem Statement
+
+Prior to this work, TLS support for MPTCP was unavailable. The two
+protocols conflicted because both MPTCP and TLS utilize the ULP (Upper
+Layer Protocol) infrastructure in the Linux kernel. ULP settings,
+including TLS configuration, were disabled for MPTCP sockets. If an
+application attempted to set TLS for an MPTCP socket, the system would
+return an error code indicating EOPNOTSUPP (Operation not supported).
+On March 19, 2024, we opened issue #480 [2] to address this problem,
+which was assigned to me shortly thereafter.
+
+Motivation
+
+Enabling TLS on MPTCP is a highly demanded /dɪˈmɑːnd/ feature. Several use cases
+have expressed strong demand for TLS functionality after adopting MPTCP,
+including: lighttpd, a secure web server that already supports MPTCP and
+requires TLS for encrypted communications; and NVMe over MPTCP, where
+NVMe over TCP benefits from MPTCP's multipath capabilities but requires
+TLS for data confidentiality and integrity. Beyond these specific use
+cases, the current TLS implementation in the Linux kernel is tightly
+coupled with TCP. By extending MPTCP to support TLS, we make the TLS
+code structure more flexible and extensible. This work also serves as a
+practical validation of the TCP ULP framework, providing a real-world
+example of two ULP features operating in conjunction.
+
+Limitations
+
+MPTCP KTLS support currently has two key limitations.
+
+First, only non-fallback MPTCP sockets support KTLS. In the non-fallback
+case, the ULP of the MPTCP socket (msk) is not used by MPTCP itself, so
+it can be safely utilized for TLS. For fallback MPTCP sockets, however,
+the ULP is already consumed by the MPTCP protocol, making it unavailable
+for TLS configuration. Attempting to set TLS on a fallback MPTCP socket
+is therefore not supported.
+
+Second, MPTCP KTLS currently supports only software TLS encryption;
+hardware TLS offload is not supported. The MPTCP socket is an abstract
+transport-layer construct that does not correspond to a specific IP
+address or network interface; it may span multiple interfaces with
+differing hardware capabilities. This abstract nature is fundamentally
+at odds with hardware TLS offload, which typically requires binding to
+a specific network device. Hardware TLS support for MPTCP is therefore
+not provided in this implementation.
+
+Current Status
+
+The implementation and testing phases are now largely complete. The work
+is divided into four main parts:
+
+Part 1: Add MPTCP support in the TLS subsystem.
+
+In the existing TLS implementation, TCP is hardcoded throughout the TLS
+code base. More than ten protocol-specific functions are directly tied
+to TCP. This work implements MPTCP-specific versions of all these
+functions and replaces the hardcoded TCP calls with indirect calls
+through an ops structure. The appropriate ops are assigned at socket
+initialization time based on the socket protocol, making the TLS core
+protocol-agnostic and pluggable.
+
+Part 2: Enable TLS settings on the MPTCP side.
+
+ULP settings, including TLS, were previously disabled for MPTCP sockets.
+This work enables TLS configuration by checking whether the MPTCP socket
+is in fallback mode. For non-fallback sockets, the TLS setsockopt is
+applied directly to the msk rather than to individual subflows.
+Similarly, getsockopt for TCP_ULP now reads ULP information from the msk,
+providing a consistent interface for applications.
+
+Part 3: Add MPTCP test cases to the TLS selftests.
+
+To validate correctness, the existing TLS selftests framework has been
+extended to support MPTCP sockets. All existing TCP TLS test cases (over
+800 tests) are now run against MPTCP sockets, ensuring that the MPTCP
+KTLS implementation passes the same comprehensive test suite as TCP KTLS.
+
+Part 4: Fixes for MPTCP corner cases discovered during development.
+
+The most significant challenge was that some MPTCP TLS selftests were
+unstable and occasionally failed. This was resolved thanks to Paolo
+Abeni's patch series "mptcp: address stall under memory pressure",
+which addressed underlying memory pressure issues. With these fixes, the
+MPTCP TLS selftests now run in a loop for thousands of iterations
+without failure.
+
+The code is currently at the RFC stage. The first version has recently
+been sent to the netdev mailing list for review [3].
+
+Implementation Approach
+
+More than ten MPTCP-specific functions are the core of this
+implementation. Most are either already available on the MPTCP side or
+can be implemented as simple wrappers, such as mptcp_sendmsg_locked,
+mptcp_poll, mptcp_read_sock, mptcp_recv_skb, mptcp_epollin_ready, and
+mptcp_check_app_limited. The remaining functions that need to be
+implemented are:
+
+mptcp_inq(): Returns the number of readable bytes available based on
+MPTCP's receive queue and ack_seq.
+
+mptcp_lock_is_held(): Critical for deadlock prevention. MPTCP must
+check both sock_owned_by_user_nocheck(sk) and the MPTCP data lock,
+because TLS may call lock_is_held from softirq context with
+bh_lock_sock held. Checking both conditions ensures TLS always defers
+to workqueue when the MPTCP data lock is held.
+
+mptcp_read_done(): Consumes read data from the receive queue, updates
+bytes_consumed and map_seq, frees skbs when fully consumed, and
+triggers mptcp_cleanup_rbuf() for ACK generation.
+
+mptcp_get_skb_seq(): Returns the MPTCP mapping sequence of an skb for
+TLS record parsing.
+
+mptcp_skb_get_header(): Copies the TLS header from fragmented MPTCP
+skbs, correctly handling per-skb offsets that would otherwise cause
+data access errors.
+
+Once these MPTCP-specific functions are in place, the next question is
+how to switch between TCP and MPTCP at runtime.
+
+The solution introduces a protocol operations abstraction layer. A new
+structure, tls_prot_ops, encapsulates protocol-specific helper
+functions. A global list maintains registered protocol ops, with TCP
+registering tls_tcp_ops and MPTCP registering tls_mptcp_ops.
+
+In the latest implementation, the tls_context structure directly embeds
+an 'ops' pointer to the protocol operations. When tls_ctx_create() is
+called, the appropriate ops are assigned based on the socket protocol
+(IPPROTO_TCP or IPPROTO_MPTCP). All TLS core code that previously called
+TCP-specific helpers directly now calls through ctx->ops->function().
+This decouples TLS from TCP and enables pluggable protocol support.
+
+Future Work
+
+Future work includes a comprehensive performance evaluation of the
+indirect calls introduced by the protocol abstraction layer. We plan to
+conduct benchmark tests measuring the impact of these indirect calls on
+TLS throughput and latency, comparing them against the original direct
+TCP calls. Based on the results, we will explore optimization strategies
+such as static branching, retpoline mitigation, or per-connection caching
+of frequently used function pointers to select the best-performing
+switch mechanism.
+
+References
+
+[1] https://github.com/multipath-tcp/mptcp_net-next/issues/480
+[2] https://lore.kernel.org/all/cover.1782123118.git.tanggeliang@kylinos.cn/
