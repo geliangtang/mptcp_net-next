@@ -1,0 +1,25 @@
+MPTCP KTLS Support: Bringing TLS to Multipath TCP
+
+Multipath TCP (MPTCP) enables a device to simultaneously utilize multiple
+network interfaces for a single connection, providing enhanced redundancy,
+resilience, and bandwidth aggregation. Currently, an increasing number
+of network applications are beginning to support MPTCP, and some of them,
+such as NVMe over MPTCP and web servers like lighttpd, require TLS for
+MPTCP. However, MPTCP has historically lacked TLS support due to
+fundamental conflicts in how both protocols manage the Upper Layer
+Protocol (ULP) stack within the Linux kernel.
+
+This proposal presents a solution to make MPTCP and TLS compatible.
+The main challenge is the tight coupling between TLS and TCP, which
+hardcodes many TCP-specific functions and conflicts over the ULP slot.
+It implemented MPTCP support on the TLS side by introducing a protocol
+operations abstraction layer that decouples TLS from TCP and implements
+MPTCP-specific functions, and enabled TLS configuration on the MPTCP
+side by applying TLS encryption exclusively at the non-fallback MPTCP
+socket level, rather than on individual subflows (TCP sockets). The
+implementation resolves this challenge, passes the newly added MPTCP
+TLS selftests, which mirror the existing TCP TLS test cases, and has
+been validated through extensive selftests and real-world use cases,
+including NVMe over MPTCP.
+
+Link: https://lore.kernel.org/all/cover.1782123118.git.tanggeliang@kylinos.cn/
