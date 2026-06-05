@@ -4606,13 +4606,21 @@ int do_tcp_getsockopt(struct sock *sk, int level,
 		break;
 
 	case TCP_CONGESTION:
-		if (copy_from_sockptr(&len, optlen, sizeof(int)))
+		lock_sock(sk);
+		if (copy_from_sockptr(&len, optlen, sizeof(int))) {
+			release_sock(sk);
 			return -EFAULT;
+		}
 		len = min_t(unsigned int, len, TCP_CA_NAME_MAX);
-		if (copy_to_sockptr(optlen, &len, sizeof(int)))
+		if (copy_to_sockptr(optlen, &len, sizeof(int))) {
+			release_sock(sk);
 			return -EFAULT;
-		if (copy_to_sockptr(optval, icsk->icsk_ca_ops->name, len))
+		}
+		if (copy_to_sockptr(optval, icsk->icsk_ca_ops->name, len)) {
+			release_sock(sk);
 			return -EFAULT;
+		}
+		release_sock(sk);
 		return 0;
 
 	case TCP_ULP:
