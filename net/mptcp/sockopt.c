@@ -333,11 +333,13 @@ static int mptcp_setsockopt_sol_socket(struct mptcp_sock *msk, int optname,
 
 		ret = sk_setsockopt(ssk, SOL_SOCKET, optname, optval, optlen);
 		if (ret == 0) {
-			if (optname == SO_REUSEPORT)
+			if (optname == SO_REUSEPORT) {
 				sk->sk_reuseport = ssk->sk_reuseport;
-			else if (optname == SO_REUSEADDR)
+				sockopt_seq_inc(msk);
+			} else if (optname == SO_REUSEADDR) {
 				sk->sk_reuse = ssk->sk_reuse;
-			else if (optname == SO_BINDTODEVICE)
+				sockopt_seq_inc(msk);
+			} else if (optname == SO_BINDTODEVICE)
 				sk->sk_bound_dev_if = ssk->sk_bound_dev_if;
 			else if (optname == SO_BINDTOIFINDEX)
 				sk->sk_bound_dev_if = ssk->sk_bound_dev_if;
@@ -1642,9 +1644,8 @@ void mptcp_sockopt_sync_locked(struct mptcp_sock *msk, struct sock *ssk)
 	 */
 	tcp_sk(ssk)->notsent_lowat = UINT_MAX;
 
-	mptcp_sockopt_sync(msk, ssk);
-
 	if (READ_ONCE(subflow->setsockopt_seq) != msk->setsockopt_seq) {
+		mptcp_sockopt_sync(msk, ssk);
 		sync_socket_options(msk, ssk);
 
 		subflow->setsockopt_seq = msk->setsockopt_seq;

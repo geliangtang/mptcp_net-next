@@ -3324,6 +3324,7 @@ static void __mptcp_init_sock(struct sock *sk)
 	msk->allow_subflows = true;
 	msk->recovery = false;
 	msk->subflow_id = 1;
+	msk->setsockopt_seq = 1;
 	msk->last_data_sent = tcp_jiffies32;
 	msk->last_data_recv = tcp_jiffies32;
 	msk->last_ack_recv = tcp_jiffies32;
@@ -3873,6 +3874,13 @@ struct sock *mptcp_sk_clone_init(const struct sock *sk,
 	 * not yet exposted to user-space
 	 */
 	mptcp_set_state(nsk, TCP_ESTABLISHED);
+
+	/* Re-init setsockopt_seq high bits with the new TCP_ESTABLISHED state
+	 * so it differs from subflow's inherited value (TCP_LISTEN high bits).
+	 * This ensures mptcp_sockopt_sync runs once for the new subflow.
+	 */
+	msk->setsockopt_seq = ((u32)TCP_ESTABLISHED << 24) |
+			      (msk->setsockopt_seq & 0x00ffffff);
 
 	/* The msk maintain a ref to each subflow in the connections list */
 	WRITE_ONCE(msk->first, ssk);
