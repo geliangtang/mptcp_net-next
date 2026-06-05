@@ -4579,18 +4579,26 @@ int do_tcp_getsockopt(struct sock *sk, int level,
 		size_t sz = 0;
 		int attr;
 
-		if (copy_from_sockptr(&len, optlen, sizeof(int)))
+		lock_sock(sk);
+		if (copy_from_sockptr(&len, optlen, sizeof(int))) {
+			release_sock(sk);
 			return -EFAULT;
+		}
 
 		ca_ops = icsk->icsk_ca_ops;
 		if (ca_ops && ca_ops->get_info)
 			sz = ca_ops->get_info(sk, ~0U, &attr, &info);
 
 		len = min_t(unsigned int, len, sz);
-		if (copy_to_sockptr(optlen, &len, sizeof(int)))
+		if (copy_to_sockptr(optlen, &len, sizeof(int))) {
+			release_sock(sk);
 			return -EFAULT;
-		if (copy_to_sockptr(optval, &info, len))
+		}
+		if (copy_to_sockptr(optval, &info, len)) {
+			release_sock(sk);
 			return -EFAULT;
+		}
+		release_sock(sk);
 		return 0;
 	}
 	case TCP_QUICKACK:
