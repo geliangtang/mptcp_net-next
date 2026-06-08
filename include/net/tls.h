@@ -265,6 +265,7 @@ struct tls_context {
 
 	/* cache cold stuff */
 	struct proto *sk_proto;
+	const struct proto_ops *sk_proto_ops;
 	struct sock *sk;
 
 	void (*sk_destruct)(struct sock *sk);
