@@ -1422,7 +1422,7 @@ static struct sk_buff *__mptcp_alloc_tx_skb(struct sock *sk, struct sock *ssk, g
 		return skb;
 	}
 	tcp_skb_tsorted_anchor_cleanup(skb);
-	kfree_skb(skb);
+	kfree_skb_reason(skb, SKB_DROP_REASON_PROTO_MEM);
 	return NULL;
 }
 
