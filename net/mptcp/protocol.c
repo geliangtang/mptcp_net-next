@@ -1444,7 +1444,7 @@ static struct sk_buff *__mptcp_alloc_tx_skb(struct sock *sk, struct sock *ssk, g
 		sk_forced_mem_schedule(ssk, skb->truesize);
 	} else if (unlikely(!sk_wmem_schedule(ssk, skb->truesize))) {
 		tcp_skb_tsorted_anchor_cleanup(skb);
-		kfree_skb(skb);
+		kfree_skb_reason(skb, SKB_DROP_REASON_PROTO_MEM);
 		return NULL;
 	}
 
