@@ -260,6 +260,9 @@ int mptcp_skb_get_header(const struct sk_buff *skb, int off,
 			 void *buf, int len);
 
 void mptcp_check_app_limited(struct sock *sk);
+
+__poll_t mptcp_poll(struct file *file, struct socket *sock,
+		    struct poll_table_struct *wait);
 #else
 
 static inline void mptcp_init(void)
@@ -381,6 +384,12 @@ static inline int mptcp_skb_get_header(const struct sk_buff *skb, int off,
 
 static inline void mptcp_check_app_limited(struct sock *sk)
 {
+}
+
+static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
+				  struct poll_table_struct *wait)
+{
+	return 0;
 }
 #endif /* CONFIG_MPTCP */
 
