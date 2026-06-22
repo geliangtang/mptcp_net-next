@@ -88,6 +88,12 @@ enum {
 	TLS_NUM_CONFIG,
 };
 
+enum {
+	TLSTCP,
+	TLSMPTCP,
+	TLS_NUM_PROTO,
+};
+
 struct tx_work {
 	struct delayed_work work;
 	struct sock *sk;
