@@ -117,24 +117,27 @@ CHECK_CIPHER_DESC(TLS_CIPHER_SM4_CCM, tls12_crypto_info_sm4_ccm);
 CHECK_CIPHER_DESC(TLS_CIPHER_ARIA_GCM_128, tls12_crypto_info_aria_gcm_128);
 CHECK_CIPHER_DESC(TLS_CIPHER_ARIA_GCM_256, tls12_crypto_info_aria_gcm_256);
 
-static const struct proto *saved_prot[TLS_NUM_PROTS];
-static struct mutex prot_mutex[TLS_NUM_PROTS] = {
-	[TLSV6] = __MUTEX_INITIALIZER(prot_mutex[TLSV6]),
-	[TLSV4] = __MUTEX_INITIALIZER(prot_mutex[TLSV4]),
+static const struct proto *saved_prot[TLS_NUM_PROTO][TLS_NUM_PROTS];
+static struct mutex prot_mutex[TLS_NUM_PROTO][TLS_NUM_PROTS] = {
+	[TLSTCP][TLSV6] = __MUTEX_INITIALIZER(prot_mutex[TLSTCP][TLSV6]),
+	[TLSTCP][TLSV4] = __MUTEX_INITIALIZER(prot_mutex[TLSTCP][TLSV4]),
+	[TLSMPTCP][TLSV6] = __MUTEX_INITIALIZER(prot_mutex[TLSMPTCP][TLSV6]),
+	[TLSMPTCP][TLSV4] = __MUTEX_INITIALIZER(prot_mutex[TLSMPTCP][TLSV4]),
 };
-static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
-static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 			 const struct proto *base);
 
 static void update_sk_prot(struct sock *sk, struct tls_context *ctx)
 {
+	int proto = sk->sk_protocol == IPPROTO_MPTCP ? TLSMPTCP : TLSTCP;
 	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
 
 	WRITE_ONCE(sk->sk_prot,
-		   &tls_prots[ip_ver][ctx->tx_conf][ctx->rx_conf]);
+		   &tls_prots[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 	WRITE_ONCE(sk->sk_socket->ops,
-		   &tls_proto_ops[ip_ver][ctx->tx_conf][ctx->rx_conf]);
+		   &tls_proto_ops[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 }
 
 int wait_on_pending_writer(struct sock *sk, long *timeo)
@@ -965,20 +968,21 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 
 static void tls_build_proto(struct sock *sk)
 {
+	int proto = sk->sk_protocol == IPPROTO_MPTCP ? TLSMPTCP : TLSTCP;
 	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
 	struct proto *prot = READ_ONCE(sk->sk_prot);
 
 	/* smp_load_acquire pairs with smp_store_release below */
-	if (unlikely(prot != smp_load_acquire(&saved_prot[ip_ver]))) {
-		mutex_lock(&prot_mutex[ip_ver]);
-		if (likely(prot != saved_prot[ip_ver])) {
-			build_protos(tls_prots[ip_ver], prot);
-			build_proto_ops(tls_proto_ops[ip_ver],
+	if (unlikely(prot != smp_load_acquire(&saved_prot[proto][ip_ver]))) {
+		mutex_lock(&prot_mutex[proto][ip_ver]);
+		if (likely(prot != saved_prot[proto][ip_ver])) {
+			build_protos(tls_prots[ip_ver][proto], prot);
+			build_proto_ops(tls_proto_ops[ip_ver][proto],
 					sk->sk_socket->ops);
 			/* pairs with smp_load_acquire above */
-			smp_store_release(&saved_prot[ip_ver], prot);
+			smp_store_release(&saved_prot[proto][ip_ver], prot);
 		}
-		mutex_unlock(&prot_mutex[ip_ver]);
+		mutex_unlock(&prot_mutex[proto][ip_ver]);
 	}
 }
 
