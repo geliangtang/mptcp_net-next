@@ -56,6 +56,12 @@ enum {
 	TLS_NUM_PROTS,
 };
 
+enum {
+	TLSTCP,
+	TLSMPTCP,
+	TLS_NUM_PROTO,
+};
+
 #define CHECK_CIPHER_DESC(cipher,ci)				\
 	static_assert(cipher ## _IV_SIZE <= TLS_MAX_IV_SIZE);		\
 	static_assert(cipher ## _SALT_SIZE <= TLS_MAX_SALT_SIZE);		\
@@ -121,19 +127,24 @@ static const struct proto *saved_tcpv6_prot;
 static DEFINE_MUTEX(tcpv6_prot_mutex);
 static const struct proto *saved_tcpv4_prot;
 static DEFINE_MUTEX(tcpv4_prot_mutex);
-static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
-static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+static const struct proto *saved_mptcpv6_prot;
+static DEFINE_MUTEX(mptcpv6_prot_mutex);
+static const struct proto *saved_mptcpv4_prot;
+static DEFINE_MUTEX(mptcpv4_prot_mutex);
+static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
+static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 			 const struct proto *base);
 
 void update_sk_prot(struct sock *sk, struct tls_context *ctx)
 {
+	int proto = sk->sk_protocol == IPPROTO_MPTCP ? TLSMPTCP : TLSTCP;
 	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
 
 	WRITE_ONCE(sk->sk_prot,
-		   &tls_prots[ip_ver][ctx->tx_conf][ctx->rx_conf]);
+		   &tls_prots[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 	WRITE_ONCE(sk->sk_socket->ops,
-		   &tls_proto_ops[ip_ver][ctx->tx_conf][ctx->rx_conf]);
+		   &tls_proto_ops[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 }
 
 int wait_on_pending_writer(struct sock *sk, long *timeo)
@@ -970,32 +981,61 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 
 static void tls_build_proto(struct sock *sk)
 {
+	int proto = sk->sk_protocol == IPPROTO_MPTCP ? TLSMPTCP : TLSTCP;
 	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
 	struct proto *prot = READ_ONCE(sk->sk_prot);
 
 	/* Build IPv6 TLS whenever the address of tcpv6 _prot changes */
-	if (ip_ver == TLSV6 &&
+	if (ip_ver == TLSV6 && proto == TLSTCP &&
 	    unlikely(prot != smp_load_acquire(&saved_tcpv6_prot))) {
 		mutex_lock(&tcpv6_prot_mutex);
 		if (likely(prot != saved_tcpv6_prot)) {
-			build_protos(tls_prots[TLSV6], prot);
-			build_proto_ops(tls_proto_ops[TLSV6],
+			build_protos(tls_prots[TLSV6][TLSTCP], prot);
+			build_proto_ops(tls_proto_ops[TLSV6][TLSTCP],
 					sk->sk_socket->ops);
 			smp_store_release(&saved_tcpv6_prot, prot);
 		}
 		mutex_unlock(&tcpv6_prot_mutex);
 	}
 
-	if (ip_ver == TLSV4 &&
+	if (ip_ver == TLSV4 && proto == TLSTCP &&
 	    unlikely(prot != smp_load_acquire(&saved_tcpv4_prot))) {
 		mutex_lock(&tcpv4_prot_mutex);
 		if (likely(prot != saved_tcpv4_prot)) {
-			build_protos(tls_prots[TLSV4], prot);
-			build_proto_ops(tls_proto_ops[TLSV4],
+			build_protos(tls_prots[TLSV4][TLSTCP], prot);
+			build_proto_ops(tls_proto_ops[TLSV4][TLSTCP],
 					sk->sk_socket->ops);
 			smp_store_release(&saved_tcpv4_prot, prot);
 		}
 		mutex_unlock(&tcpv4_prot_mutex);
+	}
+
+	if (ip_ver == TLSV6 && proto == TLSMPTCP &&
+	    /* smp_load_acquire pairs with smp_store_release below */
+	    unlikely(prot != smp_load_acquire(&saved_mptcpv6_prot))) {
+		mutex_lock(&mptcpv6_prot_mutex);
+		if (likely(prot != saved_mptcpv6_prot)) {
+			build_protos(tls_prots[TLSV6][TLSMPTCP], prot);
+			build_proto_ops(tls_proto_ops[TLSV6][TLSMPTCP],
+					sk->sk_socket->ops);
+			/* pairs with smp_load_acquire above */
+			smp_store_release(&saved_mptcpv6_prot, prot);
+		}
+		mutex_unlock(&mptcpv6_prot_mutex);
+	}
+
+	if (ip_ver == TLSV4 && proto == TLSMPTCP &&
+	    /* smp_load_acquire pairs with smp_store_release below */
+	    unlikely(prot != smp_load_acquire(&saved_mptcpv4_prot))) {
+		mutex_lock(&mptcpv4_prot_mutex);
+		if (likely(prot != saved_mptcpv4_prot)) {
+			build_protos(tls_prots[TLSV4][TLSMPTCP], prot);
+			build_proto_ops(tls_proto_ops[TLSV4][TLSMPTCP],
+					sk->sk_socket->ops);
+			/* pairs with smp_load_acquire above */
+			smp_store_release(&saved_mptcpv4_prot, prot);
+		}
+		mutex_unlock(&mptcpv4_prot_mutex);
 	}
 }
 
