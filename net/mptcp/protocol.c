@@ -26,6 +26,7 @@
 #include <net/mptcp.h>
 #include <net/hotdata.h>
 #include <net/xfrm.h>
+#include <net/tls.h>
 #include <asm/ioctls.h>
 #include "protocol.h"
 #include "mib.h"
@@ -4490,6 +4491,343 @@ static void mptcp_splice_eof(struct socket *sock)
 }
 
 #ifdef CONFIG_BPF_SYSCALL
+static int mptcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
+			       long timeo)
+{
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+	int ret = 0;
+
+	if (sk->sk_shutdown & RCV_SHUTDOWN)
+		return 1;
+
+	if (!timeo)
+		return ret;
+
+	add_wait_queue(sk_sleep(sk), &wait);
+	sk_set_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+	ret = sk_wait_event(sk, &timeo,
+			    !list_empty(&psock->ingress_msg) ||
+			    !skb_queue_empty_lockless(&sk->sk_receive_queue), &wait);
+	sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
+	remove_wait_queue(sk_sleep(sk), &wait);
+	return ret;
+}
+
+static int mptcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+			     int flags)
+{
+	struct sk_psock *psock;
+	int copied, ret;
+
+	pr_info("%s\n", __func__);
+	if (unlikely(flags & MSG_ERRQUEUE))
+		return inet_recv_error(sk, msg, len);
+
+	if (!len)
+		return 0;
+
+	psock = sk_psock_get(sk);
+	if (unlikely(!psock))
+		return mptcp_recvmsg(sk, msg, len, flags);
+	if (!skb_queue_empty(&sk->sk_receive_queue) &&
+	    sk_psock_queue_empty(psock)) {
+		sk_psock_put(sk, psock);
+		return mptcp_recvmsg(sk, msg, len, flags);
+	}
+	lock_sock(sk);
+msg_bytes_ready:
+	copied = sk_msg_recvmsg(sk, psock, msg, len, flags);
+	if (!copied) {
+		long timeo;
+		int data;
+
+		timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+		data = mptcp_msg_wait_data(sk, psock, timeo);
+		if (data < 0) {
+			ret = data;
+			goto unlock;
+		}
+		if (data) {
+			if (!sk_psock_queue_empty(psock))
+				goto msg_bytes_ready;
+			release_sock(sk);
+			sk_psock_put(sk, psock);
+			return mptcp_recvmsg(sk, msg, len, flags);
+		}
+		copied = -EAGAIN;
+	}
+	ret = copied;
+
+unlock:
+	release_sock(sk);
+	sk_psock_put(sk, psock);
+	return ret;
+}
+
+static int mptcp_bpf_push(struct sock *sk, struct sk_msg *msg, u32 apply_bytes,
+			  int flags, bool uncharge)
+{
+	struct msghdr msghdr = {};
+	bool apply = apply_bytes;
+	struct scatterlist *sge;
+	struct page *page;
+	int size, ret = 0;
+	u32 off;
+
+	while (1) {
+		struct bio_vec bvec;
+		bool has_tx_ulp;
+
+		sge = sk_msg_elem(msg, msg->sg.start);
+		size = (apply && apply_bytes < sge->length) ?
+			apply_bytes : sge->length;
+		off  = sge->offset;
+		page = sg_page(sge);
+
+retry:
+		msghdr.msg_flags = flags | MSG_SPLICE_PAGES;
+		has_tx_ulp = tls_sw_has_ctx_tx(sk);
+		if (has_tx_ulp)
+			msghdr.msg_flags |= MSG_SENDPAGE_NOPOLICY;
+
+		if (size < sge->length && msg->sg.start != msg->sg.end)
+			msghdr.msg_flags |= MSG_MORE;
+
+		bvec_set_page(&bvec, page, size, off);
+		iov_iter_bvec(&msghdr.msg_iter, ITER_SOURCE, &bvec, 1, size);
+		ret = mptcp_sendmsg_locked(sk, &msghdr, size);
+		if (ret <= 0)
+			return ret;
+
+		if (apply)
+			apply_bytes -= ret;
+		msg->sg.size -= ret;
+		sge->offset += ret;
+		sge->length -= ret;
+		if (uncharge)
+			sk_mem_uncharge(sk, ret);
+		if (ret != size) {
+			size -= ret;
+			off  += ret;
+			goto retry;
+		}
+		if (!sge->length) {
+			put_page(page);
+			sk_msg_iter_next(msg, start);
+			sg_init_table(sge, 1);
+			if (msg->sg.start == msg->sg.end)
+				break;
+		}
+		if (apply && !apply_bytes)
+			break;
+	}
+
+	return 0;
+}
+
+static int mptcp_bpf_send_verdict(struct sock *sk, struct sk_psock *psock,
+				  struct sk_msg *msg, int *copied, int flags)
+{
+	bool cork = false, enospc = sk_msg_full(msg), redir_ingress;
+	struct sock *sk_redir;
+	u32 tosend, origsize, sent, delta = 0;
+	u32 eval;
+	int ret;
+
+more_data:
+	if (psock->eval == __SK_NONE) {
+		/* Track delta in msg size to add/subtract it on SK_DROP from
+		 * returned to user copied size. This ensures user doesn't
+		 * get a positive return code with msg_cut_data and SK_DROP
+		 * verdict.
+		 */
+		delta = msg->sg.size;
+		psock->eval = sk_psock_msg_verdict(sk, psock, msg);
+		delta -= msg->sg.size;
+	}
+
+	if (msg->cork_bytes &&
+	    msg->cork_bytes > msg->sg.size && !enospc) {
+		psock->cork_bytes = msg->cork_bytes - msg->sg.size;
+		if (!psock->cork) {
+			psock->cork = kzalloc_obj(*psock->cork,
+						  GFP_ATOMIC | __GFP_NOWARN);
+			if (!psock->cork) {
+				sk_msg_free(sk, msg);
+				*copied = 0;
+				return -ENOMEM;
+			}
+		}
+		memcpy(psock->cork, msg, sizeof(*msg));
+		return 0;
+	}
+
+	tosend = msg->sg.size;
+	if (psock->apply_bytes && psock->apply_bytes < tosend)
+		tosend = psock->apply_bytes;
+	eval = __SK_NONE;
+
+	switch (psock->eval) {
+		case __SK_PASS:
+			ret = mptcp_bpf_push(sk, msg, tosend, flags, true);
+			if (unlikely(ret)) {
+				*copied -= sk_msg_free(sk, msg);
+				break;
+			}
+			sk_msg_apply_bytes(psock, tosend);
+			break;
+		case __SK_REDIRECT:
+			redir_ingress = psock->redir_ingress;
+			sk_redir = psock->sk_redir;
+			sk_msg_apply_bytes(psock, tosend);
+			if (!psock->apply_bytes) {
+				/* Clean up before releasing the sock lock. */
+				eval = psock->eval;
+				psock->eval = __SK_NONE;
+				psock->sk_redir = NULL;
+			}
+			if (psock->cork) {
+				cork = true;
+				psock->cork = NULL;
+			}
+			release_sock(sk);
+
+			origsize = msg->sg.size;
+			ret = tcp_bpf_sendmsg_redir(sk_redir, redir_ingress,
+						    msg, tosend, flags);
+			sent = origsize - msg->sg.size;
+
+			if (eval == __SK_REDIRECT)
+				sock_put(sk_redir);
+
+			lock_sock(sk);
+			sk_mem_uncharge(sk, sent);
+			if (unlikely(ret < 0)) {
+				int free = sk_msg_free(sk, msg);
+
+				if (!cork)
+					*copied -= free;
+			}
+			if (cork) {
+				sk_msg_free(sk, msg);
+				kfree(msg);
+				msg = NULL;
+				ret = 0;
+			}
+			break;
+		case __SK_DROP:
+		default:
+			sk_msg_free(sk, msg);
+			sk_msg_apply_bytes(psock, tosend);
+			*copied -= (tosend + delta);
+			return -EACCES;
+	}
+
+	if (likely(!ret)) {
+		if (!psock->apply_bytes) {
+			psock->eval =  __SK_NONE;
+			if (psock->sk_redir) {
+				sock_put(psock->sk_redir);
+				psock->sk_redir = NULL;
+			}
+		}
+		if (msg &&
+		    msg->sg.data[msg->sg.start].page_link &&
+		    msg->sg.data[msg->sg.start].length)
+			goto more_data;
+	}
+	return ret;
+}
+
+static int mptcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
+{
+	struct sk_msg tmp, *msg_tx = NULL;
+	int copied = 0, err = 0, ret = 0;
+	struct sk_psock *psock;
+	long timeo;
+	int flags;
+
+	pr_info("%s\n", __func__);
+	/* Don't let internal flags through */
+	flags = (msg->msg_flags & ~MSG_SENDPAGE_DECRYPTED);
+	flags |= MSG_NO_SHARED_FRAGS;
+
+	psock = sk_psock_get(sk);
+	if (unlikely(!psock))
+		return mptcp_sendmsg(sk, msg, size);
+
+	lock_sock(sk);
+	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+	while (msg_data_left(msg)) {
+		bool enospc = false;
+		u32 copy, osize;
+
+		if (sk->sk_err) {
+			err = -sk->sk_err;
+			goto out_err;
+		}
+
+		copy = msg_data_left(msg);
+		if (!sk_stream_memory_free(sk))
+			goto wait_for_sndbuf;
+		if (psock->cork) {
+			msg_tx = psock->cork;
+		} else {
+			msg_tx = &tmp;
+			sk_msg_init(msg_tx);
+		}
+
+		osize = msg_tx->sg.size;
+		err = sk_msg_alloc(sk, msg_tx, msg_tx->sg.size + copy, msg_tx->sg.end - 1);
+		if (err) {
+			if (err != -ENOSPC)
+				goto wait_for_memory;
+			enospc = true;
+			copy = msg_tx->sg.size - osize;
+		}
+
+		ret = sk_msg_memcopy_from_iter(sk, &msg->msg_iter, msg_tx,
+					       copy);
+		if (ret < 0) {
+			sk_msg_trim(sk, msg_tx, osize);
+			goto out_err;
+		}
+
+		copied += ret;
+		if (psock->cork_bytes) {
+			if (size > psock->cork_bytes)
+				psock->cork_bytes = 0;
+			else
+				psock->cork_bytes -= size;
+			if (psock->cork_bytes && !enospc)
+				goto out_err;
+			/* All cork bytes are accounted, rerun the prog. */
+			psock->eval = __SK_NONE;
+			psock->cork_bytes = 0;
+		}
+
+		err = mptcp_bpf_send_verdict(sk, psock, msg_tx, &copied, flags);
+		if (unlikely(err < 0))
+			goto out_err;
+		continue;
+wait_for_sndbuf:
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+wait_for_memory:
+		err = sk_stream_wait_memory(sk, &timeo);
+		if (err) {
+			if (msg_tx && msg_tx != psock->cork)
+				sk_msg_free(sk, msg_tx);
+			goto out_err;
+		}
+	}
+out_err:
+	if (err < 0)
+		err = sk_stream_error(sk, msg->msg_flags, err);
+	release_sock(sk);
+	sk_psock_put(sk, psock);
+	return copied > 0 ? copied : err;
+}
+
 enum {
 	MPTCP_BPF_IPV4,
 	MPTCP_BPF_IPV6,
@@ -4512,11 +4850,17 @@ static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
 	prot[MPTCP_BPF_BASE]			= *base;
 	prot[MPTCP_BPF_BASE].destroy		= sock_map_destroy;
 	prot[MPTCP_BPF_BASE].close		= sock_map_close;
+	prot[MPTCP_BPF_BASE].recvmsg		= mptcp_bpf_recvmsg;
 	prot[MPTCP_BPF_BASE].sock_is_readable	= sk_msg_is_readable;
 
 	prot[MPTCP_BPF_TX]			= prot[MPTCP_BPF_BASE];
+	prot[MPTCP_BPF_TX].sendmsg		= mptcp_bpf_sendmsg;
+
 	prot[MPTCP_BPF_RX]			= prot[MPTCP_BPF_BASE];
-	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_BASE];
+	//prot[MPTCP_BPF_RX].recvmsg		= mptcp_bpf_recvmsg_parser;
+
+	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_TX];
+	//prot[MPTCP_BPF_TXRX].recvmsg		= mptcp_bpf_recvmsg_parser;
 }
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)

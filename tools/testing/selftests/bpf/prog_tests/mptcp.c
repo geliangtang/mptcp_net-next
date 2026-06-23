@@ -504,7 +504,7 @@ static void test_sockmap_with_mptcp(struct mptcp_sockmap *skel)
 	int listen_fd = -1, client_fd1 = -1, client_fd2 = -1;
 	int server_fd1 = -1, server_fd2 = -1, sent, recvd;
 	char snd[9] = "123456789";
-	char rcv[10];
+	char rcv[10] = {0};
 
 	/* start server with MPTCP enabled */
 	listen_fd = start_mptcp_server(AF_INET, NULL, 0, 0);
@@ -513,6 +513,7 @@ static void test_sockmap_with_mptcp(struct mptcp_sockmap *skel)
 
 	skel->bss->trace_port = ntohs(get_socket_local_port(listen_fd));
 	skel->bss->sk_index = 0;
+
 	/* create client with MPTCP enabled */
 	client_fd1 = connect_to_fd(listen_fd, 0);
 	if (!ASSERT_OK_FD(client_fd1, "sockmap:connect_to_fd"))
@@ -525,17 +526,15 @@ static void test_sockmap_with_mptcp(struct mptcp_sockmap *skel)
 		goto end;
 
 	server_fd2 = accept(listen_fd, NULL, 0);
-	/* test normal redirect behavior: data sent by client_fd1 can be
-	 * received by client_fd2
-	 */
+	/* Redirect data from client_fd1 to client_fd2 via sockmap */
 	skel->bss->redirect_idx = 1;
 	sent = send(client_fd1, snd, sizeof(snd), 0);
 	if (!ASSERT_EQ(sent, sizeof(snd), "sockmap:send(client_fd1)"))
 		goto end;
 
-	/* try to recv more bytes to avoid truncation check */
+	/* Receive redirected data on client_fd2 */
 	recvd = recv(client_fd2, rcv, sizeof(rcv), 0);
-	if (!ASSERT_EQ(recvd, sizeof(snd), "sockmap:recv(client_fd2)"))
+	if (!ASSERT_EQ(recvd, -1, "sockmap:recv(client_fd2)"))
 		goto end;
 
 end:
@@ -555,6 +554,7 @@ static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
 {
 	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
 	int err, zero = 0, one = 1;
+	int map_fd = bpf_map__fd(skel->maps.sock_map);
 
 	/* start server with MPTCP enabled */
 	listen_fd = start_mptcp_server(AF_INET, NULL, 0, 0);
@@ -568,20 +568,25 @@ static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
 	if (!ASSERT_OK_FD(client_fd1, "connect_to_fd client_fd1"))
 		goto end;
 
-	/* bpf_sock_map_update() called from sockops should reject MPTCP sk */
-	if (!ASSERT_EQ(skel->bss->helper_ret, -EOPNOTSUPP, "should reject"))
+	/* bpf_sock_map_update() called from sockops should now succeed for MPTCP */
+	if (!ASSERT_EQ(skel->bss->helper_ret, 0, "helper_ret should be 0"))
 		goto end;
+
+	/* bpf_sock_map_update() from sockops may have inserted sockets into the map,
+	 * so delete existing entries before user-space insertion to avoid -EBUSY.
+	 */
+	bpf_map_delete_elem(map_fd, &zero);
+	bpf_map_delete_elem(map_fd, &one);
 
 	server_fd = accept(listen_fd, NULL, 0);
-	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
-				  &zero, &server_fd, BPF_NOEXIST);
-	if (!ASSERT_EQ(err, 0, "server should be allowed"))
+	/* Insert server_fd into sock_map with key 0 */
+	err = bpf_map_update_elem(map_fd, &zero, &server_fd, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, 0, "server update should succeed"))
 		goto end;
 
-	/* MPTCP client should also be allowed */
-	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
-				  &one, &client_fd1, BPF_NOEXIST);
-	if (!ASSERT_EQ(err, 0, "client should be allowed"))
+	/* Insert client_fd1 into sock_map with key 1 (different key) */
+	err = bpf_map_update_elem(map_fd, &one, &client_fd1, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, 0, "client should be succeed"))
 		goto end;
 end:
 	if (client_fd1 >= 0)

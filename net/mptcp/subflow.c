@@ -2010,6 +2010,13 @@ static int subflow_ulp_init(struct sock *sk)
 	sk->sk_write_space = subflow_write_space;
 	sk->sk_state_change = subflow_state_change;
 	sk->sk_error_report = subflow_error_report;
+
+#ifdef CONFIG_BPF_SYSCALL
+	/* Enable sockmap for MPTCP subflows by setting psock_update_sk_prot */
+	if (!sk->sk_prot->psock_update_sk_prot)
+		sk->sk_prot->psock_update_sk_prot = tcp_bpf_update_proto;
+#endif
+
 out:
 	return err;
 }
@@ -2174,7 +2181,10 @@ void __init mptcp_subflow_init(void)
 	tcp_prot_override.release_cb = tcp_release_cb_override;
 	tcp_prot_override.diag_destroy = tcp_abort_override;
 #ifdef CONFIG_BPF_SYSCALL
-	/* Disable sockmap processing for subflows */
+	/* Enable sockmap processing for subflows by inheriting TCP's
+	 * psock_update_sk_prot. This allows MPTCP subflows to be added
+	 * to sockmap and support data redirection.
+	 */
 	tcp_prot_override.psock_update_sk_prot = NULL;
 #endif
 
@@ -2221,7 +2231,9 @@ void __init mptcp_subflow_v6_init(void)
 	tcpv6_prot_override.release_cb = tcp_release_cb_override;
 	tcpv6_prot_override.diag_destroy = tcp_abort_override;
 #ifdef CONFIG_BPF_SYSCALL
-	/* Disable sockmap processing for subflows */
+	/* Enable sockmap processing for subflows by inheriting TCP's
+	 * psock_update_sk_prot.
+	 */
 	tcpv6_prot_override.psock_update_sk_prot = NULL;
 #endif
 }

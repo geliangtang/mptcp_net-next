@@ -624,13 +624,21 @@ static long sock_map_update_elem(struct bpf_map *map, void *key,
 BPF_CALL_4(bpf_sock_map_update, struct bpf_sock_ops_kern *, sops,
 	   struct bpf_map *, map, void *, key, u64, flags)
 {
+	struct sock *sk = sops->sk;
+	struct sock *new_sk;
+
 	WARN_ON_ONCE(!rcu_read_lock_held());
 
-	if (likely(sock_map_sk_is_suitable(sops->sk) &&
-		   sock_map_op_okay(sops)))
-		return sock_map_update_common(map, *(u32 *)key, sops->sk,
-					      flags);
-	return -EOPNOTSUPP;
+	/* If this is a MPTCP subflow, use the owning MPTCP socket instead */
+	new_sk = (struct sock *)bpf_mptcp_sock_from_subflow(sk);
+	if (new_sk)
+		sk = new_sk;
+
+       if (likely(sock_map_sk_is_suitable(sk) &&
+                  sock_map_op_okay(sops)))
+               return sock_map_update_common(map, *(u32 *)key, sk,
+                                             flags);
+       return -EOPNOTSUPP;
 }
 
 const struct bpf_func_proto bpf_sock_map_update_proto = {
