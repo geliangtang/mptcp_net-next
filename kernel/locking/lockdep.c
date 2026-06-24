@@ -6606,7 +6606,7 @@ void lockdep_unregister_key(struct lock_class_key *key)
 	WARN_ON_ONCE(!found && debug_locks);
 	if (found) {
 		pf = get_pending_free();
-		__lockdep_free_key_range(pf, key, 1);
+		__lockdep_free_key_range(pf, key, MAX_LOCKDEP_SUBCLASSES);
 		need_callback = prepare_call_rcu_zapped(pf);
 		nr_dynamic_keys--;
 	}
