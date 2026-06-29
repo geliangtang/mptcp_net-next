@@ -655,6 +655,116 @@ TEST_F(tls, multi_chunk_sendfile)
 	chunked_sendfile(_metadata, self, 300, 15360);
 }
 
+/*
+ * Large file sendfile test - transfers 200 MB via sendfile,
+ * using fork to concurrently receive data.
+ */
+TEST_F_TIMEOUT(tls, sendfile_large, 120)
+{
+	const size_t file_size = 200 * 1024 * 1024; /* 200 MB */
+	char template[] = "/tmp/tls_large.XXXXXX";
+	int fd = mkstemp(template);
+
+	ASSERT_GE(fd, 0);
+	unlink(template);
+
+	/* Create a file filled with a known pattern */
+	char *buf = malloc(file_size);
+	ASSERT_NE(buf, NULL);
+	memset(buf, 'A', file_size);
+	ASSERT_EQ(write(fd, buf, file_size), file_size);
+	free(buf);
+	ASSERT_EQ(lseek(fd, 0, SEEK_SET), 0);
+
+	int pid = fork();
+	ASSERT_GE(pid, 0);
+
+	if (pid == 0) {
+		/* Child: receiver */
+		char *recv_buf = malloc(file_size);
+		size_t total = 0;
+
+		ASSERT_NE(recv_buf, NULL);
+		while (total < file_size) {
+			ssize_t r = recv(self->cfd, recv_buf + total,
+					 file_size - total, MSG_WAITALL);
+			ASSERT_GE(r, 0);
+			total += r;
+		}
+		/* Verify all bytes are 'A' */
+		for (size_t i = 0; i < file_size; i++)
+			ASSERT_EQ(recv_buf[i], 'A');
+		free(recv_buf);
+		exit(0);
+	} else {
+		/* Parent: sender */
+		off_t offset = 0;
+		int status;
+
+		while (offset < file_size) {
+			ssize_t sent = sendfile(self->fd, fd, &offset,
+						file_size - offset);
+			ASSERT_GE(sent, 0);
+			offset += sent;
+		}
+		close(fd);
+		wait(&status);
+		ASSERT_EQ(status, 0);
+	}
+}
+
+/*
+ * Large file transfer test - 200 MB via send/read with poll.
+ * Uses fork to send and receive concurrently.
+ */
+TEST_F_TIMEOUT(tls, sendfile_large_2, 120)
+{
+	const size_t file_size = 200 * 1024 * 1024; /* 200 MB */
+	char *buf = malloc(file_size);
+	ASSERT_NE(buf, NULL);
+	memset(buf, 'A', file_size);
+
+	int pid = fork();
+	ASSERT_GE(pid, 0);
+
+	if (pid == 0) {
+		/* Child: receiver using poll + read */
+		char *recv_buf = malloc(file_size);
+		ASSERT_NE(recv_buf, NULL);
+		size_t total = 0;
+		struct pollfd pfd = { .fd = self->cfd, .events = POLLIN };
+
+		while (total < file_size) {
+			int ret = poll(&pfd, 1, 1000);
+			ASSERT_GE(ret, 0);
+			if (ret == 0)
+				continue; /* timeout, retry */
+			ssize_t r = read(self->cfd, recv_buf + total,
+					 file_size - total);
+			ASSERT_GE(r, 0);
+			total += r;
+		}
+		/* Verify all bytes are 'A' */
+		for (size_t i = 0; i < file_size; i++)
+			ASSERT_EQ(recv_buf[i], 'A');
+		free(recv_buf);
+		exit(0);
+	} else {
+		/* Parent: sender using send (not sendfile) */
+		size_t sent = 0;
+		while (sent < file_size) {
+			ssize_t r = send(self->fd, buf + sent,
+					 file_size - sent, 0);
+			ASSERT_GE(r, 0);
+			sent += r;
+		}
+		free(buf);
+		int status;
+		wait(&status);
+		ASSERT_EQ(status, 0);
+	}
+}
+
 TEST_F(tls, recv_max)
 {
 	unsigned int send_len = TLS_PAYLOAD_MAX_LEN;
