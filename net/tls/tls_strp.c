@@ -390,7 +390,6 @@ static int tls_strp_read_copyin(struct tls_strparser *strp)
 
 static int tls_strp_read_copy(struct tls_strparser *strp, bool qshort)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
 	struct skb_shared_info *shinfo;
 	struct page *page;
 	int need_spc, len;
@@ -398,7 +397,7 @@ static int tls_strp_read_copy(struct tls_strparser *strp, bool qshort)
 	/* If the rbuf is small or rcv window has collapsed to 0 we need
 	 * to read the data out. Otherwise the connection will stall.
 	 */
-	if (likely(qshort && !ctx->ops->epollin_ready(strp->sk)))
+	if (likely(qshort && !tls_epollin_ready(strp->sk)))
 		return 0;
 
 	shinfo = skb_shinfo(strp->anchor);
