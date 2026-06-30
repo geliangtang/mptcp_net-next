@@ -386,17 +386,37 @@ struct tls_skb_cb {
 
 static_assert(offsetof(struct tls_skb_cb, seq) == 0);
 
+#define TLS_PROTO_CALL(sk, tcp_fn, mptcp_fn, args...)			\
+({									\
+	__typeof__(tcp_fn(args)) _ret = (__typeof__(tcp_fn(args)))0;	\
+	switch ((sk)->sk_protocol) {					\
+	case IPPROTO_TCP:						\
+		_ret = tcp_fn(args);					\
+		break;							\
+	case IPPROTO_MPTCP:						\
+		_ret = mptcp_fn(args);					\
+		break;							\
+	}								\
+	_ret;								\
+})
+
 static inline __poll_t tls_poll(struct file *file, struct socket *sock,
 				struct poll_table_struct *wait)
 {
-	switch (sock->sk->sk_protocol) {
-	case IPPROTO_TCP:
-		return tcp_poll(file, sock, wait);
-	case IPPROTO_MPTCP:
-		return mptcp_poll(file, sock, wait);
-	default:
-		return 0;
-	}
+	return TLS_PROTO_CALL(sock->sk, tcp_poll, mptcp_poll,
+			      file, sock, wait);
+}
+
+static bool tcp_epollin_ready_max(const struct sock *sk)
+{
+	/* Without pressure threshold of INT_MAX will never be ready. */
+	return tcp_epollin_ready(sk, INT_MAX);
+}
+
+static inline bool tls_epollin_ready(const struct sock *sk)
+{
+	return TLS_PROTO_CALL(sk, tcp_epollin_ready_max,
+			      mptcp_epollin_ready, sk);
 }
 
 #endif

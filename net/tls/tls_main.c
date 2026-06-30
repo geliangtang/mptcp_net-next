@@ -133,7 +133,6 @@ static const struct proto *saved_mptcpv4_prot;
 static DEFINE_MUTEX(mptcpv4_prot_mutex);
 static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
 static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
-static struct tls_prot_ops tls_prot_ops[TLS_NUM_PROTO];
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 			 const struct proto *base);
 
@@ -146,7 +145,6 @@ static void update_sk_prot(struct sock *sk, struct tls_context *ctx)
 		   &tls_prots[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 	WRITE_ONCE(sk->sk_socket->ops,
 		   &tls_proto_ops[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
-	WRITE_ONCE(ctx->ops, &tls_prot_ops[proto]);
 }
 
 int wait_on_pending_writer(struct sock *sk, long *timeo)
@@ -975,21 +973,6 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 #endif
 }
 
-static bool tcp_epollin_ready_max(const struct sock *sk)
-{
-	/* Without pressure threshold of INT_MAX will never be ready. */
-	return tcp_epollin_ready(sk, INT_MAX);
-}
-
-static void build_tls_proto_ops(int proto)
-{
-	if (proto == TLSTCP) {
-		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready_max;
-	} else if (proto == TLSMPTCP) {
-		tls_prot_ops[proto].epollin_ready	= mptcp_epollin_ready;
-	}
-}
-
 static void tls_build_proto(struct sock *sk)
 {
 	int proto = sk->sk_protocol == IPPROTO_MPTCP ? TLSMPTCP : TLSTCP;
@@ -1004,7 +987,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV6][TLSTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV6][TLSTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSTCP);
 			smp_store_release(&saved_tcpv6_prot, prot);
 		}
 		mutex_unlock(&tcpv6_prot_mutex);
@@ -1017,7 +999,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV4][TLSTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV4][TLSTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSTCP);
 			smp_store_release(&saved_tcpv4_prot, prot);
 		}
 		mutex_unlock(&tcpv4_prot_mutex);
@@ -1031,7 +1012,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV6][TLSMPTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV6][TLSMPTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSMPTCP);
 			/* pairs with smp_load_acquire above */
 			smp_store_release(&saved_mptcpv6_prot, prot);
 		}
@@ -1046,7 +1026,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV4][TLSMPTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV4][TLSMPTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSMPTCP);
 			/* pairs with smp_load_acquire above */
 			smp_store_release(&saved_mptcpv4_prot, prot);
 		}
