@@ -20,6 +20,7 @@ TEST_PROGS := \
 	mptcp_restore.sh \
 	mptcp_sockopt.sh \
 	mptcp_tls.sh \
+	mptcp_zerocopy.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
 	test_tfo_inq.sh \
@@ -31,6 +32,7 @@ TEST_GEN_FILES := \
 	mptcp_connect \
 	mptcp_diag \
 	mptcp_sockopt \
+	mptcp_zerocopy \
 	multi_chunk \
 	pm_nl_ctl \
 	test_tfo_inq \
