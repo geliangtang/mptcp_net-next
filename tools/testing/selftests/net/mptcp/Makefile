@@ -17,6 +17,7 @@ TEST_PROGS := \
 	mptcp_nvme.sh \
 	mptcp_sockopt.sh \
 	mptcp_tls.sh \
+	mptcp_zerocopy.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
 	tlshd_v4map.sh \
@@ -27,6 +28,7 @@ TEST_GEN_FILES := \
 	mptcp_connect \
 	mptcp_diag \
 	mptcp_sockopt \
+	mptcp_zerocopy \
 	multi_chunk \
 	pm_nl_ctl \
 	tls \
