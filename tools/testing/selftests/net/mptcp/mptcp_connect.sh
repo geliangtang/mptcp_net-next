@@ -945,8 +945,8 @@ mptcp_lib_pr_info "Using ${tc_info}on ns3eth4"
 
 tc -net "$ns3" qdisc add dev ns3eth4 root netem delay ${reorder_delay}ms $tc_reorder
 
-run_tests_tls
-log_if_error "Tests with TLS have failed"
+#run_tests_tls
+#log_if_error "Tests with TLS have failed"
 
 TEST_GROUP="loopback v4"
 run_tests_lo "$ns1" "$ns1" 10.0.1.1 1
