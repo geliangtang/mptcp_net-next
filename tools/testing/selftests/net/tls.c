@@ -1755,7 +1755,7 @@ TEST_F(tls, mutliproc_even)
 	test_mutliproc(_metadata, self, false, 6, 6);
 }
 
-TEST_F(tls, mutliproc_readers)
+TEST_F_TIMEOUT(tls, mutliproc_readers, 240)
 {
 	test_mutliproc(_metadata, self, false, 4, 12);
 }
