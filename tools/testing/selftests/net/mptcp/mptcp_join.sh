@@ -2151,15 +2151,9 @@ subflows_tests()
 		pm_nl_set_limits $ns1 0 1
 		pm_nl_set_limits $ns2 0 1
 		pm_nl_add_endpoint $ns2 10.0.3.2 flags subflow
-		ip netns exec $ns1 ./mptcp_sockopt -c
-		echo $?
-		ip netns exec $ns2 ./mptcp_sockopt -c
-		echo $?
 		run_tests $ns1 $ns2 10.0.1.1
 		chk_join_nr 1 1 1
 	fi
-
-	exit
 
 	# multiple subflows
 	if reset "multiple subflows"; then
