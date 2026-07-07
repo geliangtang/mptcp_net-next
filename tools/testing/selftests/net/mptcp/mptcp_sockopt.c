@@ -20,11 +20,13 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 
 #include <netdb.h>
 #include <netinet/in.h>
 
 #include <linux/tcp.h>
+#include <linux/sockios.h>
 #include <linux/compiler.h>
 
 static int pf = AF_INET;
@@ -593,6 +595,39 @@ static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 		do_getsockopt_mptcp_full_info(s, fd);
 }
 
+/* wait up to timeout milliseconds */
+static void wait_for_ack(int fd, int timeout, size_t total)
+{
+	int i;
+
+	for (i = 0; i < timeout; i++) {
+		int nsd, ret, queued = -1;
+		struct timespec req;
+
+		ret = ioctl(fd, TIOCOUTQ, &queued);
+		if (ret < 0)
+			die_perror("TIOCOUTQ");
+
+		ret = ioctl(fd, SIOCOUTQNSD, &nsd);
+		if (ret < 0)
+			die_perror("SIOCOUTQNSD");
+
+		if ((size_t)queued > total)
+			xerror("TIOCOUTQ %u, but only %zu expected\n", queued, total);
+		assert(nsd <= queued);
+
+		if (queued == 0)
+			return;
+
+		/* wait for peer to ack rx of all data */
+		req.tv_sec = 0;
+		req.tv_nsec = 1 * 1000 * 1000ul; /* 1ms */
+		nanosleep(&req, NULL);
+	}
+
+	xerror("still tx data queued after %u ms\n", timeout);
+}
+
 static void connect_one_server(int fd, int unixfd)
 {
 	char buf[4096], buf2[4096];
@@ -620,9 +655,11 @@ static void connect_one_server(int fd, int unixfd)
 	/* un-block server */
 	ret = read(unixfd, buf2, 4);
 	assert(ret == 4);
-	close(unixfd);
 
 	assert(strncmp(buf2, "xmit", 4) == 0);
+
+	ret = write(unixfd, &len, sizeof(len));
+	assert(ret == (ssize_t)sizeof(len));
 
 	ret = write(fd, buf, len);
 	if (ret < 0)
@@ -659,14 +696,71 @@ static void connect_one_server(int fd, int unixfd)
 		total += 1; /* sequence advances due to FIN */
 
 	assert(s.mptcpi_rcv_delta ? s.mptcpi_rcv_delta == (uint64_t)total : true);
+
+	if (inq) {
+		size_t sent;
+
+		ret = read(unixfd, buf2, 4);
+		assert(strncmp(buf2, "huge", 4) == 0);
+
+		total = rand() % (16 * 1024 * 1024);
+		total += (1 * 1024 * 1024);
+		sent = total;
+
+		ret = write(unixfd, &total, sizeof(total));
+		assert(ret == (ssize_t)sizeof(total));
+
+		wait_for_ack(fd, 5000, len);
+
+		while (total > 0) {
+			if (total > sizeof(buf))
+				len = sizeof(buf);
+			else
+				len = total;
+
+			ret = write(fd, buf, len);
+			if (ret < 0)
+				die_perror("write");
+			total -= ret;
+
+			/* we don't have to care about buf content, only
+			 * number of total bytes sent
+			 */
+		}
+
+		ret = read(unixfd, buf2, 4);
+		assert(ret == 4);
+		assert(strncmp(buf2, "shut", 4) == 0);
+
+		wait_for_ack(fd, 5000, sent);
+
+		ret = write(fd, buf, 1);
+		assert(ret == 1);
+		ret = write(unixfd, "closed", 6);
+		assert(ret == 6);
+	}
+
 	close(fd);
+	close(unixfd);
 }
 
 static void process_one_client(int fd, int unixfd)
 {
 	ssize_t ret, ret2, ret3;
+	char msg_buf[4096];
 	struct so_state s;
+	size_t expect_len;
 	char buf[4096];
+	struct iovec iov = {
+		.iov_base = buf,
+		.iov_len = 1,
+	};
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = msg_buf,
+		.msg_controllen = sizeof(msg_buf),
+	};
 
 	memset(&s, 0, sizeof(s));
 	do_getsockopts(&s, fd, 0, 0);
@@ -674,7 +768,43 @@ static void process_one_client(int fd, int unixfd)
 	ret = write(unixfd, "xmit", 4);
 	assert(ret == 4);
 
-	ret = read(fd, buf, sizeof(buf));
+	ret = read(unixfd, &expect_len, sizeof(expect_len));
+	assert(ret == (ssize_t)sizeof(expect_len));
+
+	if (expect_len > sizeof(buf))
+		xerror("expect len %zu exceeds buffer size", expect_len);
+
+	if (inq) {
+		for (;;) {
+			struct timespec req;
+			unsigned int queued;
+
+			ret = ioctl(fd, FIONREAD, &queued);
+			if (ret < 0)
+				die_perror("FIONREAD");
+			if (queued > expect_len)
+				xerror("FIONREAD returned %u, but only %zu expected\n",
+				       queued, expect_len);
+			if (queued == expect_len)
+				break;
+
+			req.tv_sec = 0;
+			req.tv_nsec = 1000 * 1000ul;
+			nanosleep(&req, NULL);
+		}
+	}
+
+	/* read one byte, expect cmsg to return expected - 1 */
+	ret = recvmsg(fd, &msg, 0);
+	if (ret < 0)
+		die_perror("recvmsg");
+
+	if (inq) {
+		if (msg.msg_controllen == 0)
+			xerror("msg_controllen is 0");
+	}
+
+	ret = read(fd, buf + 1, sizeof(buf) - 1);
 	if (ret < 0)
 		die_perror("read");
 
@@ -683,9 +813,60 @@ static void process_one_client(int fd, int unixfd)
 	if (s.tcpi_rcv_delta)
 		assert(s.tcpi_rcv_delta == (uint64_t)ret);
 
+	/* should have gotten exact remainder of all pending data */
+	assert(ret == (ssize_t)expect_len - 1);
+
+	ret += 1;
+
 	ret2 = write(fd, buf, ret);
 	if (ret2 < 0)
 		die_perror("write");
+
+	if (inq) {
+		char tmp[16];
+		ssize_t tot;
+
+		wait_for_ack(fd, 5000, ret2);
+
+		/* request a large swath of data. */
+		ret = write(unixfd, "huge", 4);
+		assert(ret == 4);
+
+		ret = read(unixfd, &expect_len, sizeof(expect_len));
+		assert(ret == (ssize_t)sizeof(expect_len));
+
+		/* peer should send us a few mb of data */
+		if (expect_len <= sizeof(buf))
+			xerror("expect len %zu too small\n", expect_len);
+
+		tot = 0;
+		do {
+			iov.iov_len = sizeof(buf);
+			msg.msg_controllen = sizeof(msg_buf);
+			ret = recvmsg(fd, &msg, 0);
+			if (ret < 0)
+				die_perror("recvmsg");
+
+			tot += ret;
+		} while ((size_t)tot < expect_len);
+
+		ret = write(unixfd, "shut", 4);
+		assert(ret == 4);
+
+		/* wait for hangup. Should have received one more byte of data. */
+		ret = read(unixfd, tmp, sizeof(tmp));
+		assert(ret == 6);
+		assert(strncmp(tmp, "closed", 6) == 0);
+
+		sleep(1);
+
+		iov.iov_len = 1;
+		msg.msg_controllen = sizeof(msg_buf);
+		ret = recvmsg(fd, &msg, 0);
+		if (ret < 0)
+			die_perror("recvmsg");
+		assert(ret == 1);
+	}
 
 	/* wait for hangup */
 	ret3 = read(fd, buf, 1);
