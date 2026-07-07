@@ -392,6 +392,7 @@ static void process_one_client(int fd, int unixfd)
 	assert((size_t)tcp_inq == (expect_len - 1));
 
 	iov.iov_len = sizeof(buf);
+	msg.msg_controllen = sizeof(msg_buf);
 	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
 		die_perror("recvmsg");
@@ -417,6 +418,7 @@ static void process_one_client(int fd, int unixfd)
 	tot = 0;
 	do {
 		iov.iov_len = sizeof(buf);
+		msg.msg_controllen = sizeof(msg_buf);
 		ret = recvmsg(fd, &msg, 0);
 		if (ret < 0)
 			die_perror("recvmsg");
@@ -443,6 +445,7 @@ static void process_one_client(int fd, int unixfd)
 	sleep(1);
 
 	iov.iov_len = 1;
+	msg.msg_controllen = sizeof(msg_buf);
 	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
 		die_perror("recvmsg");
@@ -454,6 +457,7 @@ static void process_one_client(int fd, int unixfd)
 	assert(tcp_inq == 1);
 
 	iov.iov_len = 1;
+	msg.msg_controllen = sizeof(msg_buf);
 	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
 		die_perror("recvmsg");
