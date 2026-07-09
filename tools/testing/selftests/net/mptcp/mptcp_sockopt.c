@@ -141,7 +141,9 @@ static void __noreturn die_perror(const char *msg)
 
 static void die_usage(int r)
 {
-	fprintf(stderr, "Usage: mptcp_sockopt [-6] [-t tcp|mptcp] [-r tcp|mptcp] [-i]\n");
+	fprintf(stderr, "Usage: mptcp_sockopt [-6]\n");
+	fprintf(stderr, "                     [-t tcp|mptcp] [-r tcp|mptcp]\n");
+	fprintf(stderr, "                     [-i]\n");
 	exit(r);
 }
 
@@ -613,7 +615,8 @@ static void wait_for_ack(int fd, int timeout, size_t total)
 			die_perror("SIOCOUTQNSD");
 
 		if ((size_t)queued > total)
-			xerror("TIOCOUTQ %u, but only %zu expected\n", queued, total);
+			xerror("TIOCOUTQ %u, but only %zu expected\n",
+			       queued, total);
 		assert(nsd <= queued);
 
 		if (queued == 0)
@@ -626,6 +629,52 @@ static void wait_for_ack(int fd, int timeout, size_t total)
 	}
 
 	xerror("still tx data queued after %u ms\n", timeout);
+}
+
+static void server_huge_transfer(int fd, int unixfd, size_t len)
+{
+	char buf[4096], buf2[4];
+	size_t total, sent;
+	ssize_t ret;
+
+	ret = read(unixfd, buf2, 4);
+	assert(strncmp(buf2, "huge", 4) == 0);
+
+	total = rand() % (16 * 1024 * 1024);
+	total += (1 * 1024 * 1024);
+	sent = total;
+
+	ret = write(unixfd, &total, sizeof(total));
+	assert(ret == (ssize_t)sizeof(total));
+
+	wait_for_ack(fd, 5000, len);
+
+	while (total > 0) {
+		if (total > sizeof(buf))
+			len = sizeof(buf);
+		else
+			len = total;
+
+		ret = write(fd, buf, len);
+		if (ret < 0)
+			die_perror("write");
+		total -= ret;
+
+		/* we don't have to care about buf content, only
+		 * number of total bytes sent
+		 */
+	}
+
+	ret = read(unixfd, buf2, 4);
+	assert(ret == 4);
+	assert(strncmp(buf2, "shut", 4) == 0);
+
+	wait_for_ack(fd, 5000, sent);
+
+	ret = write(fd, buf, 1);
+	assert(ret == 1);
+	ret = write(unixfd, "closed", 6);
+	assert(ret == 6);
 }
 
 static void connect_one_server(int fd, int unixfd)
@@ -670,7 +719,7 @@ static void connect_one_server(int fd, int unixfd)
 
 	total = 0;
 	do {
-		ret = read(fd, buf2 + total, sizeof(buf2) - total);
+		ret = read(fd, buf2 + total, len - total);
 		if (ret < 0)
 			die_perror("read");
 		if (ret == 0) {
@@ -695,50 +744,11 @@ static void connect_one_server(int fd, int unixfd)
 	if (eof)
 		total += 1; /* sequence advances due to FIN */
 
-	assert(s.mptcpi_rcv_delta ? s.mptcpi_rcv_delta == (uint64_t)total : true);
+	assert(!s.mptcpi_rcv_delta ||
+	       s.mptcpi_rcv_delta == (uint64_t)total);
 
-	if (inq) {
-		size_t sent;
-
-		ret = read(unixfd, buf2, 4);
-		assert(strncmp(buf2, "huge", 4) == 0);
-
-		total = rand() % (16 * 1024 * 1024);
-		total += (1 * 1024 * 1024);
-		sent = total;
-
-		ret = write(unixfd, &total, sizeof(total));
-		assert(ret == (ssize_t)sizeof(total));
-
-		wait_for_ack(fd, 5000, len);
-
-		while (total > 0) {
-			if (total > sizeof(buf))
-				len = sizeof(buf);
-			else
-				len = total;
-
-			ret = write(fd, buf, len);
-			if (ret < 0)
-				die_perror("write");
-			total -= ret;
-
-			/* we don't have to care about buf content, only
-			 * number of total bytes sent
-			 */
-		}
-
-		ret = read(unixfd, buf2, 4);
-		assert(ret == 4);
-		assert(strncmp(buf2, "shut", 4) == 0);
-
-		wait_for_ack(fd, 5000, sent);
-
-		ret = write(fd, buf, 1);
-		assert(ret == 1);
-		ret = write(unixfd, "closed", 6);
-		assert(ret == 6);
-	}
+	if (inq)
+		server_huge_transfer(fd, unixfd, len);
 
 	close(fd);
 	close(unixfd);
@@ -748,14 +758,88 @@ static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
 {
 	struct cmsghdr *cmsg;
 
-	for (cmsg = CMSG_FIRSTHDR(msgh); cmsg ; cmsg = CMSG_NXTHDR(msgh, cmsg)) {
-		if (cmsg->cmsg_level == IPPROTO_TCP && cmsg->cmsg_type == TCP_CM_INQ) {
+	for (cmsg = CMSG_FIRSTHDR(msgh); cmsg;
+	     cmsg = CMSG_NXTHDR(msgh, cmsg)) {
+		if (cmsg->cmsg_level == IPPROTO_TCP &&
+		    cmsg->cmsg_type == TCP_CM_INQ) {
 			memcpy(inqv, CMSG_DATA(cmsg), sizeof(*inqv));
 			return;
 		}
 	}
 
 	xerror("could not find TCP_CM_INQ cmsg type");
+}
+
+static void client_huge_transfer(int fd, int unixfd)
+{
+	unsigned int tcp_inq;
+	char msg_buf[4096];
+	size_t expect_len;
+	ssize_t ret, tot;
+	char buf[4096];
+	char tmp[16];
+	struct iovec iov = {
+		.iov_base = buf,
+		.iov_len = 1,
+	};
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = msg_buf,
+		.msg_controllen = sizeof(msg_buf),
+	};
+
+	/* request a large swath of data. */
+	ret = write(unixfd, "huge", 4);
+	assert(ret == 4);
+
+	ret = read(unixfd, &expect_len, sizeof(expect_len));
+	assert(ret == (ssize_t)sizeof(expect_len));
+
+	/* peer should send us a few mb of data */
+	if (expect_len <= sizeof(buf))
+		xerror("expect len %zu too small\n", expect_len);
+
+	tot = 0;
+	do {
+		iov.iov_len = sizeof(buf);
+		msg.msg_controllen = sizeof(msg_buf);
+		ret = recvmsg(fd, &msg, 0);
+		if (ret < 0)
+			die_perror("recvmsg");
+
+		tot += ret;
+
+		get_tcp_inq(&msg, &tcp_inq);
+
+		if (tcp_inq > expect_len - tot)
+			xerror("inq %d, remaining %d total_len %d\n",
+			       tcp_inq, expect_len - tot, (int)expect_len);
+
+		assert(tcp_inq <= expect_len - tot);
+	} while ((size_t)tot < expect_len);
+
+	ret = write(unixfd, "shut", 4);
+	assert(ret == 4);
+
+	/* wait for hangup. Should have received one more byte of data. */
+	ret = read(unixfd, tmp, sizeof(tmp));
+	assert(ret == 6);
+	assert(strncmp(tmp, "closed", 6) == 0);
+
+	sleep(1);
+
+	iov.iov_len = 1;
+	msg.msg_controllen = sizeof(msg_buf);
+	ret = recvmsg(fd, &msg, 0);
+	if (ret < 0)
+		die_perror("recvmsg");
+	assert(ret == 1);
+
+	get_tcp_inq(&msg, &tcp_inq);
+
+	/* tcp_inq should be 1 due to received fin. */
+	assert(tcp_inq == 1);
 }
 
 static void process_one_client(int fd, int unixfd)
@@ -789,24 +873,22 @@ static void process_one_client(int fd, int unixfd)
 	if (expect_len > sizeof(buf))
 		xerror("expect len %zu exceeds buffer size", expect_len);
 
-	if (inq) {
-		for (;;) {
-			struct timespec req;
-			unsigned int queued;
+	for (;;) {
+		struct timespec req;
+		unsigned int queued;
 
-			ret = ioctl(fd, FIONREAD, &queued);
-			if (ret < 0)
-				die_perror("FIONREAD");
-			if (queued > expect_len)
-				xerror("FIONREAD returned %u, but only %zu expected\n",
-				       queued, expect_len);
-			if (queued == expect_len)
-				break;
+		ret = ioctl(fd, FIONREAD, &queued);
+		if (ret < 0)
+			die_perror("FIONREAD");
+		if (queued > expect_len)
+			xerror("FIONREAD returned %u, but only %zu expected\n",
+			       queued, expect_len);
+		if (queued == expect_len)
+			break;
 
-			req.tv_sec = 0;
-			req.tv_nsec = 1000 * 1000ul;
-			nanosleep(&req, NULL);
-		}
+		req.tv_sec = 0;
+		req.tv_nsec = 1000 * 1000ul;
+		nanosleep(&req, NULL);
 	}
 
 	/* read one byte, expect cmsg to return expected - 1 */
@@ -841,64 +923,8 @@ static void process_one_client(int fd, int unixfd)
 	if (ret2 < 0)
 		die_perror("write");
 
-	if (inq) {
-		char tmp[16];
-		ssize_t tot;
-
-		wait_for_ack(fd, 5000, ret2);
-
-		/* request a large swath of data. */
-		ret = write(unixfd, "huge", 4);
-		assert(ret == 4);
-
-		ret = read(unixfd, &expect_len, sizeof(expect_len));
-		assert(ret == (ssize_t)sizeof(expect_len));
-
-		/* peer should send us a few mb of data */
-		if (expect_len <= sizeof(buf))
-			xerror("expect len %zu too small\n", expect_len);
-
-		tot = 0;
-		do {
-			iov.iov_len = sizeof(buf);
-			msg.msg_controllen = sizeof(msg_buf);
-			ret = recvmsg(fd, &msg, 0);
-			if (ret < 0)
-				die_perror("recvmsg");
-
-			tot += ret;
-
-			get_tcp_inq(&msg, &tcp_inq);
-
-			if (tcp_inq > expect_len - tot)
-				xerror("inq %d, remaining %d total_len %d\n",
-				       tcp_inq, expect_len - tot, (int)expect_len);
-
-			assert(tcp_inq <= expect_len - tot);
-		} while ((size_t)tot < expect_len);
-
-		ret = write(unixfd, "shut", 4);
-		assert(ret == 4);
-
-		/* wait for hangup. Should have received one more byte of data. */
-		ret = read(unixfd, tmp, sizeof(tmp));
-		assert(ret == 6);
-		assert(strncmp(tmp, "closed", 6) == 0);
-
-		sleep(1);
-
-		iov.iov_len = 1;
-		msg.msg_controllen = sizeof(msg_buf);
-		ret = recvmsg(fd, &msg, 0);
-		if (ret < 0)
-			die_perror("recvmsg");
-		assert(ret == 1);
-
-		get_tcp_inq(&msg, &tcp_inq);
-
-		/* tcp_inq should be 1 due to received fin. */
-		assert(tcp_inq == 1);
-	}
+	if (inq)
+		client_huge_transfer(fd, unixfd);
 
 	/* wait for hangup */
 	ret3 = read(fd, buf, 1);
