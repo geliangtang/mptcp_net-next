@@ -845,9 +845,21 @@ static void client_huge_transfer(int fd, int unixfd)
 static void process_one_client(int fd, int unixfd)
 {
 	ssize_t ret, ret2, ret3;
+	unsigned int tcp_inq;
+	char msg_buf[4096];
 	struct so_state s;
 	size_t expect_len;
 	char buf[4096];
+	struct iovec iov = {
+		.iov_base = buf,
+		.iov_len = 1,
+	};
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = msg_buf,
+		.msg_controllen = sizeof(msg_buf),
+	};
 
 	memset(&s, 0, sizeof(s));
 	do_getsockopts(&s, fd, 0, 0);
@@ -879,9 +891,39 @@ static void process_one_client(int fd, int unixfd)
 		nanosleep(&req, NULL);
 	}
 
-	ret = read(fd, buf, sizeof(buf));
+	/* read one byte */
+	ret = recvmsg(fd, &msg, 0);
 	if (ret < 0)
-		die_perror("read");
+		die_perror("recvmsg");
+
+	if (inq) {
+		if (msg.msg_controllen == 0)
+			xerror("msg_controllen is 0");
+
+		get_tcp_inq(&msg, &tcp_inq);
+
+		/* expect cmsg to return expected - 1 */
+		assert((size_t)tcp_inq == (expect_len - 1));
+	}
+
+	iov.iov_base = buf + 1;
+	iov.iov_len = sizeof(buf) - 1;
+	msg.msg_controllen = sizeof(msg_buf);
+	ret = recvmsg(fd, &msg, 0);
+	if (ret < 0)
+		die_perror("recvmsg");
+
+	if (inq) {
+		/* should have gotten exact remainder of all pending data */
+		assert(ret == (ssize_t)tcp_inq);
+
+		/* should be 0, all drained */
+		get_tcp_inq(&msg, &tcp_inq);
+		assert(tcp_inq == 0);
+	}
+
+	/* add the first byte */
+	ret += 1;
 
 	assert(s.mptcpi_rcv_delta <= (uint64_t)ret);
 
@@ -896,9 +938,16 @@ static void process_one_client(int fd, int unixfd)
 		client_huge_transfer(fd, unixfd);
 
 	/* wait for hangup */
-	ret3 = read(fd, buf, 1);
+	iov.iov_len = 1;
+	msg.msg_controllen = sizeof(msg_buf);
+	ret3 = recvmsg(fd, &msg, 0);
 	if (ret3 != 0)
 		xerror("expected EOF, got %lu", ret3);
+
+	if (inq) {
+		get_tcp_inq(&msg, &tcp_inq);
+		assert(tcp_inq == 1);
+	}
 
 	do_getsockopts(&s, fd, ret, ret2);
 	if (s.mptcpi_rcv_delta && s.mptcpi_rcv_delta != (uint64_t)ret + 1)
