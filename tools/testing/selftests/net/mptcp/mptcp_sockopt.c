@@ -634,10 +634,18 @@ static void wait_for_ack(int fd, int timeout, size_t total)
 static void server_huge_transfer(int fd, int unixfd, size_t len)
 {
 	char buf[4096], buf2[4];
-	size_t total, sent;
+	size_t i, total, sent;
 	ssize_t ret;
 
+	for (i = 0; i < len ; i++) {
+		buf[i] = rand() % 26;
+		buf[i] += 'A';
+	}
+
+	buf[i] = '\n';
+
 	ret = read(unixfd, buf2, 4);
+	assert(ret == 4);
 	assert(strncmp(buf2, "huge", 4) == 0);
 
 	total = rand() % (16 * 1024 * 1024);
@@ -744,8 +752,8 @@ static void connect_one_server(int fd, int unixfd)
 	if (eof)
 		total += 1; /* sequence advances due to FIN */
 
-	assert(!s.mptcpi_rcv_delta ||
-	       s.mptcpi_rcv_delta == (uint64_t)total);
+	if (proto_tx == IPPROTO_MPTCP && proto_rx == IPPROTO_MPTCP)
+		assert(s.mptcpi_rcv_delta == (uint64_t)total);
 
 	if (inq)
 		server_huge_transfer(fd, unixfd, len);
@@ -762,6 +770,9 @@ static void get_tcp_inq(struct msghdr *msgh, unsigned int *inqv)
 	     cmsg = CMSG_NXTHDR(msgh, cmsg)) {
 		if (cmsg->cmsg_level == IPPROTO_TCP &&
 		    cmsg->cmsg_type == TCP_CM_INQ) {
+			if (cmsg->cmsg_len < CMSG_LEN(sizeof(*inqv)))
+				xerror("TCP_CM_INQ cmsg_len too small: %u",
+				       cmsg->cmsg_len);
 			memcpy(inqv, CMSG_DATA(cmsg), sizeof(*inqv));
 			return;
 		}
@@ -807,13 +818,15 @@ static void client_huge_transfer(int fd, int unixfd)
 		ret = recvmsg(fd, &msg, 0);
 		if (ret < 0)
 			die_perror("recvmsg");
+		if (ret == 0)
+			xerror("unexpected EOF in huge recv");
 
 		tot += ret;
 
 		get_tcp_inq(&msg, &tcp_inq);
 
 		if (tcp_inq > expect_len - tot)
-			xerror("inq %d, remaining %d total_len %d\n",
+			xerror("inq %d, remaining %zu total_len %d\n",
 			       tcp_inq, expect_len - tot, (int)expect_len);
 
 		assert(tcp_inq <= expect_len - tot);
@@ -950,7 +963,8 @@ static void process_one_client(int fd, int unixfd)
 	}
 
 	do_getsockopts(&s, fd, ret, ret2);
-	if (s.mptcpi_rcv_delta && s.mptcpi_rcv_delta != (uint64_t)ret + 1)
+	if (proto_tx == IPPROTO_MPTCP && proto_rx == IPPROTO_MPTCP &&
+	    s.mptcpi_rcv_delta != (uint64_t)ret + 1)
 		xerror("mptcpi_rcv_delta %" PRIu64 ", expect %" PRIu64 ", diff %" PRId64,
 		       s.mptcpi_rcv_delta, ret + 1, s.mptcpi_rcv_delta - (ret + 1));
 
