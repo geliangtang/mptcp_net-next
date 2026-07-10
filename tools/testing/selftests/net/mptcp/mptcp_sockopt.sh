@@ -347,6 +347,7 @@ do_tcpinq_tests()
 	done
 
 	do_tcpinq_test -r tcp -t tcp -i
+	do_tcpinq_test -i
 
 	return $?
 }
