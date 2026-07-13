@@ -1888,6 +1888,9 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 	 */
 	nvme_tcp_sock_no_linger(queue->sock->sk);
 
+	pr_info("%s so_priority=%d nctrl->opts->tos=%d nctrl->opts->tclass=%d\n",
+		__func__, so_priority, nctrl->opts->tos, nctrl->opts->tclass);
+
 	if (so_priority > 0)
 		nvme_tcp_sock_set_priority(queue->sock->sk, so_priority);
 

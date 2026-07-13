@@ -1797,12 +1797,14 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 		nvmet_tcp_sock_set_priority(sock->sk, so_priority);
 
 	/* Set socket type of service */
+	pr_info("%s inet->rcv_tos=%d\n", __func__, inet->rcv_tos);
 	if (inet->rcv_tos > 0)
 		nvmet_tcp_sock_set_tos(sock->sk, inet->rcv_tos);
 #if IS_ENABLED(CONFIG_IPV6)
 	if (sock->sk->sk_family == AF_INET6) {
 		struct ipv6_pinfo *np = inet6_sk(sock->sk);
 
+		pr_info("%s np->tclass=%d\n", __func__, np->tclass);
 		if (np->tclass > 0)
 			nvmet_tcp_sock_set_tclass(sock->sk, np->tclass);
 	}
