@@ -142,6 +142,8 @@ init()
 
 	mptcp_lib_ns_init ns1 ns2
 
+	ip netns exec "$ns1" sysctl -qw net.ipv4.tcp_reflect_tos=1
+
 	# ns1		ns2
 	# 10.1.1.1	10.1.1.2
 	# 10.1.2.1	10.1.2.2
@@ -244,6 +246,23 @@ run_target()
 
 # This function is invoked indirectly
 #shellcheck disable=SC2317,SC2329
+check_bindtodevice()
+{
+	local iface="$1"
+	local line
+
+	while IFS= read -r line; do
+		if echo "${line}" | grep -qE "%${iface}(:|\b)"; then
+			return 0
+		fi
+	done < <(ss -tnp -e)
+
+	echo "  no socket with %${iface} binding found"
+	return 1
+}
+
+# This function is invoked indirectly
+#shellcheck disable=SC2317,SC2329
 set_io_policy()
 {
 	local nqn="$1"
@@ -295,10 +314,12 @@ run_host()
 		traddr=10.1.1.1
 	fi
 	local devname
+	local bind_iface=ns2eth1
+	local extra=(--tos="0x10" --host-iface="${bind_iface}")
 
-	echo "nvme discover -a ${traddr}"
+	echo "nvme discover -a ${traddr} ${extra[*]}"
 	if ! nvme discover -t "${trtype}" -a "${traddr}" \
-			   -s "${trsvcid}"; then
+			   -s "${trsvcid}" "${extra[@]}"; then
 		echo "Failed to discover ${traddr}"
 		return 1
 	fi
@@ -309,13 +330,21 @@ run_host()
 		else
 			traddr=10.1.${i}.1
 		fi
-		echo "Connecting to ${traddr}:${trsvcid}"
+		echo "Connecting to ${traddr}:${trsvcid} ${extra[*]}"
 		if ! nvme connect -t "${trtype}" -a "${traddr}" \
-				  -s "${trsvcid}" -n "${nqn}"; then
+				  -s "${trsvcid}" -n "${nqn}" \
+				  "${extra[@]}"; then
 			echo "Failed to connect to ${traddr}"
 			return 1
 		fi
 	done
+
+	sleep 1
+	if ! check_bindtodevice "${bind_iface}"; then
+		echo "FAIL: ${trtype} socket not bound to ${bind_iface}"
+		return 1
+	fi
+	echo "PASS: ${trtype} socket bound to ${bind_iface}"
 
 	for i in $(seq 1 10); do
 		for dev in /dev/nvme*n1; do
@@ -411,6 +440,9 @@ run_test()
 	fi
 
 	if ! ip netns exec "$ns2" bash <<- EOF
+		mkdir -p /sys/fs/cgroup
+		mount -t cgroup2 cgroup2 /sys/fs/cgroup
+		$(declare -f check_bindtodevice)
 		$(declare -f set_io_policy)
 		$(declare -f run_host)
 		run_host
