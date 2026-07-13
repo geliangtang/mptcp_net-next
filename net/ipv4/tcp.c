@@ -3145,6 +3145,16 @@ void __tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int state;
 
+	pr_info("%s sk=%p sk_family=%s linger=%u nodelay=%u "
+		"syncnt=%u tos=%u tclass=%u priority=%u reuse=%u\n",
+		__func__, sk,
+		sk->sk_family == AF_INET6 ? "ipv6" : "ipv4",
+		sock_flag(sk, SOCK_LINGER),
+		!!(tcp_sk(sk)->nonagle & TCP_NAGLE_OFF),
+		inet_csk(sk)->icsk_syn_retries, inet_sk(sk)->tos,
+		sk->sk_family == AF_INET6 ? inet6_sk(sk)->tclass : 0,
+		sk->sk_priority, sk->sk_reuse);
+
 	WRITE_ONCE(sk->sk_shutdown, SHUTDOWN_MASK);
 
 	if (sk->sk_state == TCP_LISTEN) {

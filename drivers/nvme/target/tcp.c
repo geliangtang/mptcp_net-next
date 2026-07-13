@@ -1750,6 +1750,7 @@ static int nvmet_tcp_sock_set_tos(struct sock *sk)
 {
 	int tos = inet_sk(sk)->rcv_tos;
 
+	pr_info("%s tos=%d\n", __func__, tos);
 	if (tos > 0)
 		return do_sock_setsockopt(sk->sk_socket, false, SOL_IP, IP_TOS,
 					  KERNEL_SOCKPTR(&tos), sizeof(tos));
@@ -1762,6 +1763,7 @@ static int nvmet_tcp_sock_set_tclass(struct sock *sk)
 	if (sk->sk_family == AF_INET6) {
 		int tclass = ip6_tclass(inet6_sk(sk)->rcv_flowinfo);
 
+		pr_info("%s tclass=%d\n", __func__, tclass);
 		if (tclass > 0)
 			return do_sock_setsockopt(sk->sk_socket, false,
 						  SOL_IPV6, IPV6_TCLASS,
