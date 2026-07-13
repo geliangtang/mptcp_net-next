@@ -238,15 +238,9 @@ static inline __be32 mptcp_reset_option(const struct sk_buff *skb)
 
 void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
 
-void mptcp_sock_no_linger(struct sock *sk);
-
-void mptcp_sock_set_priority(struct sock *sk, u32 priority);
-
 void __mptcp_sock_set_tos(struct sock *sk, int val);
 
 void mptcp_sock_set_tos(struct sock *sk);
-
-void mptcp_sock_set_reuseaddr(struct sock *sk);
 
 void mptcp_sock_set_nodelay(struct sock *sk);
 
@@ -329,15 +323,9 @@ static inline __be32 mptcp_reset_option(const struct sk_buff *skb)  { return hto
 
 static inline void mptcp_active_detect_blackhole(struct sock *sk, bool expired) { }
 
-static inline void mptcp_sock_no_linger(struct sock *sk) { }
-
-static inline void mptcp_sock_set_priority(struct sock *sk, u32 priority) { }
-
 static inline void __mptcp_sock_set_tos(struct sock *sk, int val) { }
 
 static inline void mptcp_sock_set_tos(struct sock *sk) { }
-
-static inline void mptcp_sock_set_reuseaddr(struct sock *sk) { }
 
 static inline void mptcp_sock_set_nodelay(struct sock *sk) { }
 

@@ -998,6 +998,7 @@ void mptcp_data_ready(struct sock *sk, struct sock *ssk)
 
 	mptcp_data_lock(sk);
 	mptcp_rcv_rtt_update(msk, subflow);
+	mptcp_sockopt_sync_locked(msk, ssk);
 	if (!sock_owned_by_user(sk)) {
 		/* Wake-up the reader only for in-sequence data */
 		if (move_skbs_to_msk(msk, ssk) && mptcp_epollin_ready(sk))

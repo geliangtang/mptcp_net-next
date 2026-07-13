@@ -153,8 +153,6 @@ struct nvme_tcp_proto {
 	int			protocol;
 	int (*set_syncnt)(struct sock *sk, int val);
 	void (*set_nodelay)(struct sock *sk);
-	void (*no_linger)(struct sock *sk);
-	void (*set_priority)(struct sock *sk, u32 priority);
 	void (*set_tos)(struct sock *sk, int val);
 	const struct nvme_ctrl_ops *ops;
 };
@@ -1841,12 +1839,12 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 	 * close. This is done to prevent stale data from being sent should
 	 * the network connection be restored before TCP times out.
 	 */
-	ctrl->proto->no_linger(queue->sock->sk);
+	sock_no_linger(queue->sock->sk);
 
 	pr_info("%s so_priority=%d nctrl->opts->tos=%d\n", __func__, so_priority, nctrl->opts->tos);
 
 	if (so_priority > 0)
-		ctrl->proto->set_priority(queue->sock->sk, so_priority);
+		sock_set_priority(queue->sock->sk, so_priority);
 
 	/* Set socket type of service */
 	if (nctrl->opts->tos >= 0)
@@ -2945,8 +2943,6 @@ static const struct nvme_tcp_proto nvme_tcp_proto = {
 	.protocol	= IPPROTO_TCP,
 	.set_syncnt	= tcp_sock_set_syncnt,
 	.set_nodelay	= tcp_sock_set_nodelay,
-	.no_linger	= sock_no_linger,
-	.set_priority	= sock_set_priority,
 	.set_tos	= ip_sock_set_tos,
 	.ops		= &nvme_tcp_ctrl_ops,
 
@@ -2957,8 +2953,6 @@ static const struct nvme_tcp_proto nvme_mptcp_proto = {
 	.protocol	= IPPROTO_MPTCP,
 	.set_syncnt	= mptcp_sock_set_syncnt,
 	.set_nodelay	= mptcp_sock_set_nodelay,
-	.no_linger	= mptcp_sock_no_linger,
-	.set_priority	= mptcp_sock_set_priority,
 	.set_tos	= __mptcp_sock_set_tos,
 	.ops		= &nvme_mptcp_ctrl_ops,
 };

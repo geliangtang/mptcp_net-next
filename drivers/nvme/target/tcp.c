@@ -146,8 +146,6 @@ enum nvmet_tcp_queue_state {
 };
 
 struct nvmet_tcp_proto {
-	void (*no_linger)(struct sock *sk);
-	void (*set_priority)(struct sock *sk, u32 priority);
 	void (*set_tos)(struct sock *sk);
 	const struct nvmet_fabrics_ops *ops;
 };
@@ -1729,11 +1727,11 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	 * close. This is done to prevent stale data from being sent should
 	 * the network connection be restored before TCP times out.
 	 */
-	queue->proto->no_linger(sock->sk);
+	sock_no_linger(sock->sk);
 
 	pr_info("%s so_priority=%d inet->rcv_tos=%d\n", __func__, so_priority, inet->rcv_tos);
 	if (so_priority > 0)
-		queue->proto->set_priority(sock->sk, so_priority);
+		sock_set_priority(sock->sk, so_priority);
 
 	/* Set socket type of service */
 	queue->proto->set_tos(sock->sk);
@@ -1929,16 +1927,12 @@ static void tcp_sock_set_tos(struct sock *sk)
 }
 
 static const struct nvmet_tcp_proto nvmet_tcp_proto = {
-	.no_linger	= sock_no_linger,
-	.set_priority	= sock_set_priority,
 	.set_tos	= tcp_sock_set_tos,
 	.ops		= &nvmet_tcp_ops,
 };
 
 #ifdef CONFIG_MPTCP
 static const struct nvmet_tcp_proto nvmet_mptcp_proto = {
-	.no_linger	= mptcp_sock_no_linger,
-	.set_priority	= mptcp_sock_set_priority,
 	.set_tos	= mptcp_sock_set_tos,
 	.ops		= &nvmet_mptcp_ops,
 };
@@ -2099,24 +2093,18 @@ static void nvmet_tcp_listen_data_ready(struct sock *sk)
 
 struct nvmet_tcp_proto_ops {
 	int			protocol;
-	void (*set_reuseaddr)(struct sock *sk);
 	void (*set_nodelay)(struct sock *sk);
-	void (*set_priority)(struct sock *sk, u32 priority);
 };
 
 static const struct nvmet_tcp_proto_ops nvmet_tcp_proto_ops = {
 	.protocol	= IPPROTO_TCP,
-	.set_reuseaddr	= sock_set_reuseaddr,
 	.set_nodelay	= tcp_sock_set_nodelay,
-	.set_priority	= sock_set_priority,
 };
 
 #ifdef CONFIG_MPTCP
 static const struct nvmet_tcp_proto_ops nvmet_mptcp_proto_ops = {
 	.protocol	= IPPROTO_MPTCP,
-	.set_reuseaddr	= mptcp_sock_set_reuseaddr,
 	.set_nodelay	= mptcp_sock_set_nodelay,
-	.set_priority	= mptcp_sock_set_priority,
 };
 #endif
 
@@ -2179,11 +2167,11 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 	port->sock->sk->sk_user_data = port;
 	port->data_ready = port->sock->sk->sk_data_ready;
 	port->sock->sk->sk_data_ready = nvmet_tcp_listen_data_ready;
-	ops->set_reuseaddr(port->sock->sk);
+	sock_set_reuseaddr(port->sock->sk);
 	ops->set_nodelay(port->sock->sk);
-	//ops->no_linger(port->sock->sk);
+	//sock_no_linger(port->sock->sk);
 	if (so_priority > 0)
-		ops->set_priority(port->sock->sk, so_priority);
+		sock_set_priority(port->sock->sk, so_priority);
 
 	ret = kernel_bind(port->sock, (struct sockaddr_unsized *)&port->addr,
 			sizeof(port->addr));

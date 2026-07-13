@@ -1562,6 +1562,21 @@ int mptcp_getsockopt(struct sock *sk, int level, int optname,
 	return -EOPNOTSUPP;
 }
 
+static void mptcp_sockopt_sync(struct mptcp_sock *msk, struct sock *ssk)
+{
+	struct sock *sk = (struct sock *)msk;
+
+	if (sock_flag(sk, SOCK_LINGER)) {
+		ssk->sk_lingertime = sk->sk_lingertime;
+		sock_set_flag(ssk, SOCK_LINGER);
+	} else {
+		sock_reset_flag(ssk, SOCK_LINGER);
+	}
+
+	ssk->sk_priority = sk->sk_priority;
+	ssk->sk_reuse = sk->sk_reuse;
+}
+
 static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 {
 	static const unsigned int tx_rx_locks = SOCK_RCVBUF_LOCK | SOCK_SNDBUF_LOCK;
@@ -1573,7 +1588,6 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 		ssk->sk_prot->keepalive(ssk, keep_open);
 	sock_valbool_flag(ssk, SOCK_KEEPOPEN, keep_open);
 
-	ssk->sk_priority = sk->sk_priority;
 	ssk->sk_bound_dev_if = sk->sk_bound_dev_if;
 	ssk->sk_incoming_cpu = sk->sk_incoming_cpu;
 	ssk->sk_ipv6only = sk->sk_ipv6only;
@@ -1587,15 +1601,6 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 		}
 		if (sk->sk_userlocks & SOCK_RCVBUF_LOCK)
 			__mptcp_subflow_set_rcvbuf(ssk, sk->sk_rcvbuf);
-	}
-
-	if (sock_flag(sk, SOCK_LINGER)) {
-		pr_info("%s SOCK_LINGER\n", __func__);
-		ssk->sk_lingertime = sk->sk_lingertime;
-		sock_set_flag(ssk, SOCK_LINGER);
-	} else {
-		pr_info("%s no SOCK_LINGER\n", __func__);
-		sock_reset_flag(ssk, SOCK_LINGER);
 	}
 
 	if (sk->sk_mark != ssk->sk_mark) {
@@ -1619,7 +1624,6 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 	inet_assign_bit(BIND_ADDRESS_NO_PORT, ssk, inet_test_bit(BIND_ADDRESS_NO_PORT, sk));
 	WRITE_ONCE(inet_sk(ssk)->local_port_range, READ_ONCE(inet_sk(sk)->local_port_range));
 
-	ssk->sk_reuse = sk->sk_reuse;
 	if (inet_csk(sk)->icsk_syn_retries > 0)
 		tcp_sock_set_syncnt(ssk, inet_csk(sk)->icsk_syn_retries);
 }
@@ -1637,6 +1641,8 @@ void mptcp_sockopt_sync_locked(struct mptcp_sock *msk, struct sock *ssk)
 	 * mptcp scheduler
 	 */
 	tcp_sk(ssk)->notsent_lowat = UINT_MAX;
+
+	mptcp_sockopt_sync(msk, ssk);
 
 	if (READ_ONCE(subflow->setsockopt_seq) != msk->setsockopt_seq) {
 		sync_socket_options(msk, ssk);
@@ -1689,50 +1695,6 @@ int mptcp_set_rcvlowat(struct sock *sk, int val)
 	return 0;
 }
 
-void mptcp_sock_no_linger(struct sock *sk)
-{
-	struct mptcp_sock *msk = mptcp_sk(sk);
-	struct mptcp_subflow_context *subflow;
-	struct sock *ssk;
-
-	lock_sock(sk);
-	sockopt_seq_inc(msk);
-	WRITE_ONCE(sk->sk_lingertime, 0);
-	sock_set_flag(sk, SOCK_LINGER);
-	mptcp_for_each_subflow(msk, subflow) {
-		ssk = mptcp_subflow_tcp_sock(subflow);
-		if (ssk) {
-			lock_sock_nested(ssk, SINGLE_DEPTH_NESTING);
-			WRITE_ONCE(ssk->sk_lingertime, 0);
-			sock_set_flag(ssk, SOCK_LINGER);
-			release_sock(ssk);
-		}
-	}
-	release_sock(sk);
-}
-EXPORT_SYMBOL(mptcp_sock_no_linger);
-
-void mptcp_sock_set_priority(struct sock *sk, u32 priority)
-{
-	struct mptcp_sock *msk = mptcp_sk(sk);
-	struct mptcp_subflow_context *subflow;
-	struct sock *ssk;
-
-	lock_sock(sk);
-	sockopt_seq_inc(msk);
-	sock_set_priority(sk, priority);
-	mptcp_for_each_subflow(msk, subflow) {
-		ssk = mptcp_subflow_tcp_sock(subflow);
-		if (ssk) {
-			lock_sock_nested(ssk, SINGLE_DEPTH_NESTING);
-			sock_set_priority(ssk, priority);
-			release_sock(ssk);
-		}
-	}
-	release_sock(sk);
-}
-EXPORT_SYMBOL(mptcp_sock_set_priority);
-
 void __mptcp_sock_set_tos(struct sock *sk, int val)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
@@ -1768,25 +1730,6 @@ void mptcp_sock_set_tos(struct sock *sk)
 		__mptcp_sock_set_tos(sk, val);
 }
 EXPORT_SYMBOL(mptcp_sock_set_tos);
-
-void mptcp_sock_set_reuseaddr(struct sock *sk)
-{
-	struct mptcp_sock *msk = mptcp_sk(sk);
-	struct sock *ssk;
-
-	lock_sock(sk);
-	sockopt_seq_inc(msk);
-	sk->sk_reuse = SK_CAN_REUSE;
-	ssk = __mptcp_nmpc_sk(msk);
-	if (IS_ERR(ssk))
-		goto unlock;
-	lock_sock_nested(ssk, SINGLE_DEPTH_NESTING);
-	ssk->sk_reuse = SK_CAN_REUSE;
-	release_sock(ssk);
-unlock:
-	release_sock(sk);
-}
-EXPORT_SYMBOL(mptcp_sock_set_reuseaddr);
 
 void mptcp_sock_set_nodelay(struct sock *sk)
 {
