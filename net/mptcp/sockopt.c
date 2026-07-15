@@ -757,10 +757,13 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		case TCP_AO_GET_KEYS:
 		case TCP_ULP:
 		case TCP_ZEROCOPY_RECEIVE:
+		/* MD5 will force a fallback to TCP: OK to set
+		 * while not connected
+		 */
+		case TCP_MD5SIG:
+		case TCP_MD5SIG_EXT:
 			return true;
 		}
-
-		/* TCP_MD5SIG, TCP_MD5SIG_EXT are not supported, MD5 is not compatible with MPTCP */
 	}
 	return false;
 }
@@ -1078,6 +1081,14 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_AO_REPAIR:
 		return mptcp_setsockopt_tcp_repair_ao(msk, optname,
 						      optval, optlen);
+	case TCP_MD5SIG:
+	case TCP_MD5SIG_EXT:
+		ret = mptcp_setsockopt_first_sf_only(msk, SOL_TCP, optname,
+						     optval, optlen);
+		if (ret == 0 &&
+		    !__mptcp_try_fallback(msk, MPTCP_MIB_MD5SIGFALLBACK))
+			WARN_ON_ONCE(1);
+		return ret;
 	}
 
 	ret = mptcp_get_int_option(msk, optval, optlen, &val);
