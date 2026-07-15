@@ -54,6 +54,10 @@ static int proto_tx = IPPROTO_MPTCP;
 static int proto_rx = IPPROTO_MPTCP;
 static bool inq;
 static bool tls;
+static bool md5;
+static char key[TCP_MD5SIG_MAXKEYLEN];
+static int prefixlen;
+static int ifindex;
 
 #ifndef MPTCP_INFO
 struct mptcp_info {
@@ -164,6 +168,7 @@ static void die_usage(int r)
 	fprintf(stderr, "                     [-t tcp|mptcp] [-r tcp|mptcp]\n");
 	fprintf(stderr, "                     [-i]\n");
 	fprintf(stderr, "                     [-c]\n");
+	fprintf(stderr, "                     [-m md5,key|md5ext,prefixlen,ifindex,key]\n");
 	exit(r);
 }
 
@@ -388,7 +393,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "h6t:r:ic")) != -1) {
+	while ((c = getopt(argc, argv, "h6t:r:icm:")) != -1) {
 		switch (c) {
 		case 'h':
 			die_usage(0);
@@ -407,6 +412,15 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'c':
 			tls = true;
+			break;
+		case 'm':
+			md5 = true;
+			if (!strncmp(optarg, "md5,", 4))
+				sscanf(optarg, "md5,key=%s", key);
+			else if (!strncmp(optarg, "md5ext,", 6))
+				sscanf(optarg,
+				       "md5ext,prefixlen=%u,ifindex=%u,key=%s",
+				       &prefixlen, &ifindex, key);
 			break;
 		default:
 			die_usage(1);
