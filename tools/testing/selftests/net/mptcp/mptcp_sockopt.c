@@ -31,6 +31,7 @@
 #include <linux/net_tstamp.h>
 #include <linux/compiler.h>
 #include <linux/tls.h>
+#include <arpa/inet.h>
 
 static int pf = AF_INET;
 
@@ -270,6 +271,53 @@ static int do_setsockopt_tls(int fd)
 	return 0;
 }
 
+static void do_setsockopt_md5sig(int fd)
+{
+	struct sockaddr_storage *addr;
+	size_t key_len = strlen(key);
+	struct tcp_md5sig md5sig;
+	int opt = TCP_MD5SIG;
+
+	memset(&md5sig, 0, sizeof(md5sig));
+	addr = (struct sockaddr_storage *)&md5sig.tcpm_addr;
+	addr->ss_family = pf;
+
+	if ((pf == AF_INET ?
+	     inet_pton(pf, "127.0.0.1",
+		       &((struct sockaddr_in *)addr)->sin_addr) :
+	     inet_pton(pf, "::1",
+		       &((struct sockaddr_in6 *)addr)->sin6_addr)) != 1)
+		perror("inet_pton failed");
+
+	if (key_len > sizeof(md5sig.tcpm_key))
+		perror("Key too long\n");
+
+	memcpy(md5sig.tcpm_key, key, key_len);
+	md5sig.tcpm_keylen = key_len;
+
+	if (prefixlen || ifindex)
+		opt = TCP_MD5SIG_EXT;
+
+	if (prefixlen) {
+		md5sig.tcpm_flags |= TCP_MD5SIG_FLAG_PREFIX;
+		md5sig.tcpm_prefixlen = prefixlen;
+	}
+
+	if (ifindex) {
+		md5sig.tcpm_flags |= TCP_MD5SIG_FLAG_IFINDEX;
+		md5sig.tcpm_ifindex = (uint8_t)ifindex;
+	}
+
+	if (setsockopt(fd, IPPROTO_TCP, opt, &md5sig, sizeof(md5sig)))
+		perror("setsockopt(TCP_MD5SIG)");
+}
+
+static void do_setsockopts(int fd)
+{
+	if (md5)
+		do_setsockopt_md5sig(fd);
+}
+
 static int sock_listen_mptcp(const char * const listenaddr,
 			     const char * const port)
 {
@@ -296,6 +344,8 @@ static int sock_listen_mptcp(const char * const listenaddr,
 		if (-1 == setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &one,
 				     sizeof(one)))
 			perror("setsockopt");
+
+		do_setsockopts(sock);
 
 		if (bind(sock, a->ai_addr, a->ai_addrlen) == 0)
 			break; /* success */
@@ -364,6 +414,7 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 			continue;
 
 		test_so_reuseaddr_sockopt(sock);
+		do_setsockopts(sock);
 
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == 0)
 			break; /* success */
