@@ -2169,7 +2169,7 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 	port->sock->sk->sk_data_ready = nvmet_tcp_listen_data_ready;
 	sock_set_reuseaddr(port->sock->sk);
 	ops->set_nodelay(port->sock->sk);
-	//sock_no_linger(port->sock->sk);
+	sock_no_linger(port->sock->sk);
 	if (so_priority > 0)
 		sock_set_priority(port->sock->sk, so_priority);
 
