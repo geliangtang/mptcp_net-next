@@ -31,6 +31,10 @@
 #include <linux/net_tstamp.h>
 #include <linux/compiler.h>
 #include <linux/tls.h>
+#include <linux/inet_diag.h>
+#include <linux/sock_diag.h>
+#include <linux/rtnetlink.h>
+
 #include <arpa/inet.h>
 
 static int pf = AF_INET;
@@ -312,6 +316,76 @@ static void do_setsockopt_md5sig(int fd)
 		perror("setsockopt(TCP_MD5SIG)");
 }
 
+static int verify_md5_key(void)
+{
+	char buf[8192] __aligned(NLMSG_ALIGNTO);
+	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
+	struct inet_diag_req_v2 *req = NLMSG_DATA(nlh);
+	size_t key_len = strlen(key);
+	int nlfd, rc = -1;
+	ssize_t r;
+
+	nlfd = socket(AF_NETLINK, SOCK_RAW, NETLINK_SOCK_DIAG);
+	if (nlfd < 0)
+		return -1;
+
+	memset(buf, 0, sizeof(buf));
+	nlh->nlmsg_len = NLMSG_LENGTH(sizeof(*req));
+	nlh->nlmsg_type = SOCK_DIAG_BY_FAMILY;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+	nlh->nlmsg_seq = 1;
+
+	req->sdiag_family = pf;
+	req->sdiag_protocol = IPPROTO_TCP;
+	req->idiag_ext = 1 << (INET_DIAG_INFO - 1);
+	req->idiag_states = 0xFFFFFFFF;
+
+	if (send(nlfd, nlh, nlh->nlmsg_len, 0) < 0) {
+		close(nlfd);
+		return -1;
+	}
+
+	for (;;) {
+		struct nlmsghdr *nh;
+
+		r = recv(nlfd, buf, sizeof(buf), 0);
+		if (r <= 0)
+			break;
+
+		nh = (struct nlmsghdr *)buf;
+		while (NLMSG_OK(nh, r)) {
+			struct inet_diag_msg *ir;
+			struct rtattr *a;
+			int alen;
+
+			if (nh->nlmsg_type == NLMSG_DONE ||
+			    nh->nlmsg_type == NLMSG_ERROR)
+				goto out;
+
+			ir = NLMSG_DATA(nh);
+			alen = nh->nlmsg_len - NLMSG_LENGTH(sizeof(*ir));
+			a = (struct rtattr *)(ir + 1);
+
+			for (; RTA_OK(a, alen); a = RTA_NEXT(a, alen)) {
+				struct tcp_diag_md5sig *m;
+
+				if (a->rta_type != INET_DIAG_MD5SIG)
+					continue;
+				m = RTA_DATA(a);
+				if (m->tcpm_keylen == key_len &&
+				    memcmp(m->tcpm_key, key, key_len) == 0) {
+					rc = 0;
+					goto out;
+				}
+			}
+			nh = NLMSG_NEXT(nh, r);
+		}
+	}
+out:
+	close(nlfd);
+	return rc;
+}
+
 static void do_setsockopts(int fd)
 {
 	if (md5)
@@ -362,6 +436,9 @@ static int sock_listen_mptcp(const char * const listenaddr,
 
 	if (listen(sock, 20))
 		die_perror("listen");
+
+	if (md5 && verify_md5_key())
+		die_perror("verify md5 key");
 
 	return sock;
 }
@@ -424,6 +501,9 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 
 	if (sock < 0)
 		xerror("could not create connect socket");
+
+	if (md5 && verify_md5_key())
+		die_perror("verify md5 key");
 
 	freeaddrinfo(addr);
 	return sock;
