@@ -250,8 +250,6 @@ struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off);
 
 bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
 
-bool mptcp_lock_is_held(struct sock *sk);
-
 void mptcp_read_done(struct sock *sk, size_t len);
 
 u32 mptcp_get_skb_seq(struct sk_buff *skb);
@@ -358,11 +356,6 @@ static inline struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 }
 
 static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
-{
-	return false;
-}
-
-static inline bool mptcp_lock_is_held(struct sock *sk)
 {
 	return false;
 }

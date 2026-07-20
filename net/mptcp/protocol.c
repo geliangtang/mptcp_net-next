@@ -5170,13 +5170,6 @@ int __init mptcp_proto_v6_init(void)
 }
 #endif
 
-bool mptcp_lock_is_held(struct sock *sk)
-{
-	return sock_owned_by_user_nocheck(sk) ||
-	       mptcp_data_is_locked(sk);
-}
-EXPORT_SYMBOL_GPL(mptcp_lock_is_held);
-
 void mptcp_read_done(struct sock *sk, size_t len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);

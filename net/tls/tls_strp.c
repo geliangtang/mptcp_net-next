@@ -568,11 +568,6 @@ void tls_strp_check_rcv(struct tls_strparser *strp, bool announce)
 /* Lower sock lock held */
 void tls_strp_data_ready(struct tls_strparser *strp)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
-
-	if (!ctx)
-		return;
-
 	/* This check is needed to synchronize with do_tls_strp_work.
 	 * do_tls_strp_work acquires a process lock (lock_sock) whereas
 	 * the lock held here is bh_lock_sock. The two locks can be
@@ -580,7 +575,7 @@ void tls_strp_data_ready(struct tls_strparser *strp)
 	 * allows a thread in BH context to safely check if the process
 	 * lock is held. In this case, if the lock is held, queue work.
 	 */
-	if (ctx->ops->lock_is_held(strp->sk)) {
+	if (sock_owned_by_user_nocheck(strp->sk)) {
 		queue_work(tls_strp_wq, &strp->work);
 		return;
 	}

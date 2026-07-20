@@ -986,11 +986,6 @@ static struct sk_buff *tls_tcp_recv_skb(struct sock *sk, u32 *off)
 	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
 }
 
-static bool tls_tcp_lock_is_held(struct sock *sk)
-{
-	return sock_owned_by_user_nocheck(sk);
-}
-
 static u32 tls_tcp_get_skb_seq(struct sk_buff *skb)
 {
 	return TCP_SKB_CB(skb)->seq;
@@ -1000,7 +995,6 @@ static void build_tls_proto_ops(int proto)
 {
 	if (proto == TLSTCP) {
 		tls_prot_ops[proto].recv_skb		= tls_tcp_recv_skb;
-		tls_prot_ops[proto].lock_is_held	= tls_tcp_lock_is_held;
 		tls_prot_ops[proto].read_done		= tcp_read_done;
 		tls_prot_ops[proto].get_skb_seq		= tls_tcp_get_skb_seq;
 		tls_prot_ops[proto].skb_get_header	= skb_copy_bits;
@@ -1008,7 +1002,6 @@ static void build_tls_proto_ops(int proto)
 		tls_prot_ops[proto].check_app_limited	= tcp_rate_check_app_limited;
 	} else if (proto == TLSMPTCP) {
 		tls_prot_ops[proto].recv_skb		= mptcp_recv_skb;
-		tls_prot_ops[proto].lock_is_held	= mptcp_lock_is_held;
 		tls_prot_ops[proto].read_done		= mptcp_read_done;
 		tls_prot_ops[proto].get_skb_seq		= mptcp_get_skb_seq;
 		tls_prot_ops[proto].skb_get_header	= mptcp_skb_get_header;
