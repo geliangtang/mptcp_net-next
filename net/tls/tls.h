@@ -44,6 +44,14 @@
 #define TLS_PAGE_ORDER	(min_t(unsigned int, PAGE_ALLOC_COSTLY_ORDER,	\
 			       TLS_MAX_PAYLOAD_SIZE >> PAGE_SHIFT))
 
+struct tls_skb_cb {
+	u32 seq;
+};
+
+#define TLS_SKB_CB(__skb)	((struct tls_skb_cb *)&((__skb)->cb[0]))
+
+static_assert(offsetof(struct tls_skb_cb, seq) == 0);
+
 #define __TLS_INC_STATS(net, field)				\
 	__SNMP_INC_STATS((net)->mib.tls_statistics, field)
 #define TLS_INC_STATS(net, field)				\
