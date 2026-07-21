@@ -5211,48 +5211,6 @@ u32 mptcp_get_skb_seq(struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(mptcp_get_skb_seq);
 
-int mptcp_skb_get_header(const struct sk_buff *skb, int off,
-			 void *buf, int len)
-{
-	const struct sk_buff *iter = skb_shinfo(skb)->frag_list;
-	int copied = 0;
-	int ret = 0;
-	u64 dsn;
-
-	if (!iter)
-		return skb_copy_bits(skb, off, buf, len);
-
-	dsn = MPTCP_SKB_CB(iter)->map_seq + off;
-
-	while (iter && copied < len) {
-		u64 map_seq = MPTCP_SKB_CB(iter)->map_seq;
-		u32 skb_off, data_len;
-		int count;
-
-		if (!before64(dsn, MPTCP_SKB_CB(iter)->end_seq)) {
-			iter = iter->next;
-			continue;
-		}
-
-		/* Skip the overlapping prefix, if any. */
-		skb_off = dsn - map_seq;
-		data_len = iter->len - skb_off;
-
-		count = min_t(int, data_len, len - copied);
-		ret = skb_copy_bits(iter, skb_off, buf + copied, count);
-		if (ret)
-			break;
-		copied += count;
-		dsn += count;
-		iter = iter->next;
-	}
-
-	if (copied < len && !ret)
-		ret = -EFAULT;
-	return ret;
-}
-EXPORT_SYMBOL_GPL(mptcp_skb_get_header);
-
 bool mptcp_check_epollin_ready(const struct sock *sk, int target)
 {
 	return mptcp_epollin_ready(sk);

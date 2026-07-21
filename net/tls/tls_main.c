@@ -997,14 +997,12 @@ static void build_tls_proto_ops(int proto)
 		tls_prot_ops[proto].recv_skb		= tls_tcp_recv_skb;
 		tls_prot_ops[proto].read_done		= tcp_read_done;
 		tls_prot_ops[proto].get_skb_seq		= tls_tcp_get_skb_seq;
-		tls_prot_ops[proto].skb_get_header	= skb_copy_bits;
 		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready;
 		tls_prot_ops[proto].check_app_limited	= tcp_rate_check_app_limited;
 	} else if (proto == TLSMPTCP) {
 		tls_prot_ops[proto].recv_skb		= mptcp_recv_skb;
 		tls_prot_ops[proto].read_done		= mptcp_read_done;
 		tls_prot_ops[proto].get_skb_seq		= mptcp_get_skb_seq;
-		tls_prot_ops[proto].skb_get_header	= mptcp_skb_get_header;
 		tls_prot_ops[proto].epollin_ready	= mptcp_check_epollin_ready;
 		tls_prot_ops[proto].check_app_limited	= mptcp_check_app_limited;
 	}

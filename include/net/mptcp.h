@@ -254,9 +254,6 @@ void mptcp_read_done(struct sock *sk, size_t len);
 
 u32 mptcp_get_skb_seq(struct sk_buff *skb);
 
-int mptcp_skb_get_header(const struct sk_buff *skb, int off,
-			 void *buf, int len);
-
 void mptcp_check_app_limited(struct sock *sk);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
@@ -365,12 +362,6 @@ static inline void mptcp_read_done(struct sock *sk, size_t len)
 }
 
 static inline u32 mptcp_get_skb_seq(struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline int mptcp_skb_get_header(const struct sk_buff *skb, int off,
-				       void *buf, int len)
 {
 	return 0;
 }

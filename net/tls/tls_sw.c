@@ -2182,8 +2182,7 @@ int tls_rx_msg_size(struct tls_strparser *strp, struct sk_buff *skb)
 	}
 
 	/* Linearize header to local buffer */
-	ret = tls_ctx->ops->skb_get_header(skb, strp->stm.offset, header,
-					   prot->prepend_size);
+	ret = skb_copy_bits(skb, strp->stm.offset, header, prot->prepend_size);
 	if (ret < 0)
 		goto read_failure;
 
