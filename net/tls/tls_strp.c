@@ -438,7 +438,7 @@ static bool tls_strp_check_queue_ok(struct tls_strparser *strp)
 
 	first = skb_shinfo(strp->anchor)->frag_list;
 	skb = first;
-	seq = TCP_SKB_CB(first)->seq;
+	seq = TLS_SKB_CB(first)->seq;
 
 	/* Make sure there's no duplicate data in the queue,
 	 * and the decrypted status matches.
@@ -448,7 +448,7 @@ static bool tls_strp_check_queue_ok(struct tls_strparser *strp)
 		len -= skb->len;
 		skb = skb->next;
 
-		if (TCP_SKB_CB(skb)->seq != seq)
+		if (TLS_SKB_CB(skb)->seq != seq)
 			return false;
 		if (skb_cmp_decrypted(first, skb))
 			return false;
