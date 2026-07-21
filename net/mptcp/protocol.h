@@ -140,6 +140,8 @@ struct mptcp_skb_cb {
 
 #define MPTCP_SKB_CB(__skb)	((struct mptcp_skb_cb *)&((__skb)->cb[0]))
 
+static_assert(offsetof(struct mptcp_skb_cb, map_seq) == 0);
+
 static inline bool before64(__u64 seq1, __u64 seq2)
 {
 	return (__s64)(seq1 - seq2) < 0;
