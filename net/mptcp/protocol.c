@@ -4972,7 +4972,7 @@ static int mptcp_inq(struct sock *sk)
 
 	skb = skb_peek(&sk->sk_receive_queue);
 	if (skb) {
-		u64 answ = READ_ONCE(msk->ack_seq) - MPTCP_SKB_CB(skb)->map_seq;
+		u64 answ = READ_ONCE(msk->ack_seq) - msk->copied_seq;
 
 		if (answ >= INT_MAX)
 			answ = INT_MAX;
@@ -5188,8 +5188,7 @@ void mptcp_read_done(struct sock *sk, size_t len)
 
 		used = min_t(size_t, skb->len - offset, left);
 		msk->bytes_consumed += used;
-		MPTCP_SKB_CB(skb)->offset += used;
-		MPTCP_SKB_CB(skb)->map_seq += used;
+		msk->copied_seq += used;
 		left -= used;
 
 		if (skb->len > offset + used)
@@ -5208,7 +5207,7 @@ EXPORT_SYMBOL_GPL(mptcp_read_done);
 
 u32 mptcp_get_skb_seq(struct sk_buff *skb)
 {
-	return MPTCP_SKB_CB(skb)->map_seq - MPTCP_SKB_CB(skb)->offset;
+	return MPTCP_SKB_CB(skb)->map_seq;
 }
 EXPORT_SYMBOL_GPL(mptcp_get_skb_seq);
 
@@ -5218,30 +5217,33 @@ int mptcp_skb_get_header(const struct sk_buff *skb, int off,
 	const struct sk_buff *iter = skb_shinfo(skb)->frag_list;
 	int copied = 0;
 	int ret = 0;
+	u64 dsn;
 
 	if (!iter)
 		return skb_copy_bits(skb, off, buf, len);
 
-	/* Make absolute to positive */
-	off -= MPTCP_SKB_CB(iter)->offset;
+	dsn = MPTCP_SKB_CB(iter)->map_seq + off;
 
 	while (iter && copied < len) {
-		int skb_off  = MPTCP_SKB_CB(iter)->offset;
-		int data_len = iter->len - skb_off;
+		u64 map_seq = MPTCP_SKB_CB(iter)->map_seq;
+		u32 skb_off, data_len;
 		int count;
 
-		if (off >= data_len) {
-			off -= data_len; /* MPTCP skb avail data */
+		if (!before64(dsn, MPTCP_SKB_CB(iter)->end_seq)) {
 			iter = iter->next;
 			continue;
 		}
 
-		count = min((int)(data_len - off), len - copied);
-		ret = skb_copy_bits(iter, skb_off + off, buf + copied, count);
+		/* Skip the overlapping prefix, if any. */
+		skb_off = dsn - map_seq;
+		data_len = iter->len - skb_off;
+
+		count = min_t(int, data_len, len - copied);
+		ret = skb_copy_bits(iter, skb_off, buf + copied, count);
 		if (ret)
 			break;
 		copied += count;
-		off = 0;
+		dsn += count;
 		iter = iter->next;
 	}
 
