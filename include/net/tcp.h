@@ -753,6 +753,7 @@ void tcp_retransmit_timer(struct sock *sk);
 void tcp_xmit_retransmit_queue(struct sock *);
 void tcp_simple_retransmit(struct sock *);
 void tcp_enter_recovery(struct sock *sk, bool ece_ack);
+int __pskb_trim_head(struct sk_buff *skb, int len);
 int tcp_trim_head(struct sock *, struct sk_buff *, u32);
 enum tcp_queue {
 	TCP_FRAG_IN_WRITE_QUEUE,

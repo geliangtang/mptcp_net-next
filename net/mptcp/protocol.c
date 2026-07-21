@@ -874,6 +874,27 @@ static bool __mptcp_move_skbs_from_subflow(struct mptcp_sock *msk,
 	return ret;
 }
 
+static int mptcp_trim_head(struct sk_buff *skb, int delta)
+{
+	int eat;
+
+	if (skb_unclone_keeptruesize(skb, GFP_ATOMIC))
+		return -ENOMEM;
+
+	eat = min_t(int, delta, skb_headlen(skb));
+	if (eat) {
+		__skb_pull(skb, eat);
+		delta -= eat;
+	}
+
+	if (delta) {
+		__pskb_trim_head(skb, delta);
+		skb->len += skb_headlen(skb);
+	}
+
+	return 0;
+}
+
 static bool __mptcp_ofo_queue(struct mptcp_sock *msk)
 {
 	struct sock *sk = (struct sock *)msk;
@@ -904,10 +925,15 @@ static bool __mptcp_ofo_queue(struct mptcp_sock *msk)
 		if (!tail || !mptcp_try_coalesce(sk, tail, skb)) {
 			int delta = ack_seq - MPTCP_SKB_CB(skb)->map_seq;
 
-			/* skip overlapping data, if any */
+			/* trim overlapping prefix, if any */
 			pr_debug("uncoalesced seq=%x ack seq=%x delta=%d\n",
 				 MPTCP_SKB_CB(skb)->map_seq, ack_seq,
 				 delta);
+			if (mptcp_trim_head(skb, delta)) {
+				mptcp_drop(sk, skb);
+				continue;
+			}
+			MPTCP_SKB_CB(skb)->map_seq += delta;
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
 		msk->bytes_received += seq_delta;
