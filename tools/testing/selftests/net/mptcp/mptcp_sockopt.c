@@ -35,6 +35,9 @@ static int pf = AF_INET;
 #ifndef SOL_MPTCP
 #define SOL_MPTCP 284
 #endif
+#ifndef TCP_IS_MPTCP
+#define TCP_IS_MPTCP 43
+#endif
 
 #ifndef MPTCP_INFO
 struct mptcp_info {
@@ -564,8 +567,25 @@ static void do_getsockopt_mptcp_full_info(struct so_state *s, int fd)
 	assert(!memcmp(&sfinfo->addrs, &s->addrs, sizeof(struct mptcp_subflow_addrs)));
 }
 
+static int is_mptcp_socket(int fd)
+{
+	int is_mptcp = -1;
+	socklen_t optlen;
+
+	optlen = sizeof(is_mptcp);
+	if (getsockopt(fd, IPPROTO_TCP, TCP_IS_MPTCP, &is_mptcp, &optlen) < 0) {
+		if (errno != ENOPROTOOPT && errno != EOPNOTSUPP)
+			xerror("getsockopt TCP_IS_MPTCP");
+	}
+
+	return is_mptcp;
+}
+
 static void do_getsockopts(struct so_state *s, int fd, size_t r, size_t w)
 {
+	if (is_mptcp_socket(fd) <= 0)
+		return;
+
 	do_getsockopt_mptcp_info(s, fd, w);
 
 	do_getsockopt_tcp_info(s, fd, r, w);
@@ -641,8 +661,10 @@ static void connect_one_server(int fd, int pipefd)
 	if (eof)
 		total += 1; /* sequence advances due to FIN */
 
-	assert(s.mptcpi_rcv_delta == (uint64_t)total);
-	assert(s.tcp_info.tcpi_delivery_rate_app_limited == 1);
+	if (is_mptcp_socket(fd) > 0) {
+		assert(s.mptcpi_rcv_delta == (uint64_t)total);
+		assert(s.tcp_info.tcpi_delivery_rate_app_limited == 1);
+	}
 	close(fd);
 }
 
@@ -691,8 +713,9 @@ static void process_one_client(int fd, int pipefd)
 	r += ret;
 
 	do_getsockopts(&s, fd, r, w);
-	check_stat_equal("mptcpi_rcv_delta", s.mptcpi_rcv_delta,
-			 (uint64_t)r + 1); /* +1 for FIN */
+	if (is_mptcp_socket(fd) > 0)
+		check_stat_equal("mptcpi_rcv_delta", s.mptcpi_rcv_delta,
+				 (uint64_t)r + 1); /* +1 for FIN */
 
 	/* be nice when running on top of older kernel */
 	if (s.pkt_stats_avail) {
