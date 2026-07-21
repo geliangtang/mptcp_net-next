@@ -380,4 +380,12 @@ void tls_make_aad(char *buf, size_t size, char *record_sequence,
 	buf[4] = size & 0xFF;
 }
 
+struct tls_skb_cb {
+	u32 seq;
+};
+
+#define TLS_SKB_CB(__skb)	((struct tls_skb_cb *)&((__skb)->cb[0]))
+
+static_assert(offsetof(struct tls_skb_cb, seq) == 0);
+
 #endif
