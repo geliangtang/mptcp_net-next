@@ -134,6 +134,10 @@ struct tls_sw_context_rx {
 	struct sk_buff_head rx_list;	/* list of decrypted 'data' records */
 	void (*saved_data_ready)(struct sock *sk);
 
+	bool (*epollin_ready)(const struct sock *sk);
+	struct sk_buff *(*recv_skb)(struct sock *sk, u32 *off);
+	void (*read_done)(struct sock *sk, size_t len);
+
 	u8 reader_present;
 	u8 async_capable:1;
 	u8 zc_capable:1;
@@ -224,12 +228,6 @@ struct tls_prot_info {
 	u16 tail_size;
 };
 
-struct tls_prot_ops {
-	struct sk_buff *(*recv_skb)(struct sock *sk, u32 *off);
-	void (*read_done)(struct sock *sk, size_t len);
-	bool (*epollin_ready)(const struct sock *sk, int targe);
-};
-
 struct tls_context {
 	/* read-only cache line */
 	struct tls_prot_info prot_info;
@@ -265,13 +263,10 @@ struct tls_context {
 
 	/* cache cold stuff */
 	struct proto *sk_proto;
+	const struct proto_ops *sk_proto_ops;
 	struct sock *sk;
 
 	void (*sk_destruct)(struct sock *sk);
-	int (*sk_read_sock)(struct sock *sk, read_descriptor_t *desc,
-			    sk_read_actor_t recv_actor);
-
-	const struct tls_prot_ops *ops;
 
 	union tls_crypto_context crypto_send;
 	union tls_crypto_context crypto_recv;
@@ -394,6 +389,12 @@ static inline struct tls_sw_context_rx *tls_sw_ctx_rx(
 		const struct tls_context *tls_ctx)
 {
 	return (struct tls_sw_context_rx *)tls_ctx->priv_ctx_rx;
+}
+
+static inline struct tls_sw_context_rx *
+tls_sw_rx_from_strp(const struct tls_strparser *strp)
+{
+	return container_of(strp, struct tls_sw_context_rx, strp);
 }
 
 static inline struct tls_sw_context_tx *tls_sw_ctx_tx(

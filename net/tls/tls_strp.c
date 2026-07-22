@@ -120,7 +120,6 @@ struct sk_buff *tls_strp_msg_detach(struct tls_sw_context_rx *ctx)
 int tls_strp_msg_cow(struct tls_sw_context_rx *ctx)
 {
 	struct tls_strparser *strp = &ctx->strp;
-	struct tls_context *tls_ctx = tls_get_ctx(strp->sk);
 	struct sk_buff *skb;
 
 	if (strp->copy_mode)
@@ -133,7 +132,7 @@ int tls_strp_msg_cow(struct tls_sw_context_rx *ctx)
 	tls_strp_anchor_free(strp);
 	strp->anchor = skb;
 
-	tls_ctx->ops->read_done(strp->sk, strp->stm.full_len);
+	ctx->read_done(strp->sk, strp->stm.full_len);
 	strp->copy_mode = 1;
 
 	return 0;
@@ -384,23 +383,22 @@ static int tls_strp_read_copyin(struct tls_strparser *strp)
 	desc.count = 1; /* give more than one skb per call */
 
 	/* sk should be locked here, so okay to do read_sock */
-	ctx->sk_read_sock(strp->sk, &desc, tls_strp_copyin);
+	ctx->sk_proto_ops->read_sock(strp->sk, &desc, tls_strp_copyin);
 
 	return desc.error;
 }
 
 static int tls_strp_read_copy(struct tls_strparser *strp, bool qshort)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
+	struct tls_sw_context_rx *rx = tls_sw_rx_from_strp(strp);
 	struct skb_shared_info *shinfo;
 	struct page *page;
 	int need_spc, len;
 
 	/* If the rbuf is small or rcv window has collapsed to 0 we need
 	 * to read the data out. Otherwise the connection will stall.
-	 * Without pressure threshold of INT_MAX will never be ready.
 	 */
-	if (likely(qshort && !ctx->ops->epollin_ready(strp->sk, INT_MAX)))
+	if (likely(qshort && !rx->epollin_ready(strp->sk)))
 		return 0;
 
 	shinfo = skb_shinfo(strp->anchor);
@@ -463,11 +461,11 @@ static bool tls_strp_check_queue_ok(struct tls_strparser *strp,
 
 static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
+	struct tls_sw_context_rx *rx = tls_sw_rx_from_strp(strp);
 	struct sk_buff *first;
 	u32 offset;
 
-	first = ctx->ops->recv_skb(strp->sk, &offset);
+	first = rx->recv_skb(strp->sk, &offset);
 	if (WARN_ON_ONCE(!first))
 		return;
 
@@ -486,6 +484,7 @@ static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 
 bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 {
+	struct tls_context *ctx = tls_get_ctx(strp->sk);
 	struct strp_msg *rxm;
 	struct tls_msg *tlm;
 	int inq;
@@ -494,7 +493,7 @@ bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 	DEBUG_NET_WARN_ON_ONCE(!strp->stm.full_len);
 
 	if (!strp->copy_mode && force_refresh) {
-		inq = strp->sk->sk_socket->ops->peek_len(strp->sk->sk_socket);
+		inq = ctx->sk_proto_ops->peek_len(strp->sk->sk_socket);
 		if (unlikely(inq < strp->stm.full_len)) {
 			WRITE_ONCE(strp->msg_ready, 0);
 			strp->msg_announced = 0;
@@ -517,9 +516,10 @@ bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 /* Called with lock held on lower socket */
 static int tls_strp_read_sock(struct tls_strparser *strp)
 {
+	struct tls_context *ctx = tls_get_ctx(strp->sk);
 	int sz, inq;
 
-	inq = strp->sk->sk_socket->ops->peek_len(strp->sk->sk_socket);
+	inq = ctx->sk_proto_ops->peek_len(strp->sk->sk_socket);
 	if (inq < 1)
 		return 0;
 
@@ -605,12 +605,12 @@ static void tls_strp_work(struct work_struct *w)
  */
 void tls_strp_msg_consume(struct tls_strparser *strp)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
+	struct tls_sw_context_rx *rx = tls_sw_rx_from_strp(strp);
 
 	WARN_ON(!strp->stm.full_len);
 
 	if (likely(!strp->copy_mode))
-		ctx->ops->read_done(strp->sk, strp->stm.full_len);
+		rx->read_done(strp->sk, strp->stm.full_len);
 	else
 		tls_strp_flush_anchor_copy(strp);
 

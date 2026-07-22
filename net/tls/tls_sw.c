@@ -1721,13 +1721,14 @@ tls_read_flush_backlog(struct sock *sk, struct tls_prot_info *prot,
 		       size_t len_left, size_t decrypted, ssize_t done,
 		       size_t *flushed_at)
 {
+	struct tls_context *ctx = tls_get_ctx(sk);
 	size_t max_rec;
 	int inq;
 
 	if (len_left <= decrypted)
 		return false;
 
-	inq = sk->sk_socket->ops->peek_len(sk->sk_socket);
+	inq = ctx->sk_proto_ops->peek_len(sk->sk_socket);
 	max_rec = prot->overhead_size - prot->tail_size + TLS_MAX_PAYLOAD_SIZE;
 	if (done - *flushed_at < SZ_128K && inq > max_rec)
 		return false;
@@ -2254,7 +2255,7 @@ void tls_rx_msg_maybe_announce(struct tls_strparser *strp)
 		return;
 	strp->msg_announced = 1;
 
-	ctx = container_of(strp, struct tls_sw_context_rx, strp);
+	ctx = tls_sw_rx_from_strp(strp);
 	ctx->saved_data_ready(strp->sk);
 }
 
@@ -2424,6 +2425,16 @@ void tls_sw_write_space(struct sock *sk, struct tls_context *ctx)
 		schedule_delayed_work(&tx_ctx->tx_work.work, 0);
 }
 
+static bool tls_sw_tcp_epollin_ready_max(const struct sock *sk)
+{
+	return tcp_epollin_ready(sk, INT_MAX);
+}
+
+static struct sk_buff *tls_sw_tcp_recv_skb(struct sock *sk, u32 *off)
+{
+	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
+}
+
 void tls_sw_strparser_arm(struct sock *sk, struct tls_context *tls_ctx)
 {
 	struct tls_sw_context_rx *rx_ctx = tls_sw_ctx_rx(tls_ctx);
@@ -2431,6 +2442,16 @@ void tls_sw_strparser_arm(struct sock *sk, struct tls_context *tls_ctx)
 	write_lock_bh(&sk->sk_callback_lock);
 	rx_ctx->saved_data_ready = sk->sk_data_ready;
 	sk->sk_data_ready = tls_data_ready;
+
+	if (sk->sk_protocol == IPPROTO_MPTCP) {
+		rx_ctx->epollin_ready = mptcp_epollin_ready;
+		rx_ctx->recv_skb = mptcp_recv_skb;
+		rx_ctx->read_done = mptcp_read_done;
+	} else {
+		rx_ctx->epollin_ready = tls_sw_tcp_epollin_ready_max;
+		rx_ctx->recv_skb = tls_sw_tcp_recv_skb;
+		rx_ctx->read_done = tcp_read_done;
+	}
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 

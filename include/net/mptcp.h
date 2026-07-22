@@ -255,9 +255,9 @@ u64 mptcp_sk_copied_seq(struct sock *sk);
 
 struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off);
 
-bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
-
 void mptcp_read_done(struct sock *sk, size_t len);
+
+bool mptcp_epollin_ready(const struct sock *sk);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
@@ -362,12 +362,12 @@ static inline struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 	return NULL;
 }
 
-static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
+static inline void mptcp_read_done(struct sock *sk, size_t len) { }
+
+static inline bool mptcp_epollin_ready(const struct sock *sk)
 {
 	return false;
 }
-
-static inline void mptcp_read_done(struct sock *sk, size_t len) { }
 
 static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
 				  struct poll_table_struct *wait)
