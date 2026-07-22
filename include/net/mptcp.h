@@ -257,8 +257,6 @@ struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off);
 
 bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
 
-void mptcp_read_done(struct sock *sk, size_t len);
-
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
 #else
@@ -366,8 +364,6 @@ static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
 {
 	return false;
 }
-
-static inline void mptcp_read_done(struct sock *sk, size_t len) { }
 
 static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
 				  struct poll_table_struct *wait)

@@ -120,7 +120,6 @@ struct sk_buff *tls_strp_msg_detach(struct tls_sw_context_rx *ctx)
 int tls_strp_msg_cow(struct tls_sw_context_rx *ctx)
 {
 	struct tls_strparser *strp = &ctx->strp;
-	struct tls_context *tls_ctx = tls_get_ctx(strp->sk);
 	struct sk_buff *skb;
 
 	if (strp->copy_mode)
@@ -133,7 +132,7 @@ int tls_strp_msg_cow(struct tls_sw_context_rx *ctx)
 	tls_strp_anchor_free(strp);
 	strp->anchor = skb;
 
-	tls_ctx->ops->read_done(strp->sk, strp->stm.full_len);
+	strp->sk->sk_socket->ops->read_done(strp->sk, strp->stm.full_len);
 	strp->copy_mode = 1;
 
 	return 0;
@@ -605,12 +604,11 @@ static void tls_strp_work(struct work_struct *w)
  */
 void tls_strp_msg_consume(struct tls_strparser *strp)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
-
 	WARN_ON(!strp->stm.full_len);
 
 	if (likely(!strp->copy_mode))
-		ctx->ops->read_done(strp->sk, strp->stm.full_len);
+		strp->sk->sk_socket->ops->read_done(strp->sk,
+						    strp->stm.full_len);
 	else
 		tls_strp_flush_anchor_copy(strp);
 

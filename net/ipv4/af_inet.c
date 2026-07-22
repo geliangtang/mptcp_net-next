@@ -1083,6 +1083,7 @@ const struct proto_ops inet_stream_ops = {
 	.set_peek_off      = sk_set_peek_off,
 	.read_sock	   = tcp_read_sock,
 	.read_skb	   = tcp_read_skb,
+	.read_done	   = tcp_read_done,
 	.sendmsg_locked    = tcp_sendmsg_locked,
 	.peek_len	   = tcp_peek_len,
 #ifdef CONFIG_COMPAT
