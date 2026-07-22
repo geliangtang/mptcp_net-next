@@ -1628,7 +1628,7 @@ static void tcp_eat_recv_skb(struct sock *sk, struct sk_buff *skb)
 	__kfree_skb(skb);
 }
 
-struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
+static struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
 {
 	struct sk_buff *skb;
 	u32 offset;
@@ -1651,7 +1651,13 @@ struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
 	}
 	return NULL;
 }
-EXPORT_SYMBOL(tcp_recv_skb);
+
+/* Peek the receive-queue skb at the current read cursor (copied_seq). */
+struct sk_buff *tcp_recv_cur_skb(struct sock *sk, u32 *off)
+{
+	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
+}
+EXPORT_SYMBOL(tcp_recv_cur_skb);
 
 /*
  * This routine provides an alternative to tcp_recvmsg() for routines

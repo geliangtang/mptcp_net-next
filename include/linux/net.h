@@ -266,6 +266,8 @@ struct proto_ops {
 				     sk_read_actor_t recv_actor);
 	/* This is different from read_sock(), it reads an entire skb at a time. */
 	int		(*read_skb)(struct sock *sk, skb_read_actor_t recv_actor);
+	/* Peek the receive-queue skb at the read cursor; *off = offset within it. */
+	struct sk_buff	*(*recv_skb)(struct sock *sk, u32 *off);
 	/* Consume len bytes previously observed via read_sock()/peek_len(). */
 	void		(*read_done)(struct sock *sk, size_t len);
 	int		(*sendmsg_locked)(struct sock *sk, struct msghdr *msg,

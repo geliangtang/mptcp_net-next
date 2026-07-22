@@ -4797,7 +4797,7 @@ __poll_t mptcp_poll(struct file *file, struct socket *sock,
 }
 EXPORT_SYMBOL_GPL(mptcp_poll);
 
-struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
+static struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb;
@@ -4813,7 +4813,6 @@ struct sk_buff *mptcp_recv_skb(struct sock *sk, u32 *off)
 	}
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(mptcp_recv_skb);
 
 /* Can be invoked in BH scope */
 static int __mptcp_read_sock(struct sock *sk, read_descriptor_t *desc,
@@ -5074,6 +5073,7 @@ static const struct proto_ops mptcp_stream_ops = {
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
 	.read_done	   = mptcp_read_done,
+	.recv_skb	   = mptcp_recv_skb,
 	.splice_read	   = mptcp_splice_read,
 	.splice_eof	   = inet_splice_eof,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
@@ -5202,6 +5202,7 @@ static const struct proto_ops mptcp_v6_stream_ops = {
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
 	.read_done	   = mptcp_read_done,
+	.recv_skb	   = mptcp_recv_skb,
 	.splice_read	   = mptcp_splice_read,
 	.splice_eof	   = inet_splice_eof,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,

@@ -975,18 +975,11 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 #endif
 }
 
-static struct sk_buff *tls_tcp_recv_skb(struct sock *sk, u32 *off)
-{
-	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
-}
-
 static void build_tls_proto_ops(int proto)
 {
 	if (proto == TLSTCP) {
-		tls_prot_ops[proto].recv_skb		= tls_tcp_recv_skb;
 		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready;
 	} else if (proto == TLSMPTCP) {
-		tls_prot_ops[proto].recv_skb		= mptcp_recv_skb;
 		tls_prot_ops[proto].epollin_ready	= mptcp_check_epollin_ready;
 	}
 }
