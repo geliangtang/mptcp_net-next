@@ -462,11 +462,10 @@ static bool tls_strp_check_queue_ok(struct tls_strparser *strp,
 
 static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 {
-	struct tls_context *ctx = tls_get_ctx(strp->sk);
 	struct sk_buff *first;
 	u32 offset;
 
-	first = ctx->ops->recv_skb(strp->sk, &offset);
+	first = strp->sk->sk_socket->ops->recv_skb(strp->sk, &offset);
 	if (WARN_ON_ONCE(!first))
 		return;
 

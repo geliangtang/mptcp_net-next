@@ -684,6 +684,7 @@ const struct proto_ops inet6_stream_ops = {
 	.set_peek_off      = sk_set_peek_off,
 	.read_sock	   = tcp_read_sock,
 	.read_skb	   = tcp_read_skb,
+	.recv_skb	   = tcp_recv_cur_skb,
 	.read_done	   = tcp_read_done,
 	.peek_len	   = tcp_peek_len,
 #ifdef CONFIG_COMPAT

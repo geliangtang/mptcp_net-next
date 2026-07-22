@@ -225,7 +225,6 @@ struct tls_prot_info {
 };
 
 struct tls_prot_ops {
-	struct sk_buff *(*recv_skb)(struct sock *sk, u32 *off);
 	bool (*epollin_ready)(const struct sock *sk, int targe);
 };
 
