@@ -984,11 +984,9 @@ static void build_tls_proto_ops(int proto)
 {
 	if (proto == TLSTCP) {
 		tls_prot_ops[proto].recv_skb		= tls_tcp_recv_skb;
-		tls_prot_ops[proto].read_done		= tcp_read_done;
 		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready;
 	} else if (proto == TLSMPTCP) {
 		tls_prot_ops[proto].recv_skb		= mptcp_recv_skb;
-		tls_prot_ops[proto].read_done		= mptcp_read_done;
 		tls_prot_ops[proto].epollin_ready	= mptcp_check_epollin_ready;
 	}
 }

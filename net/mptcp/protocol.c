@@ -5017,7 +5017,7 @@ static int mptcp_peek_len(struct socket *sock)
 	return mptcp_inq(sock->sk);
 }
 
-void mptcp_read_done(struct sock *sk, size_t len)
+static void mptcp_read_done(struct sock *sk, size_t len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb;
@@ -5051,7 +5051,6 @@ void mptcp_read_done(struct sock *sk, size_t len)
 		mptcp_schedule_work(sk);
 	}
 }
-EXPORT_SYMBOL_GPL(mptcp_read_done);
 
 static const struct proto_ops mptcp_stream_ops = {
 	.family		   = PF_INET,
@@ -5074,6 +5073,7 @@ static const struct proto_ops mptcp_stream_ops = {
 	.mmap		   = sock_no_mmap,
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
+	.read_done	   = mptcp_read_done,
 	.splice_read	   = mptcp_splice_read,
 	.splice_eof	   = inet_splice_eof,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
@@ -5201,6 +5201,7 @@ static const struct proto_ops mptcp_v6_stream_ops = {
 #endif
 	.set_rcvlowat	   = mptcp_set_rcvlowat,
 	.read_sock	   = mptcp_read_sock,
+	.read_done	   = mptcp_read_done,
 	.splice_read	   = mptcp_splice_read,
 	.splice_eof	   = inet_splice_eof,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
