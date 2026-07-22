@@ -238,7 +238,7 @@ static inline __be32 mptcp_reset_option(const struct sk_buff *skb)
 
 void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
 
-bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
+bool mptcp_epollin_ready(const struct sock *sk);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
@@ -320,7 +320,7 @@ static inline __be32 mptcp_reset_option(const struct sk_buff *skb)  { return hto
 
 static inline void mptcp_active_detect_blackhole(struct sock *sk, bool expired) { }
 
-static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
+static inline bool mptcp_epollin_ready(const struct sock *sk)
 {
 	return false;
 }

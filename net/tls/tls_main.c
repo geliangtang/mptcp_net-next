@@ -975,12 +975,18 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 #endif
 }
 
+static bool tcp_epollin_ready_max(const struct sock *sk)
+{
+	/* Without pressure threshold of INT_MAX will never be ready. */
+	return tcp_epollin_ready(sk, INT_MAX);
+}
+
 static void build_tls_proto_ops(int proto)
 {
 	if (proto == TLSTCP) {
-		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready;
+		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready_max;
 	} else if (proto == TLSMPTCP) {
-		tls_prot_ops[proto].epollin_ready	= mptcp_check_epollin_ready;
+		tls_prot_ops[proto].epollin_ready	= mptcp_epollin_ready;
 	}
 }
 
