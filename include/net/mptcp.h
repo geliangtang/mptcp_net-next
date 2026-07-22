@@ -253,7 +253,7 @@ int mptcp_bpf_strp_read_sock(struct strparser *strp, read_descriptor_t *desc,
 
 u64 mptcp_sk_copied_seq(struct sock *sk);
 
-bool mptcp_check_epollin_ready(const struct sock *sk, int targe);
+bool mptcp_epollin_ready(const struct sock *sk);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
@@ -353,7 +353,7 @@ static inline u64 mptcp_sk_copied_seq(struct sock *sk)
 	return 0;
 }
 
-static inline bool mptcp_check_epollin_ready(const struct sock *sk, int targe)
+static inline bool mptcp_epollin_ready(const struct sock *sk)
 {
 	return false;
 }

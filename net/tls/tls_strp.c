@@ -397,9 +397,8 @@ static int tls_strp_read_copy(struct tls_strparser *strp, bool qshort)
 
 	/* If the rbuf is small or rcv window has collapsed to 0 we need
 	 * to read the data out. Otherwise the connection will stall.
-	 * Without pressure threshold of INT_MAX will never be ready.
 	 */
-	if (likely(qshort && !ctx->ops->epollin_ready(strp->sk, INT_MAX)))
+	if (likely(qshort && !ctx->ops->epollin_ready(strp->sk)))
 		return 0;
 
 	shinfo = skb_shinfo(strp->anchor);

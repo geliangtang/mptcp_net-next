@@ -5347,8 +5347,17 @@ u64 mptcp_sk_copied_seq(struct sock *sk)
 	return READ_ONCE(mptcp_sk(sk)->copied_seq);
 }
 
-bool mptcp_check_epollin_ready(const struct sock *sk, int target)
+bool mptcp_epollin_ready(const struct sock *sk)
 {
-	return mptcp_epollin_ready(sk);
+	u64 data_avail = mptcp_data_avail(mptcp_sk(sk));
+
+	if (!data_avail)
+		return false;
+
+	/* mptcp doesn't have to deal with small skbs in the receive queue,
+	 * as it can always coalesce them
+	 */
+	return (data_avail >= sk->sk_rcvlowat) ||
+		tcp_under_memory_pressure(sk);
 }
-EXPORT_SYMBOL_GPL(mptcp_check_epollin_ready);
+EXPORT_SYMBOL_GPL(mptcp_epollin_ready);

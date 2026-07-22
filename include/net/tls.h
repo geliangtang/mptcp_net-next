@@ -225,7 +225,6 @@ struct tls_prot_info {
 };
 
 struct tls_prot_ops {
-	bool (*epollin_ready)(const struct sock *sk, int targe);
 };
 
 struct tls_context {
