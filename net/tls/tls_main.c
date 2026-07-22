@@ -133,7 +133,6 @@ static const struct proto *saved_mptcpv4_prot;
 static DEFINE_MUTEX(mptcpv4_prot_mutex);
 static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
 static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_PROTO][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
-static struct tls_prot_ops tls_prot_ops[TLS_NUM_PROTO];
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
 			 const struct proto *base);
 
@@ -146,7 +145,6 @@ static void update_sk_prot(struct sock *sk, struct tls_context *ctx)
 		   &tls_prots[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
 	WRITE_ONCE(sk->sk_socket->ops,
 		   &tls_proto_ops[ip_ver][proto][ctx->tx_conf][ctx->rx_conf]);
-	WRITE_ONCE(ctx->ops, &tls_prot_ops[proto]);
 }
 
 int wait_on_pending_writer(struct sock *sk, long *timeo)
@@ -203,7 +201,7 @@ retry:
 		bvec_set_page(&bvec, p, size, offset);
 		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, size);
 
-		ret = sk->sk_socket->ops->sendmsg_locked(sk, &msg, size);
+		ret = ctx->sk_proto_ops->sendmsg_locked(sk, &msg, size);
 
 		if (ret != size) {
 			if (ret > 0) {
@@ -417,14 +415,14 @@ static __poll_t tls_sk_poll(struct file *file, struct socket *sock,
 	u8 shutdown;
 	int state;
 
-	mask = tls_poll(file, sock, wait);
+	tls_ctx = tls_get_ctx(sk);
+	mask = tls_ctx->sk_proto_ops->poll(file, sock, wait);
 
 	state = inet_sk_state_load(sk);
 	shutdown = READ_ONCE(sk->sk_shutdown);
 	if (unlikely(state != TCP_ESTABLISHED || shutdown & RCV_SHUTDOWN))
 		return mask;
 
-	tls_ctx = tls_get_ctx(sk);
 	ctx = tls_sw_ctx_rx(tls_ctx);
 
 	if ((skb_queue_empty_lockless(&ctx->rx_list) &&
@@ -931,6 +929,7 @@ static struct tls_context *tls_ctx_create(struct sock *sk)
 
 	mutex_init(&ctx->tx_lock);
 	ctx->sk_proto = READ_ONCE(sk->sk_prot);
+	ctx->sk_proto_ops = READ_ONCE(sk->sk_socket->ops);
 	ctx->sk = sk;
 	/* Release semantic of rcu_assign_pointer() ensures that
 	 * ctx->sk_proto is visible before changing sk->sk_prot in
@@ -975,24 +974,6 @@ static void build_proto_ops(struct proto_ops ops[TLS_NUM_CONFIG][TLS_NUM_CONFIG]
 #endif
 }
 
-static struct sk_buff *tls_tcp_recv_skb(struct sock *sk, u32 *off)
-{
-	return tcp_recv_skb(sk, tcp_sk(sk)->copied_seq, off);
-}
-
-static void build_tls_proto_ops(int proto)
-{
-	if (proto == TLSTCP) {
-		tls_prot_ops[proto].recv_skb		= tls_tcp_recv_skb;
-		tls_prot_ops[proto].read_done		= tcp_read_done;
-		tls_prot_ops[proto].epollin_ready	= tcp_epollin_ready;
-	} else if (proto == TLSMPTCP) {
-		tls_prot_ops[proto].recv_skb		= mptcp_recv_skb;
-		tls_prot_ops[proto].read_done		= mptcp_read_done;
-		tls_prot_ops[proto].epollin_ready	= mptcp_check_epollin_ready;
-	}
-}
-
 static void tls_build_proto(struct sock *sk)
 {
 	int proto = sk->sk_protocol == IPPROTO_MPTCP ? TLSMPTCP : TLSTCP;
@@ -1007,7 +988,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV6][TLSTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV6][TLSTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSTCP);
 			smp_store_release(&saved_tcpv6_prot, prot);
 		}
 		mutex_unlock(&tcpv6_prot_mutex);
@@ -1020,7 +1000,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV4][TLSTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV4][TLSTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSTCP);
 			smp_store_release(&saved_tcpv4_prot, prot);
 		}
 		mutex_unlock(&tcpv4_prot_mutex);
@@ -1034,7 +1013,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV6][TLSMPTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV6][TLSMPTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSMPTCP);
 			/* pairs with smp_load_acquire above */
 			smp_store_release(&saved_mptcpv6_prot, prot);
 		}
@@ -1049,7 +1027,6 @@ static void tls_build_proto(struct sock *sk)
 			build_protos(tls_prots[TLSV4][TLSMPTCP], prot);
 			build_proto_ops(tls_proto_ops[TLSV4][TLSMPTCP],
 					sk->sk_socket->ops);
-			build_tls_proto_ops(TLSMPTCP);
 			/* pairs with smp_load_acquire above */
 			smp_store_release(&saved_mptcpv4_prot, prot);
 		}
@@ -1124,7 +1101,6 @@ static int tls_init(struct sock *sk)
 	ctx->tx_conf = TLS_BASE;
 	ctx->rx_conf = TLS_BASE;
 	ctx->tx_max_payload_len = TLS_MAX_PAYLOAD_SIZE;
-	ctx->sk_read_sock = sk->sk_socket->ops->read_sock;
 	update_sk_prot(sk, ctx);
 out:
 	write_unlock_bh(&sk->sk_callback_lock);

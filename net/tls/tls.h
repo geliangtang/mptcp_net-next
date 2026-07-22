@@ -385,18 +385,4 @@ struct tls_skb_cb {
 #define TLS_SKB_CB(__skb)	((struct tls_skb_cb *)&((__skb)->cb[0]))
 
 static_assert(offsetof(struct tls_skb_cb, seq) == 0);
-
-static inline __poll_t tls_poll(struct file *file, struct socket *sock,
-				struct poll_table_struct *wait)
-{
-	switch (sock->sk->sk_protocol) {
-	case IPPROTO_TCP:
-		return tcp_poll(file, sock, wait);
-	case IPPROTO_MPTCP:
-		return mptcp_poll(file, sock, wait);
-	default:
-		return 0;
-	}
-}
-
 #endif
