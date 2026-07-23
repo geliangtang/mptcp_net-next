@@ -282,6 +282,16 @@ static int mptcp_setsockopt_sol_socket_timestamping(struct mptcp_sock *msk,
 	return ret;
 }
 
+static void __sock_sync_linger(struct sock *ssk, const struct sock *sk)
+{
+	if (sock_flag(sk, SOCK_LINGER)) {
+		ssk->sk_lingertime = sk->sk_lingertime;
+		sock_set_flag(ssk, SOCK_LINGER);
+	} else {
+		sock_reset_flag(ssk, SOCK_LINGER);
+	}
+}
+
 static int mptcp_setsockopt_sol_socket_linger(struct mptcp_sock *msk, sockptr_t optval,
 					      unsigned int optlen)
 {
@@ -308,13 +318,7 @@ static int mptcp_setsockopt_sol_socket_linger(struct mptcp_sock *msk, sockptr_t 
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 		bool slow = lock_sock_fast(ssk);
 
-		if (!ling.l_onoff) {
-			sock_reset_flag(ssk, SOCK_LINGER);
-		} else {
-			ssk->sk_lingertime = sk->sk_lingertime;
-			sock_set_flag(ssk, SOCK_LINGER);
-		}
-
+		__sock_sync_linger(ssk, sk);
 		subflow->setsockopt_seq = msk->setsockopt_seq;
 		unlock_sock_fast(ssk, slow);
 	}
@@ -1762,12 +1766,7 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 			__mptcp_subflow_set_rcvbuf(ssk, sk->sk_rcvbuf);
 	}
 
-	if (sock_flag(sk, SOCK_LINGER)) {
-		ssk->sk_lingertime = sk->sk_lingertime;
-		sock_set_flag(ssk, SOCK_LINGER);
-	} else {
-		sock_reset_flag(ssk, SOCK_LINGER);
-	}
+	__sock_sync_linger(ssk, sk);
 
 	if (sk->sk_mark != ssk->sk_mark) {
 		ssk->sk_mark = sk->sk_mark;
