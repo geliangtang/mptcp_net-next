@@ -41,6 +41,9 @@ static int pf = AF_INET;
 #ifndef TCP_IS_MPTCP
 #define TCP_IS_MPTCP 43
 #endif
+#ifndef SOL_TCP
+#define SOL_TCP 6
+#endif
 
 static int proto_tx = IPPROTO_MPTCP;
 static int proto_rx = IPPROTO_MPTCP;
@@ -136,6 +139,9 @@ struct so_state {
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif
 
 static void init_rng(void);
@@ -250,6 +256,35 @@ static int sock_listen_mptcp(const char * const listenaddr,
 	return sock;
 }
 
+static void test_so_reuseaddr_sockopt(int fd)
+{
+	static const int test_values[] = {
+		0, 1, 2, 0xff, 0xffff, INT_MAX,
+	};
+	int val_in, val_out, expected;
+	socklen_t s;
+	int r, i;
+
+	for (i = 0; i < ARRAY_SIZE(test_values); i++) {
+		val_in = test_values[i];
+
+		r = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val_in,
+			       sizeof(val_in));
+		if (r != 0)
+			die_perror("setsockopt SO_REUSEADDR");
+
+		s = sizeof(val_out);
+		r = getsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val_out, &s);
+		if (r != 0)
+			die_perror("getsockopt SO_REUSEADDR");
+
+		expected = val_in ? 1 : 0;
+		if (val_out != expected)
+			xerror("SO_REUSEADDR get=%d (input %d) != %d\n",
+			       val_out, val_in, expected);
+	}
+}
+
 static int sock_connect_mptcp(const char * const remoteaddr,
 			      const char * const port, int proto)
 {
@@ -267,6 +302,8 @@ static int sock_connect_mptcp(const char * const remoteaddr,
 		sock = socket(a->ai_family, a->ai_socktype, proto);
 		if (sock < 0)
 			continue;
+
+		test_so_reuseaddr_sockopt(sock);
 
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == 0)
 			break; /* success */
@@ -1187,6 +1224,89 @@ static void test_ip_recverr_sockopt(int fd)
 		xerror("IP(V6)_RECVERR off mismatch val=%d len=%u", val, s);
 }
 
+static void test_so_linger_sockopt(int fd)
+{
+	struct linger ling_in, ling_out;
+	socklen_t s;
+	int r;
+
+	ling_in.l_onoff = 1;
+	ling_in.l_linger = 30;
+	r = setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling_in, sizeof(ling_in));
+	if (r != 0)
+		die_perror("setsockopt SO_LINGER");
+
+	s = sizeof(ling_out);
+	memset(&ling_out, 0, sizeof(ling_out));
+	r = getsockopt(fd, SOL_SOCKET, SO_LINGER, &ling_out, &s);
+	if (r != 0)
+		die_perror("getsockopt SO_LINGER");
+
+	if (ling_in.l_onoff != ling_out.l_onoff ||
+	    ling_in.l_linger != ling_out.l_linger)
+		xerror("SO_LINGER %d/%d != %d/%d\n",
+		       ling_in.l_onoff, ling_in.l_linger,
+		       ling_out.l_onoff, ling_out.l_linger);
+}
+
+static void test_so_priority_sockopt(int fd)
+{
+	int prio_in, prio_out;
+	socklen_t s;
+	int r;
+
+	prio_in = 5;
+	r = setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &prio_in, sizeof(prio_in));
+	if (r != 0)
+		die_perror("setsockopt SO_PRIORITY");
+
+	s = sizeof(prio_out);
+	r = getsockopt(fd, SOL_SOCKET, SO_PRIORITY, &prio_out, &s);
+	if (r != 0)
+		die_perror("getsockopt SO_PRIORITY");
+
+	if (prio_in != prio_out)
+		xerror("SO_PRIORITY %d != %d\n", prio_in, prio_out);
+}
+
+static void test_tcp_nodelay_sockopt(int fd)
+{
+	int val_in = 1, val_out;
+	socklen_t s;
+	int r;
+
+	r = setsockopt(fd, SOL_TCP, TCP_NODELAY, &val_in, sizeof(val_in));
+	if (r != 0)
+		die_perror("setsockopt TCP_NODELAY");
+
+	s = sizeof(val_out);
+	r = getsockopt(fd, SOL_TCP, TCP_NODELAY, &val_out, &s);
+	if (r != 0)
+		die_perror("getsockopt TCP_NODELAY");
+
+	if (val_in != val_out)
+		xerror("TCP_NODELAY %d != %d\n", val_in, val_out);
+}
+
+static void test_tcp_syncnt_sockopt(int fd)
+{
+	int val_in = 3, val_out;
+	socklen_t s;
+	int r;
+
+	r = setsockopt(fd, SOL_TCP, TCP_SYNCNT, &val_in, sizeof(val_in));
+	if (r != 0)
+		die_perror("setsockopt TCP_SYNCNT");
+
+	s = sizeof(val_out);
+	r = getsockopt(fd, SOL_TCP, TCP_SYNCNT, &val_out, &s);
+	if (r != 0)
+		die_perror("getsockopt TCP_SYNCNT");
+
+	if (val_in != val_out)
+		xerror("TCP_SYNCNT %d != %d\n", val_in, val_out);
+}
+
 static int client(int unixfd)
 {
 	int fd = -1;
@@ -1206,6 +1326,10 @@ static int client(int unixfd)
 
 	test_ip_tos_sockopt(fd);
 	test_ip_recverr_sockopt(fd);
+	test_so_linger_sockopt(fd);
+	test_so_priority_sockopt(fd);
+	test_tcp_nodelay_sockopt(fd);
+	test_tcp_syncnt_sockopt(fd);
 
 	connect_one_server(fd, unixfd);
 
