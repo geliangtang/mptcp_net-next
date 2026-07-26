@@ -128,6 +128,8 @@ struct so_state {
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+static void init_rng(void);
+
 static void __noreturn die_perror(const char *msg)
 {
 	perror(msg);
@@ -870,6 +872,8 @@ static pid_t xfork(void)
 
 	if (p < 0)
 		die_perror("fork");
+	else if (p == 0)
+		init_rng();
 
 	return p;
 }
@@ -893,9 +897,9 @@ static int rcheck(int wstatus, const char *what)
 static void init_rng(void)
 {
 	int fd = open("/dev/urandom", O_RDONLY);
+	unsigned int foo;
 
 	if (fd >= 0) {
-		unsigned int foo;
 		ssize_t ret;
 
 		/* can't fail */
@@ -903,10 +907,10 @@ static void init_rng(void)
 		assert(ret == sizeof(foo));
 
 		close(fd);
-		srand(foo);
 	} else {
-		srand(time(NULL));
+		foo = getpid() ^ time(NULL);
 	}
+	srand(foo);
 }
 
 int main(int argc, char *argv[])
