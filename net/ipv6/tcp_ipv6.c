@@ -45,6 +45,7 @@
 #include <net/tcp.h>
 #include <net/ndisc.h>
 #include <net/inet6_hashtables.h>
+#include <net/route.h>
 #include <net/inet6_connection_sock.h>
 #include <net/ipv6.h>
 #include <net/transp_v6.h>
@@ -1463,8 +1464,10 @@ static struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *
 	/* Set ToS of the new socket based upon the value of incoming SYN.
 	 * ECT bits are set later in tcp_init_transfer().
 	 */
-	if (READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_reflect_tos))
+	if (READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_reflect_tos)) {
 		newnp->tclass = tcp_rsk(req)->syn_tos & ~INET_ECN_MASK;
+		WRITE_ONCE(newsk->sk_priority, rt_tos2priority(newnp->tclass));
+	}
 
 	/* Clone native IPv6 options from listening socket (if any)
 
