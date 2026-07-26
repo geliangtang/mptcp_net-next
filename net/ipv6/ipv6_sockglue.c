@@ -41,6 +41,7 @@
 #include <net/protocol.h>
 #include <net/transp_v6.h>
 #include <net/ip6_route.h>
+#include <net/route.h>
 #include <net/addrconf.h>
 #include <net/inet_common.h>
 #include <net/tcp.h>
@@ -383,6 +384,7 @@ void __ip6_sock_set_tclass(struct sock *sk, int val)
 	}
 	if (old_tclass != val) {
 		WRITE_ONCE(inet6_sk(sk)->tclass, val);
+		WRITE_ONCE(sk->sk_priority, rt_tos2priority(val));
 		sk_dst_reset(sk);
 	}
 }
