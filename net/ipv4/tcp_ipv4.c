@@ -65,6 +65,7 @@
 #include <net/net_namespace.h>
 #include <net/icmp.h>
 #include <net/inet_hashtables.h>
+#include <net/route.h>
 #include <net/tcp.h>
 #include <net/tcp_ecn.h>
 #include <net/transp_v6.h>
@@ -1717,8 +1718,10 @@ struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 	/* Set ToS of the new socket based upon the value of incoming SYN.
 	 * ECT bits are set later in tcp_init_transfer().
 	 */
-	if (READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_reflect_tos))
+	if (READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_reflect_tos)) {
 		newinet->tos = tcp_rsk(req)->syn_tos & ~INET_ECN_MASK;
+		WRITE_ONCE(newsk->sk_priority, rt_tos2priority(newinet->tos));
+	}
 
 	if (!dst) {
 		dst = inet_csk_route_child_sock(sk, newsk, req);
