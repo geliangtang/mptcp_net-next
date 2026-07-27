@@ -1225,6 +1225,32 @@ static void test_ip_recverr_sockopt(int fd)
 		xerror("IP(V6)_RECVERR off mismatch val=%d len=%u", val, s);
 }
 
+static void test_ipv6_tclass_sockopt(int fd)
+{
+	int tclass_in, tclass_out;
+	socklen_t s;
+	int r;
+
+	tclass_in = (rand() & 0xfc) | 0x10;
+	r = setsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass_in, sizeof(tclass_in));
+	if (r != 0)
+		die_perror("setsockopt IPV6_TCLASS");
+
+	tclass_out = 0;
+	s = sizeof(tclass_out);
+	r = getsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass_out, &s);
+	if (r != 0)
+		die_perror("getsockopt IPV6_TCLASS");
+
+	if (tclass_in != tclass_out)
+		xerror("tclass %x != %x socklen_t %d\n",
+		       tclass_in, tclass_out, s);
+
+	if (s != sizeof(tclass_out))
+		xerror("tclass should be %lu bytes",
+		       (unsigned long)sizeof(tclass_out));
+}
+
 static void test_so_linger_sockopt(int fd)
 {
 	struct linger ling_in, ling_out;
@@ -1400,6 +1426,8 @@ static int client(int unixfd)
 	test_so_timestamp_sockopt(fd);
 	test_so_timestampns_sockopt(fd);
 	test_so_timestamping_sockopt(fd);
+	if (pf == AF_INET6)
+		test_ipv6_tclass_sockopt(fd);
 
 	connect_one_server(fd, unixfd);
 
