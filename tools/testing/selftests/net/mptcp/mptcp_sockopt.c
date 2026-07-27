@@ -28,6 +28,7 @@
 
 #include <linux/tcp.h>
 #include <linux/sockios.h>
+#include <linux/net_tstamp.h>
 #include <linux/compiler.h>
 
 static int pf = AF_INET;
@@ -1307,6 +1308,72 @@ static void test_tcp_syncnt_sockopt(int fd)
 		xerror("TCP_SYNCNT %d != %d\n", val_in, val_out);
 }
 
+static void test_so_timestamp_sockopt(int fd)
+{
+	int val_in = 1, val_out;
+	socklen_t s;
+	int r;
+
+	r = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &val_in, sizeof(val_in));
+	if (r != 0)
+		die_perror("setsockopt SO_TIMESTAMP");
+
+	s = sizeof(val_out);
+	r = getsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &val_out, &s);
+	if (r != 0)
+		die_perror("getsockopt SO_TIMESTAMP");
+
+	/* Without SO_TIMESTAMP set, getsockopt returns 0; once any non-zero
+	 * value is set, the kernel reports 1 (the bitmask is boolean).
+	 */
+	if (val_out != 1)
+		xerror("SO_TIMESTAMP %d != 1\n", val_out);
+}
+
+static void test_so_timestampns_sockopt(int fd)
+{
+	int val_in = 1, val_out;
+	socklen_t s;
+	int r;
+
+	r = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val_in, sizeof(val_in));
+	if (r != 0)
+		die_perror("setsockopt SO_TIMESTAMPNS");
+
+	s = sizeof(val_out);
+	r = getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val_out, &s);
+	if (r != 0)
+		die_perror("getsockopt SO_TIMESTAMPNS");
+
+	if (val_out != 1)
+		xerror("SO_TIMESTAMPNS %d != 1\n", val_out);
+}
+
+static void test_so_timestamping_sockopt(int fd)
+{
+	struct so_timestamping ts_in, ts_out;
+	socklen_t s;
+	int r;
+
+	memset(&ts_in, 0, sizeof(ts_in));
+	ts_in.flags = SOF_TIMESTAMPING_SOFTWARE |
+		      SOF_TIMESTAMPING_RX_SOFTWARE |
+		      SOF_TIMESTAMPING_RAW_HARDWARE;
+	r = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &ts_in, sizeof(ts_in));
+	if (r != 0)
+		die_perror("setsockopt SO_TIMESTAMPING");
+
+	s = sizeof(ts_out);
+	memset(&ts_out, 0, sizeof(ts_out));
+	r = getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &ts_out, &s);
+	if (r != 0)
+		die_perror("getsockopt SO_TIMESTAMPING");
+
+	if (ts_in.flags != ts_out.flags)
+		xerror("SO_TIMESTAMPING 0x%x != 0x%x\n",
+		       ts_out.flags, ts_in.flags);
+}
+
 static int client(int unixfd)
 {
 	int fd = -1;
@@ -1330,6 +1397,9 @@ static int client(int unixfd)
 	test_so_priority_sockopt(fd);
 	test_tcp_nodelay_sockopt(fd);
 	test_tcp_syncnt_sockopt(fd);
+	test_so_timestamp_sockopt(fd);
+	test_so_timestampns_sockopt(fd);
+	test_so_timestamping_sockopt(fd);
 
 	connect_one_server(fd, unixfd);
 
