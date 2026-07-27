@@ -1888,8 +1888,10 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 		nvme_tcp_sock_set_priority(queue->sock->sk, so_priority);
 
 	/* Set socket type of service */
-	if (nctrl->opts->tos >= 0)
+	if (nctrl->opts->tos >= 0) {
 		nvme_tcp_sock_set_tos(queue->sock->sk, nctrl->opts->tos);
+		nvme_tcp_sock_set_tclass(queue->sock->sk, nctrl->opts->tos);
+	}
 
 	/* Set 10 seconds timeout for icresp recvmsg */
 	queue->sock->sk->sk_rcvtimeo = 10 * HZ;
