@@ -179,6 +179,7 @@ static int mptcp_setsockopt_sol_socket_tstamp(struct mptcp_sock *msk, int optnam
 		sock_set_timestamp(ssk, optname, !!val);
 		release_sock(ssk);
 	}
+	sockopt_seq_inc(msk);
 
 	release_sock(sk);
 	return 0;
@@ -274,6 +275,7 @@ static int mptcp_setsockopt_sol_socket_timestamping(struct mptcp_sock *msk,
 		if (err < 0 && ret == 0)
 			ret = err;
 	}
+	sockopt_seq_inc(msk);
 
 	release_sock(sk);
 
@@ -2210,6 +2212,13 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 
 	sock_valbool_flag(ssk, SOCK_DBG, sock_flag(sk, SOCK_DBG));
 	sock_valbool_flag(ssk, SOCK_ZEROCOPY, sock_flag(sk, SOCK_ZEROCOPY));
+
+	sock_valbool_flag(ssk, SOCK_RCVTSTAMP, sock_flag(sk, SOCK_RCVTSTAMP));
+	sock_valbool_flag(ssk, SOCK_RCVTSTAMPNS, sock_flag(sk, SOCK_RCVTSTAMPNS));
+	sock_valbool_flag(ssk, SOCK_TIMESTAMP, sock_flag(sk, SOCK_TIMESTAMP));
+	sock_valbool_flag(ssk, SOCK_TSTAMP_NEW, sock_flag(sk, SOCK_TSTAMP_NEW));
+	WRITE_ONCE(ssk->sk_tsflags, READ_ONCE(sk->sk_tsflags));
+	WRITE_ONCE(ssk->sk_bind_phc, READ_ONCE(sk->sk_bind_phc));
 
 	if (inet_csk(sk)->icsk_ca_ops != inet_csk(ssk)->icsk_ca_ops)
 		tcp_set_congestion_control(ssk, msk->ca_name, false, true);
