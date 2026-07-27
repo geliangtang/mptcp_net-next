@@ -4,8 +4,9 @@
 . "$(dirname "$0")/mptcp_lib.sh"
 
 ret=0
-trtype="${1:-mptcp}"
-path="${2:-1}"
+adrfam="${1:-ipv4}"
+trtype="${2:-mptcp}"
+path="${3:-1}"
 nqn="nqn.2014-08.org.nvmexpress.${trtype}dev.$$.${RANDOM}"
 ns=1
 port=$((RANDOM % 10000 + 20000))
@@ -15,7 +16,7 @@ ns2=""
 temp_file=""
 loop_dev=""
 
-export trtype path nqn ns port trsvcid
+export adrfam trtype path nqn ns port trsvcid
 export loop_dev temp_file
 
 usage()
@@ -24,8 +25,9 @@ usage()
 
 Usage:
 
-	$(basename "$0") [trtype] [path]
+	$(basename "$0") [adrfam] [trtype] [path]
 
+	adrfam   Address family (ipv4|ipv6) - default: ipv4
 	trtype   Transport type (tcp|mptcp) - default: mptcp
 	path     Number of multipath (1-4) - default: 1
 
@@ -35,6 +37,11 @@ exit ${KSFT_FAIL}
 
 validate_params()
 {
+	if [[ ! "${adrfam}" =~ ^(ipv4|ipv6)$ ]]; then
+		echo "Invalid adrfam ${adrfam}. Must be ipv4 or ipv6"
+		usage
+	fi
+
 	if [[ ! "${trtype}" =~ ^(tcp|mptcp)$ ]]; then
 		echo "Invalid trtype ${trtype}. Must be tcp or mptcp"
 		usage
@@ -146,17 +153,31 @@ init()
 
 	mptcp_lib_pm_nl_set_limits "${ns1}" 8 8
 
-	mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.1.1 flags signal
-	mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.2.1 flags signal
-	mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.3.1 flags signal
-	mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.4.1 flags signal
+	if [ "${adrfam}" = "ipv6" ]; then
+		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:1::1 flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:2::1 flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:3::1 flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:4::1 flags signal
+	else
+		mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.1.1 flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.2.1 flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.3.1 flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.4.1 flags signal
+	fi
 
 	mptcp_lib_pm_nl_set_limits "${ns2}" 8 8
 
-	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.1.2 flags subflow
-	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.2.2 flags subflow
-	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.3.2 flags subflow
-	mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.4.2 flags subflow
+	if [ "${adrfam}" = "ipv6" ]; then
+		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:1::2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:2::2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:3::2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:4::2 flags subflow
+	else
+		mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.1.2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.2.2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.3.2 flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.4.2 flags subflow
+	fi
 }
 
 # This function is invoked indirectly
@@ -179,11 +200,19 @@ run_target()
 		mkdir -p "${portdir}"
 		cd "${portdir}" || exit 1
 		echo "${trtype}" > addr_trtype
-		echo ipv4 > addr_adrfam
-		if [ "${path}" -eq 1 ]; then
-			echo "0.0.0.0" > addr_traddr
+		echo "${adrfam}" > addr_adrfam
+		if [ "${adrfam}" = "ipv6" ]; then
+			if [ "${path}" -eq 1 ]; then
+				echo "::" > addr_traddr
+			else
+				echo "dead:beef:${i}::1" > addr_traddr
+			fi
 		else
-			echo "10.1.${i}.1" > addr_traddr
+			if [ "${path}" -eq 1 ]; then
+				echo "0.0.0.0" > addr_traddr
+			else
+				echo "10.1.${i}.1" > addr_traddr
+			fi
 		fi
 		echo "${trsvcid}" > addr_trsvcid
 
@@ -197,7 +226,12 @@ run_target()
 #shellcheck disable=SC2317,SC2329
 run_host()
 {
-	local traddr=10.1.1.1
+	local traddr
+	if [ "${adrfam}" = "ipv6" ]; then
+		traddr=dead:beef:1::1
+	else
+		traddr=10.1.1.1
+	fi
 	local devname
 
 	echo "nvme discover -a ${traddr}"
@@ -208,7 +242,11 @@ run_host()
 	fi
 
 	for i in $(seq 1 "${path}"); do
-		traddr=10.1.${i}.1
+		if [ "${adrfam}" = "ipv6" ]; then
+			traddr=dead:beef:${i}::1
+		else
+			traddr=10.1.${i}.1
+		fi
 		echo "Connecting to ${traddr}:${trsvcid}"
 		if ! nvme connect -t "${trtype}" -a "${traddr}" \
 				  -s "${trsvcid}" -n "${nqn}"; then
