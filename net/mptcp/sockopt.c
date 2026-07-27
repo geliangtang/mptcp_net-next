@@ -824,6 +824,9 @@ static int __mptcp_setsockopt_set_val(struct mptcp_sock *msk, int max,
 	struct mptcp_subflow_context *subflow;
 	int err = 0;
 
+	if (val < 1 || val > max)
+		return -EINVAL;
+
 	mptcp_for_each_subflow(msk, subflow) {
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 		int ret;
