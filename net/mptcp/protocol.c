@@ -176,6 +176,13 @@ static bool __mptcp_try_coalesce(struct sock *sk, struct sk_buff *to,
 		 MPTCP_SKB_CB(from)->map_seq, MPTCP_SKB_CB(to)->map_seq,
 		 to->len, MPTCP_SKB_CB(from)->end_seq);
 	MPTCP_SKB_CB(to)->end_seq = MPTCP_SKB_CB(from)->end_seq;
+
+	if (MPTCP_SKB_CB(from)->has_rxtstamp) {
+		MPTCP_SKB_CB(to)->has_rxtstamp = true;
+		to->tstamp = from->tstamp;
+		skb_hwtstamps(to)->hwtstamp = skb_hwtstamps(from)->hwtstamp;
+	}
+
 	return true;
 }
 
