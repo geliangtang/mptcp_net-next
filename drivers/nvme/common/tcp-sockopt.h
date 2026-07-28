@@ -63,6 +63,22 @@ static inline void nvme_tcp_sock_set_tos(struct sock *sk, int tos)
 		pr_warn("failed to set IP_TOS: %d\n", ret);
 }
 
+static inline void nvme_tcp_sock_set_tclass(struct sock *sk, int tclass)
+{
+#if IS_ENABLED(CONFIG_IPV6)
+	int ret;
+
+	if (sk->sk_family != AF_INET6)
+		return;
+
+	ret = do_sock_setsockopt(sk->sk_socket, true, SOL_IPV6,
+				 IPV6_TCLASS, KERNEL_SOCKPTR(&tclass),
+				 sizeof(tclass));
+	if (ret)
+		pr_warn("failed to set IPV6_TCLASS: %d\n", ret);
+#endif
+}
+
 static inline void nvme_tcp_sock_set_syncnt(struct sock *sk, int val)
 {
 	int ret;
