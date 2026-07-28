@@ -1726,6 +1726,7 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 {
 	struct socket *sock = queue->sock;
 	struct inet_sock *inet = inet_sk(sock->sk);
+	int tclass = 0;
 	int ret;
 
 	ret = kernel_getsockname(sock,
@@ -1751,6 +1752,11 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	/* Set socket type of service */
 	if (inet->rcv_tos > 0)
 		nvme_tcp_sock_set_tos(sock->sk, inet->rcv_tos);
+#if IS_ENABLED(CONFIG_IPV6)
+	tclass = ip6_tclass(inet6_sk(sock->sk)->rcv_flowinfo);
+#endif
+	if (tclass > 0)
+		nvme_tcp_sock_set_tclass(sock->sk, tclass);
 
 	ret = 0;
 	write_lock_bh(&sock->sk->sk_callback_lock);
