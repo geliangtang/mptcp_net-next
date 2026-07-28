@@ -1696,6 +1696,48 @@ done:
 	read_unlock_bh(&sk->sk_callback_lock);
 }
 
+static void nvmet_tcp_sock_no_linger(struct sock *sk)
+{
+	struct linger ling = { .l_onoff = 1, .l_linger = 0 };
+
+	do_sock_setsockopt(sk->sk_socket, false, SOL_SOCKET, SO_LINGER,
+			   KERNEL_SOCKPTR(&ling), sizeof(ling));
+}
+
+static void nvmet_tcp_sock_set_priority(struct sock *sk, u32 priority)
+{
+	do_sock_setsockopt(sk->sk_socket, false, SOL_SOCKET, SO_PRIORITY,
+			   KERNEL_SOCKPTR(&priority), sizeof(priority));
+}
+
+static void nvmet_tcp_sock_set_reuseaddr(struct sock *sk)
+{
+	int val = SK_CAN_REUSE;
+
+	do_sock_setsockopt(sk->sk_socket, false, SOL_SOCKET, SO_REUSEADDR,
+			   KERNEL_SOCKPTR(&val), sizeof(val));
+}
+
+static void nvmet_tcp_sock_set_nodelay(struct sock *sk)
+{
+	int val = 1;
+
+	do_sock_setsockopt(sk->sk_socket, false, SOL_TCP, TCP_NODELAY,
+			   KERNEL_SOCKPTR(&val), sizeof(val));
+}
+
+static void nvmet_tcp_sock_set_tos(struct sock *sk, int tos)
+{
+	do_sock_setsockopt(sk->sk_socket, false, SOL_IP, IP_TOS,
+			   KERNEL_SOCKPTR(&tos), sizeof(tos));
+}
+
+static void nvmet_tcp_sock_set_tclass(struct sock *sk, int tclass)
+{
+	do_sock_setsockopt(sk->sk_socket, false, SOL_IPV6, IPV6_TCLASS,
+			   KERNEL_SOCKPTR(&tclass), sizeof(tclass));
+}
+
 static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 {
 	struct socket *sock = queue->sock;
@@ -1717,20 +1759,20 @@ static int nvmet_tcp_set_queue_sock(struct nvmet_tcp_queue *queue)
 	 * close. This is done to prevent stale data from being sent should
 	 * the network connection be restored before TCP times out.
 	 */
-	sock_no_linger(sock->sk);
+	nvmet_tcp_sock_no_linger(sock->sk);
 
 	if (so_priority > 0)
-		sock_set_priority(sock->sk, so_priority);
+		nvmet_tcp_sock_set_priority(sock->sk, so_priority);
 
 	/* Set socket type of service */
 	if (inet->rcv_tos > 0)
-		ip_sock_set_tos(sock->sk, inet->rcv_tos);
+		nvmet_tcp_sock_set_tos(sock->sk, inet->rcv_tos);
 #if IS_ENABLED(CONFIG_IPV6)
 	if (sock->sk->sk_family == AF_INET6) {
 		struct ipv6_pinfo *np = inet6_sk(sock->sk);
 
 		if (np->tclass > 0)
-			ip6_sock_set_tclass(sock->sk, np->tclass);
+			nvmet_tcp_sock_set_tclass(sock->sk, np->tclass);
 	}
 #endif
 
@@ -2106,10 +2148,10 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 	port->sock->sk->sk_user_data = port;
 	port->data_ready = port->sock->sk->sk_data_ready;
 	port->sock->sk->sk_data_ready = nvmet_tcp_listen_data_ready;
-	sock_set_reuseaddr(port->sock->sk);
-	tcp_sock_set_nodelay(port->sock->sk);
+	nvmet_tcp_sock_set_reuseaddr(port->sock->sk);
+	nvmet_tcp_sock_set_nodelay(port->sock->sk);
 	if (so_priority > 0)
-		sock_set_priority(port->sock->sk, so_priority);
+		nvmet_tcp_sock_set_priority(port->sock->sk, so_priority);
 
 	ret = kernel_bind(port->sock, (struct sockaddr_unsized *)&port->addr,
 			sizeof(port->addr));
