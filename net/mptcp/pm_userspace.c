@@ -319,7 +319,11 @@ int mptcp_pm_nl_remove_doit(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	list_del_rcu(&match->list);
-	msk->pm.local_addr_used--;
+	/* the initial address (ID0) is not accounted there, see
+	 * mptcp_pm_userspace_created()
+	 */
+	if (match->addr.id && !WARN_ON_ONCE(msk->pm.local_addr_used == 0))
+		msk->pm.local_addr_used--;
 	spin_unlock_bh(&msk->pm.lock);
 
 	mptcp_userspace_pm_remove_addr_entry(msk, match);
@@ -669,9 +673,10 @@ int mptcp_userspace_pm_get_addr(u8 id, struct mptcp_pm_addr_entry *addr,
 /* Add the initial local address (ID0) to the local list: easier that way */
 void mptcp_pm_userspace_created(struct mptcp_sock *msk, const struct sock *ssk)
 {
+	struct sock *sk = (struct sock *)msk;
 	struct mptcp_pm_addr_entry *entry;
 
-	entry = sock_kmalloc((struct sock *)msk, sizeof(*entry), GFP_ATOMIC);
+	entry = sock_kmalloc(sk, sizeof(*entry), GFP_ATOMIC);
 	/* Fine not to handle the ID0 case in memory pressure */
 	if (!entry)
 		return;
@@ -679,6 +684,12 @@ void mptcp_pm_userspace_created(struct mptcp_sock *msk, const struct sock *ssk)
 	memset(entry, 0, sizeof(*entry));
 	mptcp_local_address((struct sock_common *)ssk, &entry->addr);
 	entry->addr.port = 0; /* msk port */
+	/* The entry is freed from an RCU callback, possibly after the msk has
+	 * been released: mptcp_userspace_pm_free_entry() needs a valid socket
+	 * to give the memory back and to drop this extra reference.
+	 */
+	sock_hold(sk);
+	entry->sk = sk;
 
 	spin_lock_bh(&msk->pm.lock);
 	list_add_tail_rcu(&entry->list, &msk->pm.userspace_pm_local_addr_list);
