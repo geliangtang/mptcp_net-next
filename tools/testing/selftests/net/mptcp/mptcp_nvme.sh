@@ -30,7 +30,7 @@ Usage:
 
 	$(basename "$0") [adrfam] [trtype] [path] [iopolicy] [loss]
 
-	adrfam   Address family (ipv4|ipv6) - default: ipv4
+	adrfam   Address family (ipv4|ipv6|v4map) - default: ipv4
 	trtype   Transport type (tcp|mptcp) - default: mptcp
 	path     Number of multipath (1-4) - default: 1
 	iopolicy I/O policy (numa|round-robin|queue-depth) - default: numa
@@ -42,8 +42,8 @@ exit ${KSFT_FAIL}
 
 validate_params()
 {
-	if [[ ! "${adrfam}" =~ ^(ipv4|ipv6)$ ]]; then
-		echo "Invalid adrfam ${adrfam}. Must be ipv4 or ipv6"
+	if [[ ! "${adrfam}" =~ ^(ipv4|ipv6|v4map)$ ]]; then
+		echo "Invalid adrfam ${adrfam}. Must be ipv4, ipv6 or v4map"
 		usage
 	fi
 
@@ -180,6 +180,11 @@ init()
 		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:2::1 flags signal
 		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:3::1 flags signal
 		mptcp_lib_pm_nl_add_endpoint "$ns1" dead:beef:4::1 flags signal
+	elif [ "${adrfam}" = "v4map" ]; then
+		mptcp_lib_pm_nl_add_endpoint "$ns1" "::ffff:10.1.1.1" flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" "::ffff:10.1.2.1" flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" "::ffff:10.1.3.1" flags signal
+		mptcp_lib_pm_nl_add_endpoint "$ns1" "::ffff:10.1.4.1" flags signal
 	else
 		mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.1.1 flags signal
 		mptcp_lib_pm_nl_add_endpoint "$ns1" 10.1.2.1 flags signal
@@ -194,6 +199,11 @@ init()
 		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:2::2 flags subflow
 		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:3::2 flags subflow
 		mptcp_lib_pm_nl_add_endpoint "$ns2" dead:beef:4::2 flags subflow
+	elif [ "${adrfam}" = "v4map" ]; then
+		mptcp_lib_pm_nl_add_endpoint "$ns2" "::ffff:10.1.1.2" flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" "::ffff:10.1.2.2" flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" "::ffff:10.1.3.2" flags subflow
+		mptcp_lib_pm_nl_add_endpoint "$ns2" "::ffff:10.1.4.2" flags subflow
 	else
 		mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.1.2 flags subflow
 		mptcp_lib_pm_nl_add_endpoint "$ns2" 10.1.2.2 flags subflow
@@ -222,12 +232,24 @@ run_target()
 		mkdir -p "${portdir}"
 		cd "${portdir}" || exit 1
 		echo "${trtype}" > addr_trtype
-		echo "${adrfam}" > addr_adrfam
+		if [ "${adrfam}" = "v4map" ]; then
+			# adrfam is 'ipv6' for v4map: the kernel sets up an
+			# IPv6 socket that accepts v4-mapped connections.
+			echo "ipv6" > addr_adrfam
+		else
+			echo "${adrfam}" > addr_adrfam
+		fi
 		if [ "${adrfam}" = "ipv6" ]; then
 			if [ "${path}" -eq 1 ]; then
 				echo "::" > addr_traddr
 			else
 				echo "dead:beef:${i}::1" > addr_traddr
+			fi
+		elif [ "${adrfam}" = "v4map" ]; then
+			if [ "${path}" -eq 1 ]; then
+				echo "::ffff:0.0.0.0" > addr_traddr
+			else
+				echo "::ffff:10.1.${i}.1" > addr_traddr
 			fi
 		else
 			if [ "${path}" -eq 1 ]; then
@@ -310,6 +332,8 @@ run_host()
 	local traddr
 	if [ "${adrfam}" = "ipv6" ]; then
 		traddr=dead:beef:1::1
+	elif [ "${adrfam}" = "v4map" ]; then
+		traddr=::ffff:10.1.1.1
 	else
 		traddr=10.1.1.1
 	fi
@@ -327,6 +351,8 @@ run_host()
 	for i in $(seq 1 "${path}"); do
 		if [ "${adrfam}" = "ipv6" ]; then
 			traddr=dead:beef:${i}::1
+		elif [ "${adrfam}" = "v4map" ]; then
+			traddr=::ffff:10.1.${i}.1
 		else
 			traddr=10.1.${i}.1
 		fi
