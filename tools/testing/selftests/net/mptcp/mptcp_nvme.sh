@@ -128,6 +128,8 @@ cleanup()
 	unset -v trtype path nqn ns port trsvcid
 	unset -v loop_dev temp_file
 	unset -v iopolicy loss
+
+	#cat /proc/lockdep_stats
 }
 
 # $tc_args needs word splitting to pass multiple arguments to netem
@@ -139,6 +141,8 @@ init()
 	if [ "${loss}" -eq 1 ]; then
 		tc_args+=" delay 5ms loss 0.5%"
 	fi
+
+	#cat /proc/lockdep_stats
 
 	mptcp_lib_ns_init ns1 ns2
 
@@ -427,6 +431,8 @@ run_host()
 		echo "fio randwrite failed"
 		return 1
 	fi
+
+	#cat /proc/lockdep_stats
 
 	nvme flush "/dev/${devname}"
 }
