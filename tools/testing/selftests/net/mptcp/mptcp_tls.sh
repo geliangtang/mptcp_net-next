@@ -157,7 +157,6 @@ ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
 #			   -v 13_nopad_mptcp \
 #			   -v 12_aria_gcm \
 #			   -v 12_aria_gcm_256_mptcp &
-#ip netns exec "$ns1" ./tls -t sendfile_large_2 &
 pid=$!
 wait $pid
 ret=$?
