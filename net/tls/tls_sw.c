@@ -2160,6 +2160,38 @@ bool tls_sw_sock_is_readable(struct sock *sk)
 		!skb_queue_empty(&ctx->rx_list);
 }
 
+static int get_header(struct sk_buff *skb, int offset, void *header, int len)
+{
+	struct sk_buff *iter, *first = skb_shinfo(skb)->frag_list;
+	int copied = 0;
+	u32 end_seq;
+
+	if (likely(!first || first->len - offset >= len))
+		return skb_copy_bits(skb, offset, header, len);
+
+	end_seq = TLS_SKB_CB(first)->seq + offset;
+
+	skb_walk_frags(skb, iter) {
+		int start = end_seq - TLS_SKB_CB(iter)->seq;
+		int count;
+
+		if (start > iter->len)
+			return -EFAULT;
+
+		count = min_t(int, iter->len - start, len - copied);
+		if (skb_copy_bits(iter, start, header + copied, count))
+			return -EFAULT;
+
+		copied += count;
+		end_seq = TLS_SKB_CB(iter)->seq + iter->len;
+
+		if (copied == len)
+			break;
+	}
+
+	return 0;
+}
+
 int tls_rx_msg_size(struct tls_strparser *strp, struct sk_buff *skb)
 {
 	struct tls_context *tls_ctx = tls_get_ctx(strp->sk);
@@ -2180,7 +2212,7 @@ int tls_rx_msg_size(struct tls_strparser *strp, struct sk_buff *skb)
 	}
 
 	/* Linearize header to local buffer */
-	ret = skb_copy_bits(skb, strp->stm.offset, header, prot->prepend_size);
+	ret = get_header(skb, strp->stm.offset, header, prot->prepend_size);
 	if (ret < 0)
 		goto read_failure;
 
