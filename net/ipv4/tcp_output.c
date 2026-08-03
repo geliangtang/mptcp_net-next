@@ -1936,7 +1936,7 @@ int tcp_fragment(struct sock *sk, enum tcp_queue tcp_queue,
 /* This is similar to __pskb_pull_tail(). The difference is that pulled
  * data is not copied, but immediately discarded.
  */
-int __pskb_trim_head(struct sk_buff *skb, int len)
+static int __pskb_trim_head(struct sk_buff *skb, int len)
 {
 	struct skb_shared_info *shinfo;
 	int i, k, eat;
