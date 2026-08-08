@@ -3145,6 +3145,7 @@ void __tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int state;
 
+#if 0
 	pr_info("%s sk=%p sk_family=%s linger=%u nodelay=%u "
 		"syncnt=%u tos=%u tclass=%u priority=%u reuse=%u\n",
 		__func__, sk,
@@ -3154,6 +3155,7 @@ void __tcp_close(struct sock *sk, long timeout)
 		inet_csk(sk)->icsk_syn_retries, inet_sk(sk)->tos,
 		sk->sk_family == AF_INET6 ? inet6_sk(sk)->tclass : 0,
 		sk->sk_priority, sk->sk_reuse);
+#endif
 
 	WRITE_ONCE(sk->sk_shutdown, SHUTDOWN_MASK);
 
