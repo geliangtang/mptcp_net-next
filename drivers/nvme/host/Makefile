@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 
 CONTEXT_ANALYSIS			:= y
-ccflags-y				+= -I$(src)
+ccflags-y				+= -I$(src) -I$(src)/../common
 
 obj-$(CONFIG_NVME_CORE)			+= nvme-core.o
 obj-$(CONFIG_BLK_DEV_NVME)		+= nvme.o
