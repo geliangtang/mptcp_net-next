@@ -22,6 +22,7 @@
 
 #include "nvme.h"
 #include "fabrics.h"
+#include "tcp-sockopt.h"
 
 struct nvme_tcp_queue;
 
@@ -1871,24 +1872,24 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 	sk_net_refcnt_upgrade(queue->sock->sk);
 
 	/* Single syn retry */
-	tcp_sock_set_syncnt(queue->sock->sk, 1);
+	nvme_tcp_sock_set_syncnt(queue->sock->sk, 1);
 
 	/* Set TCP no delay */
-	tcp_sock_set_nodelay(queue->sock->sk);
+	nvme_tcp_sock_set_nodelay(queue->sock->sk);
 
 	/*
 	 * Cleanup whatever is sitting in the TCP transmit queue on socket
 	 * close. This is done to prevent stale data from being sent should
 	 * the network connection be restored before TCP times out.
 	 */
-	sock_no_linger(queue->sock->sk);
+	nvme_tcp_sock_no_linger(queue->sock->sk);
 
 	if (so_priority > 0)
-		sock_set_priority(queue->sock->sk, so_priority);
+		nvme_tcp_sock_set_priority(queue->sock->sk, so_priority);
 
 	/* Set socket type of service */
 	if (nctrl->opts->tos >= 0)
-		ip_sock_set_tos(queue->sock->sk, nctrl->opts->tos);
+		nvme_tcp_sock_set_tos(queue->sock->sk, nctrl->opts->tos);
 
 	/* Set 10 seconds timeout for icresp recvmsg */
 	queue->sock->sk->sk_rcvtimeo = 10 * HZ;
@@ -1916,16 +1917,8 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 
 	if (nctrl->opts->mask & NVMF_OPT_HOST_IFACE) {
 		char *iface = nctrl->opts->host_iface;
-		sockptr_t optval = KERNEL_SOCKPTR(iface);
 
-		ret = sock_setsockopt(queue->sock, SOL_SOCKET, SO_BINDTODEVICE,
-				      optval, strlen(iface));
-		if (ret) {
-			dev_err(nctrl->device,
-			  "failed to bind to interface %s queue %d err %d\n",
-			  iface, qid, ret);
-			goto err_sock;
-		}
+		nvme_tcp_sock_set_bindtodevice(queue->sock->sk, iface);
 	}
 
 	queue->hdr_digest = nctrl->opts->hdr_digest;

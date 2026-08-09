@@ -63,4 +63,26 @@ static inline void nvme_tcp_sock_set_tos(struct sock *sk, int tos)
 		pr_warn("failed to set IP_TOS: %d\n", ret);
 }
 
+static inline void nvme_tcp_sock_set_syncnt(struct sock *sk, int val)
+{
+	int ret;
+
+	ret = do_sock_setsockopt(sk->sk_socket, true, SOL_TCP, TCP_SYNCNT,
+				 KERNEL_SOCKPTR(&val), sizeof(val));
+	if (ret)
+		pr_warn("failed to set TCP_SYNCNT: %d\n", ret);
+}
+
+static inline void nvme_tcp_sock_set_bindtodevice(struct sock *sk, const char *iface)
+{
+	int ret;
+
+	ret = do_sock_setsockopt(sk->sk_socket, true, SOL_SOCKET,
+				 SO_BINDTODEVICE,
+				 KERNEL_SOCKPTR((void *)iface),
+				 strlen(iface));
+	if (ret)
+		pr_warn("failed to set SO_BINDTODEVICE (%s): %d\n", iface, ret);
+}
+
 #endif /* NVME_TCP_SOCKOPT_H */
