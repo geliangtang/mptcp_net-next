@@ -23,6 +23,7 @@ TEST_PROGS := \
 	pm_netlink.sh \
 	simult_flows.sh \
 	test_tfo_inq.sh \
+	tlshd_v4map.sh \
 	userspace_pm.sh \
 # end of TEST_PROGS
 
