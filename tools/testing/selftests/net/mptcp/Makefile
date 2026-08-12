@@ -19,6 +19,7 @@ TEST_PROGS := \
 	mptcp_tls.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
+	tlshd_v4map.sh \
 	userspace_pm.sh \
 # end of TEST_PROGS
 
