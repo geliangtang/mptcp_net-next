@@ -40,6 +40,7 @@ trap cleanup EXIT
 
 init
 
+#ip netns exec "$ns1" ./tls -t tls_v4map &
 ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
 			   -v 13_aes_gcm_mptcp \
 			   -v 12_chacha_mptcp \
