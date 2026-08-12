@@ -3519,6 +3519,95 @@ TEST(tls_v6ops) {
 	close(sfd);
 }
 
+TEST(tls_v4map) {
+	struct tls_crypto_info_keys tls12;
+	struct sockaddr_in6 addr, addr2;
+	struct in6_addr v4mapped;
+	char const *test_str = "v4map_test";
+	char buf[16];
+	int sfd, ret, fd, cfd;
+	socklen_t len, len2;
+	int send_len;
+
+	tls_crypto_info_init(TLS_1_2_VERSION, TLS_CIPHER_AES_GCM_128, &tls12, 0);
+
+	/* IPv4-mapped IPv6 address: ::ffff:127.0.0.1 */
+	ret = inet_pton(AF_INET6, "::ffff:127.0.0.1", &v4mapped);
+	ASSERT_EQ(ret, 1);
+	send_len = strlen(test_str) + 1;
+
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = v4mapped;
+	addr.sin6_port = 0;
+
+	fd = socket(AF_INET6, SOCK_STREAM, 0);
+	ASSERT_GE(fd, 0);
+	sfd = socket(AF_INET6, SOCK_STREAM, 0);
+	ASSERT_GE(sfd, 0);
+
+	ret = bind(sfd, (struct sockaddr *)&addr, sizeof(addr));
+	ASSERT_EQ(ret, 0);
+	ret = listen(sfd, 10);
+	ASSERT_EQ(ret, 0);
+
+	len = sizeof(addr);
+	ret = getsockname(sfd, (struct sockaddr *)&addr, &len);
+	ASSERT_EQ(ret, 0);
+
+	ret = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+	ASSERT_EQ(ret, 0);
+
+	len = sizeof(addr);
+	ret = getsockname(fd, (struct sockaddr *)&addr, &len);
+	ASSERT_EQ(ret, 0);
+
+	ret = setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));
+	if (ret) {
+		ASSERT_EQ(errno, ENOENT);
+		SKIP(return, "no TLS support");
+	}
+	ASSERT_EQ(ret, 0);
+
+	ret = setsockopt(fd, SOL_TLS, TLS_TX, &tls12, tls12.len);
+	ASSERT_EQ(ret, 0);
+
+	ret = setsockopt(fd, SOL_TLS, TLS_RX, &tls12, tls12.len);
+	ASSERT_EQ(ret, 0);
+
+	len2 = sizeof(addr2);
+	ret = getsockname(fd, (struct sockaddr *)&addr2, &len2);
+	ASSERT_EQ(ret, 0);
+
+	EXPECT_EQ(len2, len);
+	EXPECT_EQ(memcmp(&addr, &addr2, len), 0);
+
+	/* Send/receive over the v4-mapped TLS socket to exercise the full path */
+	cfd = accept(sfd, NULL, NULL);
+	ASSERT_GE(cfd, 0);
+
+	ret = setsockopt(cfd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));
+	ASSERT_EQ(ret, 0);
+
+	ret = setsockopt(cfd, SOL_TLS, TLS_TX, &tls12, tls12.len);
+	ASSERT_EQ(ret, 0);
+
+	ret = setsockopt(cfd, SOL_TLS, TLS_RX, &tls12, tls12.len);
+	ASSERT_EQ(ret, 0);
+
+	/* Send/receive over the v4-mapped TLS socket to exercise the full path */
+	EXPECT_EQ(send(fd, test_str, send_len, 0), send_len);
+	EXPECT_EQ(recv(cfd, buf, send_len, 0), send_len);
+	EXPECT_EQ(memcmp(buf, test_str, send_len), 0);
+
+	EXPECT_EQ(send(cfd, test_str, send_len, 0), send_len);
+	EXPECT_EQ(recv(fd, buf, send_len, 0), send_len);
+	EXPECT_EQ(memcmp(buf, test_str, send_len), 0);
+
+	close(cfd);
+	close(fd);
+	close(sfd);
+}
+
 TEST(prequeue) {
 	struct tls_crypto_info_keys tls12;
 	char buf[20000], buf2[20000];
