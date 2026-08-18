@@ -37,25 +37,20 @@ static struct mptcp_pm_addr_entry *
 mptcp_userspace_pm_lookup_addr(struct mptcp_sock *msk,
 			       const struct mptcp_addr_info *addr)
 {
-	struct mptcp_pm_addr_entry *entry;
+	struct mptcp_pm_addr_entry *entry, *wildcard = NULL;
 
-	/* Compare ports when set in addr */
 	mptcp_for_each_userspace_pm_addr(msk, entry) {
-		if (mptcp_addresses_equal(&entry->addr, addr, addr->port != 0))
-			return entry;
+		if (mptcp_addresses_equal(&entry->addr, addr, false)) {
+			if (!addr->port)
+				return entry;
+			if (addr->port == entry->addr.port)
+				return entry;
+			if (!wildcard && !entry->addr.port)
+				wildcard = entry;
+		}
 	}
 
-	if (addr->port == 0)
-		return NULL;
-
-	/* Check only wildcard ports if no exact match with the port */
-	mptcp_for_each_userspace_pm_addr(msk, entry) {
-		if (entry->addr.port == 0 &&
-		    mptcp_addresses_equal(&entry->addr, addr, false))
-			return entry;
-	}
-
-	return NULL;
+	return wildcard;
 }
 
 static int mptcp_userspace_pm_append_new_local_addr(struct mptcp_sock *msk,
