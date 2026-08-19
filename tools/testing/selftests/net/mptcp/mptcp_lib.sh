@@ -106,17 +106,25 @@ mptcp_lib_pr_info() {
 	mptcp_lib_print_info "INFO: ${*}"
 }
 
-mptcp_lib_pr_nstat() {
+# $1: ns ; $@: nstat arguments
+# If cache exists, return it; otherwise run nstat with the given arguments.
+mptcp_lib_nstat_cmd() {
 	local ns="${1}"
 	local cache="/tmp/${ns}.out"
 	local hist="/tmp/${ns}.nstat"
 
-	if [ -f "${cache}" ]; then
-		awk '$2 != 0 { print "  "$0 }' "${cache}"
+	if [ -s "${cache}" ]; then
+		cat "${cache}"
 	else
-		NSTAT_HISTORY="${hist}" ip netns exec "${ns}" nstat -s |
-			grep Tcp
+		NSTAT_HISTORY="${hist}" ip netns exec "${ns}" nstat -sz "${@}"
 	fi
+}
+
+mptcp_lib_pr_nstat() {
+	local ns="${1}"
+
+	mptcp_lib_nstat_cmd "${ns}" |
+		awk '/Tcp/ { print "  "$0 }'
 }
 
 # $1-2: listener/connector ns ; $3 port
@@ -421,17 +429,10 @@ mptcp_lib_nstat_get() {
 mptcp_lib_get_counter() {
 	local ns="${1}"
 	local counter="${2}"
-	local cache="/tmp/${ns}.out"
-	local hist="/tmp/${ns}.nstat"
 	local count
 
-	if [[ -s "${cache}" && "${counter}" == *"Tcp"* ]]; then
-		count=$(awk "/^${counter} / {print \$2; exit}" "${cache}")
-	else
-		count=$(NSTAT_HISTORY="${hist}" ip netns exec "${ns}" \
-			nstat -sz "${counter}" |
-				awk 'NR==1 {next} {print $2}')
-	fi
+	count=$(mptcp_lib_nstat_cmd "${ns}" "${counter}" |
+		awk -v c="${counter}" '$1 == c {print $2; exit}')
 	if [ -z "${count}" ]; then
 		mptcp_lib_fail_if_expected_feature "${counter} counter"
 		return 1
