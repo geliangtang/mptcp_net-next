@@ -2361,10 +2361,26 @@ static bool sock_use_custom_sol_socket(const struct socket *sock)
 	return test_bit(SOCK_CUSTOM_SOCKOPT, &sock->flags);
 }
 
+int do_setsockopt(struct socket *sock, int level, int optname,
+		  sockptr_t optval, int optlen)
+{
+	const struct proto_ops *ops;
+	int err;
+
+	ops = READ_ONCE(sock->ops);
+	if (level == SOL_SOCKET && !sock_use_custom_sol_socket(sock))
+		err = sock_setsockopt(sock, level, optname, optval, optlen);
+	else if (unlikely(!ops->setsockopt))
+		err = -EOPNOTSUPP;
+	else
+		err = ops->setsockopt(sock, level, optname, optval,
+					    optlen);
+	return err;
+}
+
 int do_sock_setsockopt(struct socket *sock, bool compat, int level,
 		       int optname, sockptr_t optval, int optlen)
 {
-	const struct proto_ops *ops;
 	char *kernel_optval = NULL;
 	int err;
 
@@ -2388,14 +2404,7 @@ int do_sock_setsockopt(struct socket *sock, bool compat, int level,
 
 	if (kernel_optval)
 		optval = KERNEL_SOCKPTR(kernel_optval);
-	ops = READ_ONCE(sock->ops);
-	if (level == SOL_SOCKET && !sock_use_custom_sol_socket(sock))
-		err = sock_setsockopt(sock, level, optname, optval, optlen);
-	else if (unlikely(!ops->setsockopt))
-		err = -EOPNOTSUPP;
-	else
-		err = ops->setsockopt(sock, level, optname, optval,
-					    optlen);
+	err = do_setsockopt(sock, level, optname, optval, optlen);
 	kfree(kernel_optval);
 out_put:
 	return err;

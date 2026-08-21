@@ -791,6 +791,22 @@ void sock_set_reuseaddr(struct sock *sk)
 }
 EXPORT_SYMBOL(sock_set_reuseaddr);
 
+int sockopt_set_reuseaddr(struct sock *sk)
+{
+	if (sk->sk_socket &&
+	    test_bit(SOCK_CUSTOM_SOCKOPT, &sk->sk_socket->flags)) {
+		int val = SK_CAN_REUSE;
+
+		return sk->sk_socket->ops->setsockopt(sk->sk_socket, SOL_SOCKET,
+						      SO_REUSEADDR,
+						      KERNEL_SOCKPTR(&val),
+						      sizeof(val));
+	}
+	sock_set_reuseaddr(sk);
+	return 0;
+}
+EXPORT_SYMBOL(sockopt_set_reuseaddr);
+
 void sock_set_reuseport(struct sock *sk)
 {
 	lock_sock(sk);
@@ -808,11 +824,47 @@ void sock_no_linger(struct sock *sk)
 }
 EXPORT_SYMBOL(sock_no_linger);
 
+void socket_no_linger(struct socket *sock)
+{
+	struct linger ling = { .l_onoff = 1, .l_linger = 0 };
+
+	if (do_setsockopt(sock, SOL_SOCKET, SO_LINGER,
+			  KERNEL_SOCKPTR(&ling), sizeof(ling)))
+		pr_err("failed to set SO_LINGER");
+}
+EXPORT_SYMBOL(socket_no_linger);
+
 void sock_set_priority(struct sock *sk, u32 priority)
 {
 	WRITE_ONCE(sk->sk_priority, priority);
 }
 EXPORT_SYMBOL(sock_set_priority);
+
+int sockopt_set_priority(struct sock *sk, u32 priority)
+{
+	if (sk->sk_socket &&
+	    test_bit(SOCK_CUSTOM_SOCKOPT, &sk->sk_socket->flags))
+		return sk->sk_socket->ops->setsockopt(sk->sk_socket, SOL_SOCKET,
+						      SO_PRIORITY,
+						      KERNEL_SOCKPTR(&priority),
+						      sizeof(priority));
+	sock_set_priority(sk, priority);
+	return 0;
+}
+EXPORT_SYMBOL(sockopt_set_priority);
+
+int sockopt_set_bindtodevice(struct sock *sk, const char *dev)
+{
+	if (sk->sk_socket &&
+	    test_bit(SOCK_CUSTOM_SOCKOPT, &sk->sk_socket->flags))
+		return sk->sk_socket->ops->setsockopt(sk->sk_socket, SOL_SOCKET,
+						      SO_BINDTODEVICE,
+						      KERNEL_SOCKPTR((void *)dev),
+						      strlen(dev));
+	return sk_setsockopt(sk, SOL_SOCKET, SO_BINDTODEVICE,
+			     KERNEL_SOCKPTR((void *)dev), strlen(dev));
+}
+EXPORT_SYMBOL(sockopt_set_bindtodevice);
 
 void sock_set_sndtimeo(struct sock *sk, s64 secs)
 {
