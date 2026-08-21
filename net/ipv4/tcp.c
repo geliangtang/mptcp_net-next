@@ -3809,6 +3809,24 @@ int tcp_sock_set_keepcnt(struct sock *sk, int val)
 }
 EXPORT_SYMBOL(tcp_sock_set_keepcnt);
 
+int sock_set_nodelay(struct sock *sk)
+{
+	int val = 1;
+
+	return sock_common_setsockopt(sk->sk_socket, SOL_TCP,
+				      TCP_NODELAY, KERNEL_SOCKPTR(&val),
+				      sizeof(val));
+}
+EXPORT_SYMBOL(sock_set_nodelay);
+
+int sock_set_syncnt(struct sock *sk, int val)
+{
+	return sk->sk_socket->ops->setsockopt(sk->sk_socket, SOL_TCP,
+					      TCP_SYNCNT, KERNEL_SOCKPTR(&val),
+					      sizeof(val));
+}
+EXPORT_SYMBOL(sock_set_syncnt);
+
 int tcp_set_window_clamp(struct sock *sk, int val)
 {
 	u32 old_window_clamp, new_window_clamp, new_rcv_ssthresh;

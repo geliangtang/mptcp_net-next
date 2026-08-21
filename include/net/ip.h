@@ -862,5 +862,6 @@ void ip_sock_set_pktinfo(struct sock *sk);
 void ip_sock_set_recverr(struct sock *sk);
 void ip_sock_set_tos(struct sock *sk, int val);
 void  __ip_sock_set_tos(struct sock *sk, int val);
+int sock_set_tos(struct sock *sk, int tos);
 
 #endif	/* _IP_H */

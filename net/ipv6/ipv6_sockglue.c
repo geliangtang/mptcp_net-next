@@ -982,6 +982,17 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, sockptr_t optval,
 }
 EXPORT_SYMBOL(ipv6_setsockopt);
 
+int sock_set_tclass(struct sock *sk, int tclass)
+{
+	if (sk->sk_family == AF_INET6)
+		return sk->sk_socket->ops->setsockopt(sk->sk_socket, SOL_IPV6,
+						      IPV6_TCLASS,
+						      KERNEL_SOCKPTR(&tclass),
+						      sizeof(tclass));
+	return 0;
+}
+EXPORT_SYMBOL(sock_set_tclass);
+
 static int ipv6_getsockopt_sticky(struct sock *sk, struct ipv6_txoptions *opt,
 				  int optname, sockptr_t optval, int len)
 {

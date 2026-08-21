@@ -1825,57 +1825,6 @@ static int nvme_tcp_start_tls(struct nvme_ctrl *nctrl,
 	return ret;
 }
 
-static int nvme_tcp_sock_no_linger(struct sock *sk)
-{
-	struct linger ling = { .l_onoff = 1, .l_linger = 0 };
-
-	return do_sock_setsockopt(sk->sk_socket, false, SOL_SOCKET, SO_LINGER,
-				  KERNEL_SOCKPTR(&ling), sizeof(ling));
-}
-
-static int nvme_tcp_sock_set_priority(struct sock *sk, u32 priority)
-{
-	return do_sock_setsockopt(sk->sk_socket, false, SOL_SOCKET, SO_PRIORITY,
-				  KERNEL_SOCKPTR(&priority), sizeof(priority));
-}
-
-static int nvme_tcp_sock_set_bindtodevice(struct sock *sk, char *iface)
-{
-	return do_sock_setsockopt(sk->sk_socket, false, SOL_SOCKET,
-				  SO_BINDTODEVICE, KERNEL_SOCKPTR(iface),
-				  strlen(iface));
-}
-
-static int nvme_tcp_sock_set_nodelay(struct sock *sk)
-{
-	int val = 1;
-
-	return do_sock_setsockopt(sk->sk_socket, false, SOL_TCP, TCP_NODELAY,
-				  KERNEL_SOCKPTR(&val), sizeof(val));
-}
-
-static int nvme_tcp_sock_set_syncnt(struct sock *sk, int val)
-{
-	return do_sock_setsockopt(sk->sk_socket, false, SOL_TCP, TCP_SYNCNT,
-				  KERNEL_SOCKPTR(&val), sizeof(val));
-}
-
-static int nvme_tcp_sock_set_tos(struct sock *sk, int tos)
-{
-	return do_sock_setsockopt(sk->sk_socket, false, SOL_IP, IP_TOS,
-				  KERNEL_SOCKPTR(&tos), sizeof(tos));
-}
-
-static int nvme_tcp_sock_set_tclass(struct sock *sk, int tclass)
-{
-#if IS_ENABLED(CONFIG_IPV6)
-	if (sk->sk_family == AF_INET6)
-		return do_sock_setsockopt(sk->sk_socket, false, SOL_IPV6,
-					  IPV6_TCLASS, KERNEL_SOCKPTR(&tclass),
-					  sizeof(tclass));
-#endif
-	return 0;
-}
 
 static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 				key_serial_t pskid)
@@ -1933,7 +1882,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 #endif
 
 	/* Single syn retry */
-	ret = nvme_tcp_sock_set_syncnt(queue->sock->sk, 1);
+	ret = sock_set_syncnt(queue->sock->sk, 1);
 	if (ret) {
 		dev_err(nctrl->device,
 			"failed to set TCP_SYNCNT on queue %d err %d\n",
@@ -1942,7 +1891,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 	}
 
 	/* Set TCP no delay */
-	ret = nvme_tcp_sock_set_nodelay(queue->sock->sk);
+	ret = sock_set_nodelay(queue->sock->sk);
 	if (ret) {
 		dev_err(nctrl->device,
 			"failed to set TCP_NODELAY on queue %d err %d\n",
@@ -1955,19 +1904,13 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 	 * close. This is done to prevent stale data from being sent should
 	 * the network connection be restored before TCP times out.
 	 */
-	ret = nvme_tcp_sock_no_linger(queue->sock->sk);
-	if (ret) {
-		dev_err(nctrl->device,
-			"failed to set SO_LINGER on queue %d err %d\n",
-			qid, ret);
-		goto err_sock;
-	}
+	socket_no_linger(queue->sock->sk->sk_socket);
 
 	pr_info("%s so_priority=%d nctrl->opts->tos=%d\n",
 		__func__, so_priority, nctrl->opts->tos);
 
 	if (so_priority > 0) {
-		ret = nvme_tcp_sock_set_priority(queue->sock->sk, so_priority);
+		ret = sockopt_set_priority(queue->sock->sk, so_priority);
 		if (ret) {
 			dev_err(nctrl->device,
 				"failed to set SO_PRIORITY on queue %d err %d\n",
@@ -1978,7 +1921,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 
 	/* Set socket type of service */
 	if (nctrl->opts->tos >= 0) {
-		ret = nvme_tcp_sock_set_tos(queue->sock->sk, nctrl->opts->tos);
+		ret = sock_set_tos(queue->sock->sk, nctrl->opts->tos);
 		if (ret) {
 			dev_err(nctrl->device,
 				"failed to set IP_TOS on queue %d err %d\n",
@@ -1986,8 +1929,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 			goto err_sock;
 		}
 
-		ret = nvme_tcp_sock_set_tclass(queue->sock->sk,
-					       nctrl->opts->tos);
+		ret = sock_set_tclass(queue->sock->sk, nctrl->opts->tos);
 		if (ret) {
 			dev_err(nctrl->device,
 				"failed to set IPV6_TCLASS on queue %d err %d\n",
@@ -2023,7 +1965,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 	if (nctrl->opts->mask & NVMF_OPT_HOST_IFACE) {
 		char *iface = nctrl->opts->host_iface;
 
-		ret = nvme_tcp_sock_set_bindtodevice(queue->sock->sk, iface);
+		ret = sockopt_set_bindtodevice(queue->sock->sk, iface);
 		if (ret) {
 			dev_err(nctrl->device,
 			  "failed to bind to interface %s queue %d err %d\n",
