@@ -612,6 +612,13 @@ void ip_sock_set_tos(struct sock *sk, int val)
 }
 EXPORT_SYMBOL(ip_sock_set_tos);
 
+int sock_set_tos(struct sock *sk, int tos)
+{
+	return sk->sk_socket->ops->setsockopt(sk->sk_socket, SOL_IP, IP_TOS,
+					      KERNEL_SOCKPTR(&tos), sizeof(tos));
+}
+EXPORT_SYMBOL(sock_set_tos);
+
 void ip_sock_set_freebind(struct sock *sk)
 {
 	inet_set_bit(FREEBIND, sk);

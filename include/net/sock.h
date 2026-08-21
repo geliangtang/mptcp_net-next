@@ -1889,6 +1889,8 @@ int sock_setsockopt(struct socket *sock, int level, int op,
 		    sockptr_t optval, unsigned int optlen);
 int do_sock_setsockopt(struct socket *sock, bool compat, int level,
 		       int optname, sockptr_t optval, int optlen);
+int do_setsockopt(struct socket *sock, int level, int optname,
+		  sockptr_t optval, int optlen);
 int do_sock_getsockopt(struct socket *sock, bool compat, int level,
 		       int optname, sockptr_t optval, sockptr_t optlen);
 
@@ -3155,11 +3157,15 @@ static inline void bpf_skops_tx_timestamping(struct sock *sk, struct sk_buff *sk
 }
 #endif
 void sock_no_linger(struct sock *sk);
+void socket_no_linger(struct socket *sock);
 void sock_set_keepalive(struct sock *sk);
 void sock_set_priority(struct sock *sk, u32 priority);
+int sockopt_set_priority(struct sock *sk, u32 priority);
 void sock_set_rcvbuf(struct sock *sk, int val);
 void sock_set_mark(struct sock *sk, u32 val);
 void sock_set_reuseaddr(struct sock *sk);
+int sockopt_set_reuseaddr(struct sock *sk);
+int sockopt_set_bindtodevice(struct sock *sk, const char *dev);
 void sock_set_reuseport(struct sock *sk);
 void sock_set_sndtimeo(struct sock *sk, s64 secs);
 
