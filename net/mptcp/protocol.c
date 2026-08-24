@@ -4904,6 +4904,31 @@ static int mptcp_peek_len(struct socket *sock)
 	return mptcp_inq(sock->sk);
 }
 
+static int mptcp_read_skb(struct sock *sk, skb_read_actor_t recv_actor)
+{
+	struct sk_buff *skb;
+	int copied = 0;
+
+	if (sk->sk_state == TCP_LISTEN)
+		return -ENOTCONN;
+
+	while ((skb = skb_peek(&sk->sk_receive_queue)) != NULL) {
+		int used;
+
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
+		used = recv_actor(sk, skb);
+		if (used < 0) {
+			if (!copied)
+				copied = used;
+			break;
+		}
+		copied += used;
+	}
+
+	return copied;
+}
+
 static const struct proto_ops mptcp_stream_ops = {
 	.family		   = PF_INET,
 	.owner		   = THIS_MODULE,
@@ -4929,6 +4954,7 @@ static const struct proto_ops mptcp_stream_ops = {
 	.peek_len	   = mptcp_peek_len,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
 	.splice_eof	   = inet_splice_eof,
+	.read_skb	   = mptcp_read_skb,
 };
 
 static struct inet_protosw mptcp_protosw = {
@@ -5056,6 +5082,7 @@ static const struct proto_ops mptcp_v6_stream_ops = {
 	.peek_len	   = mptcp_peek_len,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
 	.splice_eof	   = inet_splice_eof,
+	.read_skb	   = mptcp_read_skb,
 };
 
 static struct proto mptcp_v6_prot;
