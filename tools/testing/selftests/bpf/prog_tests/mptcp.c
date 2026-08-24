@@ -599,6 +599,10 @@ static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
 {
 	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
 	int err, zero = 0, one = 1;
+	char snd[9] = "123456789";
+	int sent, recvd = -1;
+	int retries = 30;
+	char rcv[10];
 
 	/* start server with MPTCP enabled */
 	listen_fd = start_mptcp_server(AF_INET, NULL, 0, 0);
@@ -627,6 +631,31 @@ static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
 				  &one, &client_fd1, BPF_NOEXIST);
 	if (!ASSERT_EQ(err, 0, "client should be allowed"))
 		goto end;
+
+	/* test ingress redirect: data redirected to server_fd's own
+	 * ingress queue, read back via mptcp_bpf_recvmsg
+	 */
+	skel->bss->redirect_idx = 0;
+	skel->bss->redirect_flags = BPF_F_INGRESS;
+
+	sent = send(client_fd1, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "ingress:send"))
+		goto end;
+
+	while (retries-- > 0) {
+		recvd = recv(server_fd, rcv, sizeof(rcv), MSG_DONTWAIT);
+		if (recvd > 0)
+			break;
+		usleep(100000);
+	}
+	if (!ASSERT_EQ(recvd, sizeof(snd), "ingress:recv size"))
+		goto end;
+
+	if (!ASSERT_MEMEQ(rcv, snd, sizeof(snd), "ingress:recv data"))
+		goto end;
+
+	skel->bss->redirect_flags = 0;
+
 end:
 	if (client_fd1 >= 0)
 		close(client_fd1);
