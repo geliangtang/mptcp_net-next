@@ -4369,6 +4369,34 @@ out:
 	return 0;
 }
 
+static void mptcp_splice_eof(struct socket *sock)
+{
+	struct mptcp_subflow_context *subflow;
+	struct sock *sk = sock->sk, *ssk;
+	struct mptcp_sock *msk;
+	int mss_now, size_goal;
+	struct tcp_sock *tp;
+
+	msk = mptcp_sk(sk);
+
+	lock_sock(sk);
+	__mptcp_push_pending(sk, 0);
+	mptcp_rps_record_subflows(msk);
+	mptcp_for_each_subflow(msk, subflow) {
+		ssk = mptcp_subflow_tcp_sock(subflow);
+		if (ssk->sk_state == TCP_CLOSE ||
+		    !tcp_write_queue_tail(ssk))
+			continue;
+
+		lock_sock_nested(ssk, SINGLE_DEPTH_NESTING);
+		tp = tcp_sk(ssk);
+		mss_now = tcp_send_mss(ssk, &size_goal, 0);
+		tcp_push(ssk, 0, mss_now, tp->nonagle, size_goal);
+		release_sock(ssk);
+	}
+	release_sock(sk);
+}
+
 struct proto mptcp_prot = {
 	.name		= "MPTCP",
 	.owner		= THIS_MODULE,
@@ -4401,6 +4429,7 @@ struct proto mptcp_prot = {
 	.slab_flags	= SLAB_TYPESAFE_BY_RCU,
 	.no_autobind	= true,
 	.psock_update_sk_prot	= mptcp_bpf_update_proto,
+	.splice_eof	= mptcp_splice_eof,
 };
 
 static int mptcp_bind(struct socket *sock, struct sockaddr_unsized *uaddr, int addr_len)
@@ -4962,6 +4991,7 @@ static const struct proto_ops mptcp_stream_ops = {
 	.peek_len	   = mptcp_peek_len,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
 	.read_skb	   = mptcp_read_skb,
+	.splice_eof	   = inet_splice_eof,
 };
 
 static struct inet_protosw mptcp_protosw = {
@@ -5089,6 +5119,7 @@ static const struct proto_ops mptcp_v6_stream_ops = {
 	.peek_len	   = mptcp_peek_len,
 	.sendmsg_locked	   = mptcp_sendmsg_locked,
 	.read_skb	   = mptcp_read_skb,
+	.splice_eof	   = inet_splice_eof,
 };
 
 static struct proto mptcp_v6_prot;
