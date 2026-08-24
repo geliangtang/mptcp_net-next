@@ -9,6 +9,7 @@ char _license[] SEC("license") = "GPL";
 
 int sk_index;
 int redirect_idx;
+int redirect_flags;
 int trace_port;
 int helper_ret;
 struct {
@@ -42,5 +43,6 @@ SEC("sk_skb/stream_verdict")
 int mptcp_sockmap_redirect(struct __sk_buff *skb)
 {
 	/* redirect skb to the sk under sock_map[redirect_idx] */
-	return bpf_sk_redirect_map(skb, &sock_map, redirect_idx, 0);
+	return bpf_sk_redirect_map(skb, &sock_map, redirect_idx,
+				   redirect_flags);
 }
