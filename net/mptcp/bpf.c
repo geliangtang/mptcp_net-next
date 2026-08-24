@@ -13,6 +13,7 @@
 #include <linux/bpf_verifier.h>
 #include <linux/btf.h>
 #include <linux/btf_ids.h>
+#include <linux/skmsg.h>
 #include <net/bpf_sk_storage.h>
 #include "protocol.h"
 
@@ -361,3 +362,90 @@ static int __init bpf_mptcp_kfunc_init(void)
 	return ret;
 }
 late_initcall(bpf_mptcp_kfunc_init);
+
+enum {
+	MPTCP_BPF_IPV4,
+	MPTCP_BPF_IPV6,
+	MPTCP_BPF_NUM_PROTS,
+};
+
+enum {
+	MPTCP_BPF_BASE,
+	MPTCP_BPF_NUM_CFGS,
+};
+
+static struct proto mptcp_bpf_prots[MPTCP_BPF_NUM_PROTS][MPTCP_BPF_NUM_CFGS];
+
+static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
+				     struct proto *base)
+{
+	prot[MPTCP_BPF_BASE]			= *base;
+	prot[MPTCP_BPF_BASE].destroy		= sock_map_destroy;
+	prot[MPTCP_BPF_BASE].close		= sock_map_close;
+	prot[MPTCP_BPF_BASE].sock_is_readable	= sk_msg_is_readable;
+}
+
+#if IS_ENABLED(CONFIG_MPTCP_IPV6)
+static struct proto *mptcpv6_prot_saved __read_mostly;
+static DEFINE_SPINLOCK(mptcpv6_prot_lock);
+
+static void mptcp_bpf_check_v6_needs_rebuild(struct proto *ops)
+{
+	/* Load with acquire semantics to ensure we see the latest protocol
+	 * structure before checking for rebuild.
+	 */
+	if (unlikely(ops != smp_load_acquire(&mptcpv6_prot_saved))) {
+		spin_lock_bh(&mptcpv6_prot_lock);
+		if (likely(ops != mptcpv6_prot_saved)) {
+			struct proto *v6_prots;
+
+			v6_prots = mptcp_bpf_prots[MPTCP_BPF_IPV6];
+			mptcp_bpf_rebuild_protos(v6_prots, ops);
+			/* Ensure mptcpv6_prot_saved update is visible before
+			 * releasing lock
+			 */
+			smp_store_release(&mptcpv6_prot_saved, ops);
+		}
+		spin_unlock_bh(&mptcpv6_prot_lock);
+	}
+}
+#endif
+
+int mptcp_bpf_update_proto(struct sock *sk, struct sk_psock *psock,
+			   bool restore)
+{
+	int family = sk->sk_family == AF_INET6 ? MPTCP_BPF_IPV6 :
+						 MPTCP_BPF_IPV4;
+	int config = MPTCP_BPF_BASE;
+
+	if (restore) {
+		WRITE_ONCE(sk->sk_write_space, psock->saved_write_space);
+		/* Pairs with lockless read in sk_clone() */
+		sock_replace_proto(sk, psock->sk_proto);
+		return 0;
+	}
+
+#if IS_ENABLED(CONFIG_MPTCP_IPV6)
+	if (sk->sk_family == AF_INET6)
+		mptcp_bpf_check_v6_needs_rebuild(psock->sk_proto);
+#endif
+
+	/* Pairs with lockless read in sk_clone() */
+	sock_replace_proto(sk, &mptcp_bpf_prots[family][config]);
+	return 0;
+}
+
+void mptcp_bpf_clone(const struct sock *sk, struct sock *newsk)
+{
+	struct proto *prot = newsk->sk_prot;
+
+	if (is_insidevar(prot, mptcp_bpf_prots))
+		newsk->sk_prot = sk->sk_prot_creator;
+}
+
+static int __init mptcp_bpf_v4_build_proto(void)
+{
+	mptcp_bpf_rebuild_protos(mptcp_bpf_prots[MPTCP_BPF_IPV4], &mptcp_prot);
+	return 0;
+}
+late_initcall(mptcp_bpf_v4_build_proto);
