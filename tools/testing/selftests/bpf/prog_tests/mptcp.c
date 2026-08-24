@@ -600,6 +600,7 @@ static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
 	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
 	int err, zero = 0, one = 1;
 	char snd[9] = "123456789";
+	int map_fd, verdict_fd;
 	int sent, recvd = -1;
 	int retries = 30;
 	char rcv[10];
@@ -656,6 +657,47 @@ static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
 
 	skel->bss->redirect_flags = 0;
 
+	map_fd = bpf_map__fd(skel->maps.sock_map);
+
+	bpf_map_delete_elem(map_fd, &zero);
+
+	sent = send(client_fd1, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "sendmsg:send"))
+		goto end;
+
+	recvd = recv(server_fd, rcv, sizeof(rcv), 0);
+	if (!ASSERT_EQ(recvd, sizeof(snd), "sendmsg:recv size"))
+		goto end;
+	if (!ASSERT_MEMEQ(rcv, snd, sizeof(snd), "sendmsg:recv data"))
+		goto end;
+
+	verdict_fd = bpf_program__fd(skel->progs.mptcp_sockmap_msg_verdict);
+	err = bpf_prog_attach(verdict_fd, map_fd, BPF_SK_MSG_VERDICT, 0);
+	if (!ASSERT_OK(err, "sendmsg:attach"))
+		goto end;
+
+	bpf_map_delete_elem(map_fd, &one);
+	err = bpf_map_update_elem(map_fd, &one, &client_fd1, BPF_ANY);
+	if (!ASSERT_OK(err, "sendmsg:re-add client_fd1"))
+		goto sendmsg_detach;
+
+	skel->bss->redirect_idx = 1;
+	skel->bss->redirect_flags = BPF_F_INGRESS;
+
+	sent = send(client_fd1, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "sendmsg_redir:send"))
+		goto sendmsg_detach;
+
+	recvd = recv(client_fd1, rcv, sizeof(rcv), 0);
+	if (!ASSERT_EQ(recvd, sizeof(snd), "sendmsg_redir:recv size"))
+		goto sendmsg_detach;
+	if (!ASSERT_MEMEQ(rcv, snd, sizeof(snd), "sendmsg_redir:recv data"))
+		goto sendmsg_detach;
+
+	skel->bss->redirect_flags = 0;
+
+sendmsg_detach:
+	bpf_prog_detach2(verdict_fd, map_fd, BPF_SK_MSG_VERDICT);
 end:
 	if (client_fd1 >= 0)
 		close(client_fd1);
