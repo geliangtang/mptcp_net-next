@@ -46,3 +46,11 @@ int mptcp_sockmap_redirect(struct __sk_buff *skb)
 	return bpf_sk_redirect_map(skb, &sock_map, redirect_idx,
 				   redirect_flags);
 }
+
+SEC("sk_msg")
+int mptcp_sockmap_msg_verdict(struct sk_msg_md *msg)
+{
+	/* redirect msg to the sk under sock_map[redirect_idx] */
+	return bpf_msg_redirect_map(msg, &sock_map, redirect_idx,
+				    redirect_flags);
+}
