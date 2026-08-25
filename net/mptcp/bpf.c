@@ -16,6 +16,7 @@
 #include <linux/skmsg.h>
 #include <net/bpf_sk_storage.h>
 #include <net/inet_common.h>
+#include <net/tls.h>
 #include "protocol.h"
 
 #ifdef CONFIG_BPF_JIT
