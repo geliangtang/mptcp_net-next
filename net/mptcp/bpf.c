@@ -15,6 +15,7 @@
 #include <linux/btf_ids.h>
 #include <linux/skmsg.h>
 #include <net/bpf_sk_storage.h>
+#include <net/tls.h>
 #include "protocol.h"
 
 #ifdef CONFIG_BPF_JIT
