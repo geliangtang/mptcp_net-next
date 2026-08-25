@@ -365,8 +365,8 @@ static int tcp_bpf_ioctl(struct sock *sk, int cmd, int *karg)
 	return 0;
 }
 
-static int tcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
-			   int flags)
+int __tcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
+		      int (*recvmsg)(struct sock *, struct msghdr *, size_t, int))
 {
 	struct sk_psock *psock;
 	int copied, ret;
@@ -379,11 +379,11 @@ static int tcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 
 	psock = sk_psock_get(sk);
 	if (unlikely(!psock))
-		return tcp_recvmsg(sk, msg, len, flags);
+		return recvmsg(sk, msg, len, flags);
 	if (!skb_queue_empty(&sk->sk_receive_queue) &&
 	    sk_psock_queue_empty(psock)) {
 		sk_psock_put(sk, psock);
-		return tcp_recvmsg(sk, msg, len, flags);
+		return recvmsg(sk, msg, len, flags);
 	}
 	lock_sock(sk);
 msg_bytes_ready:
@@ -403,7 +403,7 @@ msg_bytes_ready:
 				goto msg_bytes_ready;
 			release_sock(sk);
 			sk_psock_put(sk, psock);
-			return tcp_recvmsg(sk, msg, len, flags);
+			return recvmsg(sk, msg, len, flags);
 		}
 		copied = -EAGAIN;
 	}
@@ -413,6 +413,12 @@ unlock:
 	release_sock(sk);
 	sk_psock_put(sk, psock);
 	return ret;
+}
+
+static int tcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
+			   int flags)
+{
+	return __tcp_bpf_recvmsg(sk, msg, len, flags, tcp_recvmsg);
 }
 
 static int tcp_bpf_send_verdict(struct sock *sk, struct sk_psock *psock,

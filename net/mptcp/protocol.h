@@ -1391,6 +1391,7 @@ static inline void mptcp_join_cookie_init(void) {}
 #endif
 
 extern struct proto mptcp_prot;
+int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags);
 
 #ifdef CONFIG_BPF_SYSCALL
 int mptcp_bpf_update_proto(struct sock *sk, struct sk_psock *psock,

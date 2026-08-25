@@ -2449,8 +2449,7 @@ static unsigned int mptcp_inq_hint(struct sock *sk)
 	return (unsigned int)hint_val;
 }
 
-static int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
-			 int flags)
+int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct scm_timestamping_internal tss;
