@@ -119,7 +119,7 @@ retry:
 
 		bvec_set_page(&bvec, page, size, off);
 		iov_iter_bvec(&msghdr.msg_iter, ITER_SOURCE, &bvec, 1, size);
-		ret = tcp_sendmsg_locked(sk, &msghdr, size);
+		ret = sk->sk_socket->ops->sendmsg_locked(sk, &msghdr, size);
 		if (ret <= 0)
 			return ret;
 
@@ -536,7 +536,8 @@ more_data:
 	return ret;
 }
 
-static int tcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
+int __tcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size,
+		      int (*sendmsg)(struct sock *, struct msghdr *, size_t))
 {
 	struct sk_msg tmp, *msg_tx = NULL;
 	int copied = 0, err = 0, ret = 0;
@@ -550,7 +551,7 @@ static int tcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 
 	psock = sk_psock_get(sk);
 	if (unlikely(!psock))
-		return tcp_sendmsg(sk, msg, size);
+		return sendmsg(sk, msg, size);
 
 	lock_sock(sk);
 	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
@@ -622,6 +623,11 @@ out_err:
 	release_sock(sk);
 	sk_psock_put(sk, psock);
 	return copied > 0 ? copied : err;
+}
+
+static int tcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
+{
+	return __tcp_bpf_sendmsg(sk, msg, size, tcp_sendmsg);
 }
 
 enum {
