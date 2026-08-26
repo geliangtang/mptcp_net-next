@@ -564,3 +564,25 @@ out:
 	return copied;
 }
 #endif /* CONFIG_BPF_STREAM_PARSER */
+
+BPF_CALL_4(mptcp_sk_select_reuseport, struct sk_reuseport_kern *, reuse_kern,
+	   struct bpf_map *, map, void *, key, u32, flags)
+{
+	struct sock *sk, *selected_sk;
+
+	sk = map->ops->map_lookup_elem(map, key);
+	if (!sk)
+		return -ENOENT;
+
+	selected_sk = READ_ONCE(mptcp_sk(sk)->first);
+	if (!selected_sk) {
+		if (sk_is_refcounted(sk))
+			sock_put(sk);
+		return -ENOENT;
+	}
+
+	if (sk_is_refcounted(sk))
+		sock_put(sk);
+	return sk_select_reuseport_lookup(reuse_kern, selected_sk, map);
+}
+EXPORT_SYMBOL_GPL(mptcp_sk_select_reuseport);
