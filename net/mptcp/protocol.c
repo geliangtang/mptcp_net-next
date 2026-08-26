@@ -4535,7 +4535,7 @@ static int mptcp_inq(struct sock *sk)
 	return (unsigned int)avail;
 }
 
-static int mptcp_ioctl(struct sock *sk, int cmd, int *karg)
+int mptcp_ioctl(struct sock *sk, int cmd, int *karg)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
 	bool slow;
