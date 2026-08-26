@@ -32,6 +32,8 @@
 #define SOL_TCP 6
 #endif
 
+static bool mptcp;
+
 static int connected_socket_v4(void)
 {
 	struct sockaddr_in addr = {
@@ -42,7 +44,7 @@ static int connected_socket_v4(void)
 	socklen_t len = sizeof(addr);
 	int s, repair, err;
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
+	s = socket(AF_INET, SOCK_STREAM, mptcp ? IPPROTO_MPTCP : 0);
 	if (!ASSERT_GE(s, 0, "socket"))
 		goto error;
 
@@ -466,7 +468,8 @@ static void test_sockmap_skb_verdict_shutdown(void)
 	if (!ASSERT_OK(err, "bpf_prog_attach"))
 		goto out;
 
-	err = create_pair(AF_INET, SOCK_STREAM, &c1, &p1);
+	err = create_pair_proto(AF_INET, SOCK_STREAM,
+				mptcp ? IPPROTO_MPTCP : 0, &c1, &p1);
 	if (err < 0)
 		goto out;
 
@@ -568,7 +571,9 @@ out:
 static void test_sockmap_skb_verdict_fionread(bool pass_prog)
 {
 	do_test_sockmap_skb_verdict_fionread(SOCK_STREAM, pass_prog);
-	do_test_sockmap_skb_verdict_fionread(SOCK_DGRAM, pass_prog);
+	/* UDP is unaffected by MPTCP, only run it once (in tcp mode) */
+	if (!mptcp)
+		do_test_sockmap_skb_verdict_fionread(SOCK_DGRAM, pass_prog);
 }
 
 static void test_sockmap_skb_verdict_change_tail(void)
@@ -588,7 +593,8 @@ static void test_sockmap_skb_verdict_change_tail(void)
 	err = bpf_prog_attach(verdict, map, BPF_SK_SKB_STREAM_VERDICT, 0);
 	if (!ASSERT_OK(err, "bpf_prog_attach"))
 		goto out;
-	err = create_pair(AF_INET, SOCK_STREAM, &c1, &p1);
+	err = create_pair_proto(AF_INET, SOCK_STREAM,
+				mptcp ? IPPROTO_MPTCP : 0, &c1, &p1);
 	if (!ASSERT_OK(err, "create_pair()"))
 		goto out;
 	err = bpf_map_update_elem(map, &zero, &c1, BPF_NOEXIST);
@@ -639,7 +645,8 @@ static void test_sockmap_msg_verdict_pop_data(void)
 	if (!ASSERT_OK(err, "bpf_prog_attach"))
 		goto out;
 
-	err = create_pair(AF_INET, SOCK_STREAM, &c1, &p1);
+	err = create_pair_proto(AF_INET, SOCK_STREAM,
+				mptcp ? IPPROTO_MPTCP : 0, &c1, &p1);
 	if (!ASSERT_OK(err, "create_pair"))
 		goto out;
 
@@ -670,7 +677,8 @@ static void test_sockmap_skb_verdict_peek_helper(int map)
 	char snd[256] = "0123456789";
 	char rcv[256] = "0";
 
-	err = create_pair(AF_INET, SOCK_STREAM, &c1, &p1);
+	err = create_pair_proto(AF_INET, SOCK_STREAM,
+				mptcp ? IPPROTO_MPTCP : 0, &c1, &p1);
 	if (!ASSERT_OK(err, "create_pair()"))
 		return;
 
@@ -1362,80 +1370,129 @@ out:
 	test_sockmap_pass_prog__destroy(skel);
 }
 
-void test_sockmap_basic(void)
+static void run_basic_tests(void)
 {
-	if (test__start_subtest("sockmap create_update_free"))
+	char s[MAX_TEST_NAME];
+
+	snprintf(s, sizeof(s), "sockmap %s create_update_free", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash create_update_free"))
+	snprintf(s, sizeof(s), "sockhash %s create_update_free", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap vsock delete on close"))
+	snprintf(s, sizeof(s), "sockmap %s vsock delete on close", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_vsock_delete_on_close();
-	if (test__start_subtest("sockmap sk_msg load helpers"))
+	snprintf(s, sizeof(s), "sockmap %s sk_msg load helpers", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_skmsg_helpers(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash sk_msg load helpers"))
+	snprintf(s, sizeof(s), "sockhash %s sk_msg load helpers", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_skmsg_helpers(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap update in unsafe context"))
+	snprintf(s, sizeof(s), "sockmap %s update in unsafe context", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_invalid_update();
-	if (test__start_subtest("sockmap copy"))
+	snprintf(s, sizeof(s), "sockmap %s copy", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_copy(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash copy"))
+	snprintf(s, sizeof(s), "sockhash %s copy", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_copy(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap skb_verdict attach")) {
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict attach", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s)) {
 		test_sockmap_skb_verdict_attach(BPF_SK_SKB_VERDICT,
 						BPF_SK_SKB_STREAM_VERDICT);
 		test_sockmap_skb_verdict_attach(BPF_SK_SKB_STREAM_VERDICT,
 						BPF_SK_SKB_VERDICT);
 	}
-	if (test__start_subtest("sockmap skb_verdict attach_with_link"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict attach_with_link", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_attach_with_link();
-	if (test__start_subtest("sockmap msg_verdict progs query"))
+	snprintf(s, sizeof(s), "sockmap %s msg_verdict progs query", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_progs_query(BPF_SK_MSG_VERDICT);
-	if (test__start_subtest("sockmap stream_parser progs query"))
+	snprintf(s, sizeof(s), "sockmap %s stream_parser progs query", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_progs_query(BPF_SK_SKB_STREAM_PARSER);
-	if (test__start_subtest("sockmap stream_verdict progs query"))
+	snprintf(s, sizeof(s), "sockmap %s stream_verdict progs query", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_progs_query(BPF_SK_SKB_STREAM_VERDICT);
-	if (test__start_subtest("sockmap skb_verdict progs query"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict progs query", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_progs_query(BPF_SK_SKB_VERDICT);
-	if (test__start_subtest("sockmap skb_verdict shutdown"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict shutdown", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_shutdown();
-	if (test__start_subtest("sockmap skb_verdict fionread"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict fionread", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_fionread(true);
-	if (test__start_subtest("sockmap no_verdict fionread"))
+	snprintf(s, sizeof(s), "sockmap %s no_verdict fionread", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_no_verdict_fionread();
-	if (test__start_subtest("sockmap skb_verdict fionread on drop"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict fionread on drop", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_fionread(false);
-	if (test__start_subtest("sockmap skb_verdict change tail"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict change tail", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_change_tail();
-	if (test__start_subtest("sockmap msg_verdict pop_data overflow"))
+	snprintf(s, sizeof(s), "sockmap %s msg_verdict pop_data overflow", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_msg_verdict_pop_data();
-	if (test__start_subtest("sockmap skb_verdict msg_f_peek"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict msg_f_peek", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_peek();
-	if (test__start_subtest("sockmap skb_verdict msg_f_peek with link"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict msg_f_peek with link", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_peek_with_link();
-	if (test__start_subtest("sockmap unconnected af_unix"))
+	snprintf(s, sizeof(s), "sockmap %s unconnected af_unix", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_unconnected_unix();
-	if (test__start_subtest("sockmap one socket to many map entries"))
+	snprintf(s, sizeof(s), "sockmap %s one socket to many map entries", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_many_socket();
-	if (test__start_subtest("sockmap one socket to many maps"))
+	snprintf(s, sizeof(s), "sockmap %s one socket to many maps", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_many_maps();
-	if (test__start_subtest("sockmap same socket replace"))
+	snprintf(s, sizeof(s), "sockmap %s same socket replace", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_same_sock();
-	if (test__start_subtest("sockmap sk_msg attach sockmap helpers with link"))
+	snprintf(s, sizeof(s), "sockmap %s sk_msg attach sockmap helpers with link", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_skmsg_helpers_with_link(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash sk_msg attach sockhash helpers with link"))
+	snprintf(s, sizeof(s), "sockhash %s sk_msg attach sockhash helpers with link", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_skmsg_helpers_with_link(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap skb_verdict vsock poll"))
+	snprintf(s, sizeof(s), "sockmap %s skb_verdict vsock poll", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_skb_verdict_vsock_poll();
-	if (test__start_subtest("sockmap vsock unconnected"))
+	snprintf(s, sizeof(s), "sockmap %s vsock unconnected", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_vsock_unconnected();
-	if (test__start_subtest("sockmap with zc"))
+	snprintf(s, sizeof(s), "sockmap %s with zc", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_zc();
-	if (test__start_subtest("sockmap recover"))
+	snprintf(s, sizeof(s), "sockmap %s recover", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_copied_seq(false);
-	if (test__start_subtest("sockmap recover with strp"))
+	snprintf(s, sizeof(s), "sockmap %s recover with strp", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_copied_seq(true);
-	if (test__start_subtest("sockmap tcp multi channels"))
+	snprintf(s, sizeof(s), "sockmap %s multi channels", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_multi_channels(SOCK_STREAM);
-	if (test__start_subtest("sockmap udp multi channels"))
+	/* UDP is unaffected by MPTCP, only run it once (in tcp mode) */
+	if (!mptcp && test__start_subtest("sockmap udp multi channels"))
 		test_sockmap_multi_channels(SOCK_DGRAM);
+}
+
+void test_sockmap_basic(void)
+{
+	bool has_mptcp = is_mptcp_enable();
+
+	for (int i = 0; i < 2; i++) {
+		mptcp = i;
+		if (mptcp && !has_mptcp)
+			continue;
+		run_basic_tests();
+	}
 }
