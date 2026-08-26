@@ -408,6 +408,11 @@ static int mptcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 	return __tcp_bpf_sendmsg(sk, msg, size, mptcp_sendmsg);
 }
 
+static int mptcp_bpf_ioctl(struct sock *sk, int cmd, int *karg)
+{
+	return __tcp_bpf_ioctl(sk, cmd, karg, mptcp_ioctl);
+}
+
 static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
 				     struct proto *base)
 {
@@ -416,6 +421,7 @@ static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
 	prot[MPTCP_BPF_BASE].close		= sock_map_close;
 	prot[MPTCP_BPF_BASE].recvmsg		= mptcp_bpf_recvmsg;
 	prot[MPTCP_BPF_BASE].sock_is_readable	= sk_msg_is_readable;
+	prot[MPTCP_BPF_BASE].ioctl		= mptcp_bpf_ioctl;
 
 	prot[MPTCP_BPF_TX]			= prot[MPTCP_BPF_BASE];
 	prot[MPTCP_BPF_TX].sendmsg		= mptcp_bpf_sendmsg;
