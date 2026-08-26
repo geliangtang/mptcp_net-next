@@ -523,3 +523,44 @@ void mptcp_eat_skb(struct sock *sk, struct sk_buff *skb)
 	set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
 	mptcp_schedule_work(sk);
 }
+
+#if IS_ENABLED(CONFIG_BPF_STREAM_PARSER)
+int mptcp_bpf_strp_read_sock(struct strparser *strp, read_descriptor_t *desc,
+			     sk_read_actor_t recv_actor)
+{
+	struct sock *sk = strp->sk;
+	struct sk_psock *psock;
+	struct mptcp_sock *msk;
+	int copied = 0;
+
+	msk = mptcp_sk(sk);
+	rcu_read_lock();
+	psock = sk_psock(sk);
+	if (WARN_ON_ONCE(!psock)) {
+		desc->error = -EINVAL;
+		goto out;
+	}
+
+	psock->ingress_bytes = 0;
+	copied = mptcp_read_sock_noack(sk, desc, recv_actor);
+	if (copied < 0)
+		goto out;
+
+	/* __mptcp_read_sock already updated msk->copied_seq and
+	 * msk->bytes_consumed. Sync psock->copied_seq so the strp
+	 * framework tracks the correct position.
+	 */
+	psock->copied_seq = msk->copied_seq;
+	/* recv_actor may redirect skb to another socket (SK_REDIRECT) or
+	 * just put skb into ingress queue of current socket (SK_PASS).
+	 * For SK_REDIRECT, we need to ack the frame immediately but for
+	 * SK_PASS, we want to delay the ack until mptcp_bpf_recvmsg_parser().
+	 */
+	msk->read_copied += copied;
+	set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
+	mptcp_schedule_work(sk);
+out:
+	rcu_read_unlock();
+	return copied;
+}
+#endif /* CONFIG_BPF_STREAM_PARSER */

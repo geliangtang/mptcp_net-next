@@ -4756,6 +4756,12 @@ static int mptcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	return __mptcp_read_sock(sk, desc, recv_actor, false);
 }
 
+int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+			  sk_read_actor_t recv_actor)
+{
+	return __mptcp_read_sock(sk, desc, recv_actor, true);
+}
+
 static int __mptcp_splice_read(struct sock *sk, struct tcp_splice_state *tss)
 {
 	/* Store TCP splice context information in read_descriptor_t. */
@@ -5119,3 +5125,8 @@ int __init mptcp_proto_v6_init(void)
 	return err;
 }
 #endif
+
+u64 mptcp_sk_copied_seq(struct sock *sk)
+{
+	return READ_ONCE(mptcp_sk(sk)->copied_seq);
+}
