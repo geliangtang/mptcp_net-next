@@ -14,6 +14,7 @@
 #include <net/tcp.h>
 #include <net/mptcp.h>
 #include "protocol.h"
+#include "mib.h"
 
 #define MIN_INFO_OPTLEN_SIZE		16
 #define MIN_FULL_INFO_OPTLEN_SIZE	40
@@ -676,12 +677,28 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		case TCP_QUEUE_SEQ:
 		case TCP_REPAIR_OPTIONS:
 		case TCP_REPAIR_WINDOW:
+		case TCP_AO_ADD_KEY:
+		case TCP_AO_DEL_KEY:
+		case TCP_AO_INFO:
+		case TCP_AO_REPAIR:
+		case TCP_AO_GET_KEYS:
 			return true;
 		}
 
 		/* TCP_MD5SIG, TCP_MD5SIG_EXT are not supported, MD5 is not compatible with MPTCP */
 	}
 	return false;
+}
+
+static bool should_fallback_sockopt(int level, int optname)
+{
+	if (level == SOL_TCP) {
+		switch (optname) {
+		case TCP_AO_REPAIR:
+			return false;
+		}
+	}
+	return true;
 }
 
 static int mptcp_setsockopt_sol_tcp_congestion(struct mptcp_sock *msk, sockptr_t optval,
@@ -927,6 +944,11 @@ static int mptcp_setsockopt_sol_tcp_repair_or_ao(struct mptcp_sock *msk,
 	}
 
 	ret = tcp_setsockopt(ssk, SOL_TCP, optname, optval, optlen);
+	if (ret == 0 && optname == TCP_AO_ADD_KEY &&
+	    !__mptcp_try_fallback(msk, MPTCP_MIB_TCPAOFALLBACK))
+		WARN_ON_ONCE(1);
+	if (ret == 0 && optname == TCP_AO_REPAIR)
+		set_bit(MPTCP_AO_REPAIRED, &msk->flags);
 
 unlock:
 	release_sock(sk);
@@ -959,6 +981,10 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_QUEUE_SEQ:
 	case TCP_REPAIR_OPTIONS:
 	case TCP_REPAIR_WINDOW:
+	case TCP_AO_ADD_KEY:
+	case TCP_AO_DEL_KEY:
+	case TCP_AO_INFO:
+	case TCP_AO_REPAIR:
 		return mptcp_setsockopt_sol_tcp_repair_or_ao(msk, optname,
 							     optval, optlen);
 	}
@@ -1037,7 +1063,7 @@ int mptcp_setsockopt(struct sock *sk, int level, int optname,
 	lock_sock(sk);
 	ssk = __mptcp_tcp_fallback(msk);
 	release_sock(sk);
-	if (ssk)
+	if (ssk && should_fallback_sockopt(level, optname))
 		return tcp_setsockopt(ssk, level, optname, optval, optlen);
 
 	if (level == SOL_IP)
@@ -1538,6 +1564,11 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_QUEUE_SEQ:
 	case TCP_REPAIR_OPTIONS:
 	case TCP_REPAIR_WINDOW:
+	case TCP_AO_ADD_KEY:
+	case TCP_AO_DEL_KEY:
+	case TCP_AO_INFO:
+	case TCP_AO_REPAIR:
+	case TCP_AO_GET_KEYS:
 		return mptcp_getsockopt_first_sf_only(msk, SOL_TCP, optname,
 						      optval, optlen);
 	case TCP_INQ:

@@ -89,6 +89,7 @@ enum linux_mptcp_mib_field {
 					 * established packet
 					 */
 	MPTCP_MIB_MD5SIGFALLBACK,	/* Conflicting TCP option enabled */
+	MPTCP_MIB_TCPAOFALLBACK,	/* TCP-AO enabled, fallback to TCP */
 	MPTCP_MIB_MD5SIGRESET,		/* MP_RST: MD5SIG enabled on listener */
 	MPTCP_MIB_DSSFALLBACK,		/* Bad or missing DSS */
 	MPTCP_MIB_DSSRESET,		/* MP_RST: bad data mapping */
