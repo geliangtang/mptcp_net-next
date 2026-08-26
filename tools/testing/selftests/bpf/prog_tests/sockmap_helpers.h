@@ -1,6 +1,9 @@
 #ifndef __SOCKMAP_HELPERS__
 #define __SOCKMAP_HELPERS__
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include "socket_helpers.h"
 
 #define MAX_TEST_NAME 80
@@ -78,6 +81,23 @@ static inline int add_to_sockmap(int mapfd, int fd1, int fd2)
 		return err;
 
 	return xbpf_map_update_elem(mapfd, &u32(1), &u64(fd2), BPF_NOEXIST);
+}
+
+static inline bool is_mptcp_enable(void)
+{
+	char buf[16] = { 0 };
+	ssize_t n;
+	int fd;
+
+	fd = open("/proc/sys/net/mptcp/enabled", O_RDONLY);
+	if (fd < 0)
+		return false;
+
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return false;
+	return (atoi(buf) == 1);
 }
 
 #endif // __SOCKMAP_HELPERS__
