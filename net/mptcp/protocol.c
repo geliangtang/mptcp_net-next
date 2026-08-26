@@ -481,6 +481,15 @@ static bool __mptcp_move_skb(struct sock *sk, struct sk_buff *skb)
 			__mptcp_sync_rcv_sequence(sk);
 	}
 
+	if (__mptcp_check_fallback(msk) &&
+	    msk->first && !mptcp_subflow_ctx(msk->first)->ssn_offset) {
+		copy_len = skb->len;
+		MPTCP_SKB_CB(skb)->map_seq = (u32)msk->ack_seq;
+		MPTCP_SKB_CB(skb)->end_seq = MPTCP_SKB_CB(skb)->map_seq +
+					     copy_len;
+		goto insert;
+	}
+
 	if (MPTCP_SKB_CB(skb)->map_seq64 == msk->ack_seq) {
 		/* in sequence */
 insert:

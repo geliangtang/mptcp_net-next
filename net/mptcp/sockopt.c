@@ -14,6 +14,7 @@
 #include <net/tcp.h>
 #include <net/mptcp.h>
 #include "protocol.h"
+#include "mib.h"
 
 #define MIN_INFO_OPTLEN_SIZE		16
 #define MIN_FULL_INFO_OPTLEN_SIZE	40
@@ -676,6 +677,11 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		case TCP_QUEUE_SEQ:
 		case TCP_REPAIR_OPTIONS:
 		case TCP_REPAIR_WINDOW:
+		case TCP_AO_ADD_KEY:
+		case TCP_AO_DEL_KEY:
+		case TCP_AO_INFO:
+		case TCP_AO_REPAIR:
+		case TCP_AO_GET_KEYS:
 			return true;
 		}
 
@@ -925,6 +931,9 @@ static int mptcp_setsockopt_tcp_repair_ao(struct mptcp_sock *msk, int optname,
 	}
 
 	ret = tcp_setsockopt(ssk, SOL_TCP, optname, optval, optlen);
+	if (ret == 0 && optname == TCP_AO_ADD_KEY &&
+	    !__mptcp_try_fallback(msk, MPTCP_MIB_TCPAOFALLBACK))
+		WARN_ON_ONCE(1);
 
 unlock:
 	release_sock(sk);
@@ -957,6 +966,10 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_QUEUE_SEQ:
 	case TCP_REPAIR_OPTIONS:
 	case TCP_REPAIR_WINDOW:
+	case TCP_AO_ADD_KEY:
+	case TCP_AO_DEL_KEY:
+	case TCP_AO_INFO:
+	case TCP_AO_REPAIR:
 		return mptcp_setsockopt_tcp_repair_ao(msk, optname,
 						      optval, optlen);
 	}
@@ -1035,8 +1048,12 @@ int mptcp_setsockopt(struct sock *sk, int level, int optname,
 	lock_sock(sk);
 	ssk = __mptcp_tcp_fallback(msk);
 	release_sock(sk);
-	if (ssk)
+	if (ssk) {
+		if (level == SOL_TCP && optname == TCP_AO_REPAIR)
+			return mptcp_setsockopt_tcp_repair_ao(msk, optname,
+							      optval, optlen);
 		return tcp_setsockopt(ssk, level, optname, optval, optlen);
+	}
 
 	if (level == SOL_IP)
 		return mptcp_setsockopt_v4(msk, optname, optval, optlen);
@@ -1536,6 +1553,11 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_QUEUE_SEQ:
 	case TCP_REPAIR_OPTIONS:
 	case TCP_REPAIR_WINDOW:
+	case TCP_AO_ADD_KEY:
+	case TCP_AO_DEL_KEY:
+	case TCP_AO_INFO:
+	case TCP_AO_REPAIR:
+	case TCP_AO_GET_KEYS:
 		return mptcp_getsockopt_first_sf_only(msk, SOL_TCP, optname,
 						      optval, optlen);
 	case TCP_INQ:
