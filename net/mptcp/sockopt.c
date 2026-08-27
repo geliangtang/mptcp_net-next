@@ -756,6 +756,7 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		case TCP_AO_REPAIR:
 		case TCP_AO_GET_KEYS:
 		case TCP_ULP:
+		case TCP_ZEROCOPY_RECEIVE:
 			return true;
 		}
 
@@ -1697,6 +1698,7 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_AO_REPAIR:
 	case TCP_AO_GET_KEYS:
 	case TCP_MAXSEG:
+	case TCP_ZEROCOPY_RECEIVE:
 		return mptcp_getsockopt_first_sf_only(msk, SOL_TCP, optname,
 						      optval, optlen);
 	case TCP_INQ:
