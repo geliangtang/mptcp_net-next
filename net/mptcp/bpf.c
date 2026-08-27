@@ -292,10 +292,8 @@ bpf_iter_mptcp_subflow_destroy(struct bpf_iter_mptcp_subflow *it)
 }
 
 __bpf_kfunc static bool
-bpf_sk_stream_memory_free(const struct mptcp_subflow_context *subflow)
+bpf_sk_stream_memory_free(const struct sock *sk)
 {
-	const struct sock *sk = mptcp_subflow_tcp_sock(subflow);
-
 	if (sk && sk_fullsock(sk) && sk->sk_type == SOCK_STREAM &&
 	    sk->sk_protocol == IPPROTO_TCP && sk_is_mptcp(sk))
 		return sk_stream_memory_free(sk);
