@@ -6,7 +6,6 @@
 ret=0
 ns1=""
 pid=""
-PERF_DATA="/tmp/mptcp_tls_perf.data"
 
 # This function is used in the cleanup trap
 #shellcheck disable=SC2317,SC2329
@@ -33,8 +32,6 @@ init()
 		mptcp_lib_pm_nl_add_endpoint "$ns1" \
 			"127.0.0.1" flags signal port 1000"$i"
 	done
-
-	rm -f "$PERF_DATA"
 }
 
 mptcp_lib_check_mptcp
@@ -161,8 +158,6 @@ ip netns exec "$ns1" ./tls &
 #			   -v 13_nopad_mptcp \
 #			   -v 12_aria_gcm \
 #			   -v 12_aria_gcm_256_mptcp &
-perf record -g -e cycles -F 999 -o "$PERF_DATA" --all-cpus \
-    -- ip netns exec "$ns1" ./tls -t multi_chunk_sendfile 2>&1 &
 pid=$!
 wait $pid
 if [ $? -ne 0 ]; then
@@ -170,19 +165,6 @@ if [ $? -ne 0 ]; then
 	mptcp_lib_result_fail "tls"
 	ret=${KSFT_FAIL}
 fi
-
-echo "============================================================"
-echo "perf report (active kernel symbols - idle filtered):"
-echo "============================================================"
-# Keep only non-idle lines (kernel functions that actually do work)
-perf report -i "$PERF_DATA" --children --sort=sym --stdio 2>/dev/null | \
-    grep -E '__mptcp_|^[a-z].*sk_|t c p|tcp_|t l s|tls_|crypto_|sock_|inet_connection|mptcp_|skb_|inet_|net_|dev_queue|xmit|fastopen|sendmsg|recvmsg|sendpage|sk_data|sk_buff' | head -30 || \
-	perf report -i "$PERF_DATA" --sort=sym --stdio 2>/dev/null | \
-    grep -E '__mptcp_|^[a-z].*sk_|t c p|tcp_|t l s|tls_|crypto_|sock_|inet_connection|mptcp_|skb_|inet_|net_|dev_queue|xmit|fastopen|sendmsg|recvmsg|sendpage|sk_data|sk_buff' | head -30
-echo "============================================================"
-echo "perf report (all symbols, first 30 lines after header):"
-echo "============================================================"
-perf report -i "$PERF_DATA" --sort=sym --stdio 2>/dev/null | head -40
 
 mptcp_lib_result_print_all_tap
 exit $ret
