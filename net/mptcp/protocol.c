@@ -4907,7 +4907,6 @@ static int mptcp_peek_len(struct socket *sock)
 
 static int mptcp_read_skb(struct sock *sk, skb_read_actor_t recv_actor)
 {
-	struct mptcp_sock *msk = mptcp_sk(sk);
 	struct sk_buff *skb;
 	int copied = 0;
 	u32 offset;
@@ -4917,38 +4916,18 @@ static int mptcp_read_skb(struct sock *sk, skb_read_actor_t recv_actor)
 
 	while ((skb = mptcp_recv_skb(sk, &offset)) != NULL) {
 		int used;
-		u32 len;
 
-		if (offset) {
-			if (!pskb_may_pull(skb, offset)) {
-				if (!copied)
-					copied = -ENOMEM;
-				break;
-			}
-			skb_pull(skb, offset);
-		}
-
-		len = skb->len;
 		__skb_unlink(skb, &sk->sk_receive_queue);
 		WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
 		used = recv_actor(sk, skb);
 		if (used < 0) {
 			if (!copied)
 				copied = used;
-			msk->bytes_consumed += len;
-			msk->copied_seq += len;
 			break;
 		}
 		copied += used;
-		msk->bytes_consumed += used;
-		msk->copied_seq += used;
 	}
 
-	if (copied > 0) {
-		msk->read_copied += copied;
-		set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
-		mptcp_schedule_work(sk);
-	}
 	return copied;
 }
 
