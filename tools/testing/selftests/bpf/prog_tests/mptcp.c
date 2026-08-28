@@ -13,6 +13,7 @@
 #include "mptcpify.skel.h"
 #include "mptcp_subflow.skel.h"
 #include "mptcp_sockmap.skel.h"
+#include "tcp_sockmap.skel.h"
 #include "mptcp_bpf_first.skel.h"
 #include "mptcp_bpf_bkup.skel.h"
 #include "mptcp_bpf_rr.skel.h"
@@ -636,6 +637,193 @@ close_cgroup:
 	close(cgroup_fd);
 }
 
+/* Test sockmap on TCP sockets. */
+static void test_sockmap_with_tcp(struct tcp_sockmap *skel)
+{
+	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
+	int err, zero = 0, one = 1;
+
+	listen_fd = start_server(AF_INET, SOCK_STREAM, NULL, 0, 0);
+	if (!ASSERT_GE(listen_fd, 0, "start_server"))
+		return;
+
+	skel->bss->trace_port = ntohs(get_socket_local_port(listen_fd));
+	skel->bss->sk_index = 0;
+	client_fd1 = connect_to_fd_opts(listen_fd, NULL);
+	if (!ASSERT_GE(client_fd1, 0, "connect_to_fd_opts"))
+		goto end;
+
+	/* bpf_sock_map_update() called from sockops should be allowed */
+	if (!ASSERT_EQ(skel->bss->helper_ret, 0, "should be allowed"))
+		goto end;
+
+	server_fd = accept(listen_fd, NULL, 0);
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
+				  &zero, &server_fd, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, -EBUSY, "server should be allowed"))
+		goto end;
+
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
+				  &one, &client_fd1, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, 0, "client should be allowed"))
+		goto end;
+end:
+	if (client_fd1 >= 0)
+		close(client_fd1);
+	if (server_fd >= 0)
+		close(server_fd);
+	close(listen_fd);
+}
+
+/* Test sockmap TCP redirect support. */
+static void test_sockmap_tcp_support(struct tcp_sockmap *skel)
+{
+	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
+	int err, zero = 0, one = 1;
+	char snd[9] = "123456789";
+	int map_fd, verdict_fd;
+	int sent, recvd = -1;
+	int retries = 30;
+	char rcv[10];
+
+	listen_fd = start_server(AF_INET, SOCK_STREAM, NULL, 0, 0);
+	if (!ASSERT_GE(listen_fd, 0, "start_server"))
+		return;
+
+	skel->bss->trace_port = ntohs(get_socket_local_port(listen_fd));
+	skel->bss->sk_index = 0;
+	client_fd1 = connect_to_fd_opts(listen_fd, NULL);
+	if (!ASSERT_GE(client_fd1, 0, "connect_to_fd_opts"))
+		goto end;
+
+	if (!ASSERT_EQ(skel->bss->helper_ret, 0, "should be allowed"))
+		goto end;
+
+	server_fd = accept(listen_fd, NULL, 0);
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
+				  &zero, &server_fd, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, -EBUSY, "server should be allowed"))
+		goto end;
+
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
+				  &one, &client_fd1, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, 0, "client should be allowed"))
+		goto end;
+
+	/* test ingress redirect */
+	skel->bss->redirect_idx = 0;
+	skel->bss->redirect_flags = BPF_F_INGRESS;
+
+	sent = send(client_fd1, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "ingress:send"))
+		goto end;
+
+	while (retries-- > 0) {
+		recvd = recv(server_fd, rcv, sizeof(rcv), MSG_DONTWAIT);
+		if (recvd > 0)
+			break;
+		usleep(100000);
+	}
+	if (!ASSERT_EQ(recvd, sizeof(snd), "ingress:recv size"))
+		goto end;
+
+	if (!ASSERT_MEMEQ(rcv, snd, sizeof(snd), "ingress:recv data"))
+		goto end;
+
+	skel->bss->redirect_flags = 0;
+
+	map_fd = bpf_map__fd(skel->maps.sock_map);
+
+	bpf_map_delete_elem(map_fd, &zero);
+
+	sent = send(client_fd1, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "sendmsg:send"))
+		goto end;
+
+	recvd = recv(server_fd, rcv, sizeof(rcv), 0);
+	if (!ASSERT_EQ(recvd, sizeof(snd), "sendmsg:recv size"))
+		goto end;
+	if (!ASSERT_MEMEQ(rcv, snd, sizeof(snd), "sendmsg:recv data"))
+		goto end;
+
+	verdict_fd = bpf_program__fd(skel->progs.sockmap_msg_verdict);
+	err = bpf_prog_attach(verdict_fd, map_fd, BPF_SK_MSG_VERDICT, 0);
+	if (!ASSERT_OK(err, "sendmsg:attach"))
+		goto end;
+
+	bpf_map_delete_elem(map_fd, &one);
+	err = bpf_map_update_elem(map_fd, &one, &client_fd1, BPF_ANY);
+	if (!ASSERT_OK(err, "sendmsg:re-add client_fd1"))
+		goto sendmsg_detach;
+
+	skel->bss->redirect_idx = 1;
+	skel->bss->redirect_flags = BPF_F_INGRESS;
+
+	sent = send(client_fd1, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "sendmsg_redir:send"))
+		goto sendmsg_detach;
+
+	recvd = recv(client_fd1, rcv, sizeof(rcv), 0);
+	if (!ASSERT_EQ(recvd, sizeof(snd), "sendmsg_redir:recv size"))
+		goto sendmsg_detach;
+	if (!ASSERT_MEMEQ(rcv, snd, sizeof(snd), "sendmsg_redir:recv data"))
+		goto sendmsg_detach;
+
+	skel->bss->redirect_flags = 0;
+
+sendmsg_detach:
+	bpf_prog_detach2(verdict_fd, map_fd, BPF_SK_MSG_VERDICT);
+end:
+	if (client_fd1 >= 0)
+		close(client_fd1);
+	if (server_fd >= 0)
+		close(server_fd);
+	close(listen_fd);
+}
+
+static void test_tcp_sockmap(void)
+{
+	struct tcp_sockmap *skel;
+	struct netns_obj *netns;
+	int cgroup_fd, err;
+
+	cgroup_fd = test__join_cgroup("/tcp_sockmap");
+	if (!ASSERT_OK_FD(cgroup_fd, "join_cgroup: tcp_sockmap"))
+		return;
+
+	skel = tcp_sockmap__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "skel_open_load: tcp_sockmap"))
+		goto close_cgroup;
+
+	skel->links.sockmap_update =
+		bpf_program__attach_cgroup(skel->progs.sockmap_update, cgroup_fd);
+	if (!ASSERT_OK_PTR(skel->links.sockmap_update, "attach sockmap"))
+		goto skel_destroy;
+
+	err = bpf_prog_attach(bpf_program__fd(skel->progs.sockmap_redirect),
+			      bpf_map__fd(skel->maps.sock_map),
+			      BPF_SK_SKB_STREAM_VERDICT, 0);
+	if (!ASSERT_OK(err, "bpf_prog_attach stream verdict"))
+		goto skel_destroy;
+
+	netns = netns_new(NS_TEST, true);
+	if (!ASSERT_OK_PTR(netns, "netns_new: tcp_sockmap"))
+		goto skel_destroy;
+
+	if (endpoint_init("subflow", 2) < 0)
+		goto close_netns;
+
+	test_sockmap_with_tcp(skel);
+	test_sockmap_tcp_support(skel);
+
+close_netns:
+	netns_free(netns);
+skel_destroy:
+	tcp_sockmap__destroy(skel);
+close_cgroup:
+	close(cgroup_fd);
+}
+
 static int sched_init(char *flags, char *sched)
 {
 	if (endpoint_init(flags, 2) < 0)
@@ -830,6 +1018,8 @@ void test_mptcp(void)
 		test_subflow();
 	if (test__start_subtest("sockmap"))
 		test_mptcp_sockmap();
+	if (test__start_subtest("tcp_sockmap"))
+		test_tcp_sockmap();
 	if (test__start_subtest("default"))
 		test_default();
 	if (test__start_subtest("first"))
