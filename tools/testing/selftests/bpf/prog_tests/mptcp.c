@@ -594,6 +594,47 @@ end:
 	close(listen_fd);
 }
 
+/* Test sockmap of MPTCP sockets - both server and client sides. */
+static void test_sockmap_mptcp_support(struct mptcp_sockmap *skel)
+{
+	int listen_fd = -1, server_fd = -1, client_fd1 = -1;
+	int err, zero = 0, one = 1;
+
+	/* start server with MPTCP enabled */
+	listen_fd = start_mptcp_server(AF_INET, NULL, 0, 0);
+	if (!ASSERT_OK_FD(listen_fd, "start_mptcp_server"))
+		return;
+
+	skel->bss->trace_port = ntohs(get_socket_local_port(listen_fd));
+	skel->bss->sk_index = 0;
+	/* create client with MPTCP enabled */
+	client_fd1 = connect_to_fd(listen_fd, 0);
+	if (!ASSERT_OK_FD(client_fd1, "connect_to_fd client_fd1"))
+		goto end;
+
+	/* bpf_mptcp_sock_map_update() called from sockops should be allowed MPTCP sk */
+	if (!ASSERT_EQ(skel->bss->helper_ret, 0, "should be allowed"))
+		goto end;
+
+	server_fd = accept(listen_fd, NULL, 0);
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
+				  &zero, &server_fd, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, -EBUSY, "server should be allowed"))
+		goto end;
+
+	/* MPTCP client should also be allowed */
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
+				  &one, &client_fd1, BPF_NOEXIST);
+	if (!ASSERT_EQ(err, 0, "client should be allowed"))
+		goto end;
+end:
+	if (client_fd1 >= 0)
+		close(client_fd1);
+	if (server_fd >= 0)
+		close(server_fd);
+	close(listen_fd);
+}
+
 static void test_mptcp_sockmap(void)
 {
 	struct mptcp_sockmap *skel;
@@ -628,6 +669,7 @@ static void test_mptcp_sockmap(void)
 
 	test_sockmap_with_mptcp_fallback(skel);
 	test_sockmap_with_mptcp(skel);
+	test_sockmap_mptcp_support(skel);
 
 close_netns:
 	netns_free(netns);
