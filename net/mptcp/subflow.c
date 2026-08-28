@@ -2025,6 +2025,13 @@ out:
 	return err;
 }
 
+static void subflow_ulp_update(struct sock *sk, struct proto *p,
+			       void (*write_space)(struct sock *sk))
+{
+	WRITE_ONCE(sk->sk_prot, p);
+	sk->sk_write_space = write_space;
+}
+
 static void subflow_ulp_release(struct sock *ssk)
 {
 	struct mptcp_subflow_context *ctx = mptcp_subflow_ctx(ssk);
@@ -2142,6 +2149,7 @@ static struct tcp_ulp_ops subflow_ulp_ops __read_mostly = {
 	.name		= "mptcp",
 	.owner		= THIS_MODULE,
 	.init		= subflow_ulp_init,
+	.update		= subflow_ulp_update,
 	.release	= subflow_ulp_release,
 	.clone		= subflow_ulp_clone,
 };
@@ -2183,10 +2191,6 @@ void __init mptcp_subflow_init(void)
 	tcp_prot_override = tcp_prot;
 	tcp_prot_override.release_cb = tcp_release_cb_override;
 	tcp_prot_override.diag_destroy = tcp_abort_override;
-#ifdef CONFIG_BPF_SYSCALL
-	/* Disable sockmap processing for subflows */
-	tcp_prot_override.psock_update_sk_prot = NULL;
-#endif
 
 	mptcp_diag_subflow_init(&subflow_ulp_ops);
 
@@ -2230,9 +2234,5 @@ void __init mptcp_subflow_v6_init(void)
 	tcpv6_prot_override = tcpv6_prot;
 	tcpv6_prot_override.release_cb = tcp_release_cb_override;
 	tcpv6_prot_override.diag_destroy = tcp_abort_override;
-#ifdef CONFIG_BPF_SYSCALL
-	/* Disable sockmap processing for subflows */
-	tcpv6_prot_override.psock_update_sk_prot = NULL;
-#endif
 }
 #endif

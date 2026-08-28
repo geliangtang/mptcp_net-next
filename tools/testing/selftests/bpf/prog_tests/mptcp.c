@@ -571,14 +571,14 @@ static void test_sockmap_with_mptcp(struct mptcp_sockmap *skel)
 	if (!ASSERT_OK_FD(client_fd1, "connect_to_fd client_fd1"))
 		goto end;
 
-	/* bpf_sock_map_update() called from sockops should reject MPTCP sk */
-	if (!ASSERT_EQ(skel->bss->helper_ret, -EOPNOTSUPP, "should reject"))
+	/* bpf_mptcp_sock_map_update() called from sockops should be allowed */
+	if (!ASSERT_EQ(skel->bss->helper_ret, 0, "should be allowed"))
 		goto end;
 
 	server_fd = accept(listen_fd, NULL, 0);
 	err = bpf_map_update_elem(bpf_map__fd(skel->maps.sock_map),
 				  &zero, &server_fd, BPF_NOEXIST);
-	if (!ASSERT_EQ(err, 0, "server should be allowed"))
+	if (!ASSERT_EQ(err, -EBUSY, "server should be allowed"))
 		goto end;
 
 	/* MPTCP client should also be allowed */

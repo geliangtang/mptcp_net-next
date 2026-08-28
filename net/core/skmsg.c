@@ -749,7 +749,7 @@ struct sk_psock *sk_psock_init(struct sock *sk, int node)
 
 	write_lock_bh(&sk->sk_callback_lock);
 
-	if (sk_is_inet(sk) && inet_csk_has_ulp(sk)) {
+	if (sk_is_inet(sk) && inet_csk_has_ulp(sk) && !sk_is_mptcp(sk)) {
 		psock = ERR_PTR(-EINVAL);
 		goto out;
 	}
