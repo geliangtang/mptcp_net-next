@@ -4021,6 +4021,13 @@ u32 bpf_xdp_sock_convert_ctx_access(enum bpf_access_type type,
 				    struct bpf_insn *insn_buf,
 				    struct bpf_prog *prog,
 				    u32 *target_size);
+
+int sock_map_update_common(struct bpf_map *map, u32 idx,
+			   struct sock *sk, u64 flags);
+
+#ifdef CONFIG_MPTCP
+u64 mptcp_sock_map_update(u64, u64, u64, u64, u64);
+#endif
 #else
 static inline bool bpf_tcp_sock_is_valid_access(int off, int size,
 						enum bpf_access_type type,

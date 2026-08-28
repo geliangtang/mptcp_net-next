@@ -1239,7 +1239,7 @@ static void sk_psock_verdict_data_ready(struct sock *sk)
 	if (likely(sock))
 		ops = READ_ONCE(sock->ops);
 	rcu_read_unlock();
-	if (!ops || !ops->read_skb)
+	if (!ops || !ops->read_skb || sock->sk != sk)
 		return;
 
 	copied = ops->read_skb(sk, sk_psock_verdict_recv);
@@ -1254,7 +1254,13 @@ static void sk_psock_verdict_data_ready(struct sock *sk)
 
 void sk_psock_start_verdict(struct sock *sk, struct sk_psock *psock)
 {
+	struct socket *sock;
+
 	if (psock->saved_data_ready)
+		return;
+
+	sock = READ_ONCE(sk->sk_socket);
+	if (sock && sock->sk != sk)
 		return;
 
 	psock->saved_data_ready = sk->sk_data_ready;
