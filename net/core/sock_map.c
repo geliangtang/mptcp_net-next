@@ -467,8 +467,8 @@ static int sock_map_get_next_key(struct bpf_map *map, void *key, void *next)
 	return 0;
 }
 
-static int sock_map_update_common(struct bpf_map *map, u32 idx,
-				  struct sock *sk, u64 flags)
+int sock_map_update_common(struct bpf_map *map, u32 idx,
+			   struct sock *sk, u64 flags)
 {
 	struct bpf_stab *stab = container_of(map, struct bpf_stab, map);
 	struct sk_psock_link *link;
@@ -540,7 +540,7 @@ static bool sock_map_sk_is_suitable(const struct sock *sk)
 
 static bool sock_map_sk_state_allowed(const struct sock *sk)
 {
-	if (sk_is_tcp(sk))
+	if (sk_is_tcp(sk) || sk_is_msk(sk))
 		return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_LISTEN);
 	if (sk_is_udp(sk))
 		return sk_hashed(sk);
