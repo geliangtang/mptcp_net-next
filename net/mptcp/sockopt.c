@@ -884,6 +884,23 @@ static int __mptcp_setsockopt_sol_tcp_nodelay(struct mptcp_sock *msk, int val)
 	return 0;
 }
 
+static int __mptcp_setsockopt_sol_tcp_quickack(struct mptcp_sock *msk, int val)
+{
+	struct mptcp_subflow_context *subflow;
+
+	sockopt_seq_inc(msk);
+	msk->quickack = !!val;
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+
+		lock_sock(ssk);
+		__tcp_sock_set_quickack(ssk, !!val);
+		tcp_send_ack(ssk);
+		release_sock(ssk);
+	}
+	return 0;
+}
+
 static int mptcp_setsockopt_sol_ip_set(struct mptcp_sock *msk, int optname,
 				       sockptr_t optval, unsigned int optlen)
 {
@@ -1081,6 +1098,12 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 		break;
 	case TCP_CORK:
 		ret = __mptcp_setsockopt_sol_tcp_cork(msk, val);
+		break;
+	case TCP_QUICKACK:
+		ret = mptcp_get_int_option(msk, optval, optlen, &val);
+		if (ret)
+			break;
+		ret = __mptcp_setsockopt_sol_tcp_quickack(msk, val);
 		break;
 	case TCP_NODELAY:
 		ret = __mptcp_setsockopt_sol_tcp_nodelay(msk, val);
@@ -1689,6 +1712,8 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 		return mptcp_put_int_option(msk, optval, optlen, msk->cork);
 	case TCP_NODELAY:
 		return mptcp_put_int_option(msk, optval, optlen, msk->nodelay);
+	case TCP_QUICKACK:
+		return mptcp_put_int_option(msk, optval, optlen, msk->quickack);
 	case TCP_KEEPIDLE:
 		return mptcp_put_int_option(msk, optval, optlen,
 					    msk->keepalive_idle ? :
@@ -1880,6 +1905,8 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 		tcp_set_congestion_control(ssk, msk->ca_name, false, true);
 	__tcp_sock_set_cork(ssk, !!msk->cork);
 	__tcp_sock_set_nodelay(ssk, !!msk->nodelay);
+	if (msk->quickack)
+		__tcp_sock_set_quickack(ssk, 1);
 	tcp_sock_set_keepidle_locked(ssk, msk->keepalive_idle);
 	tcp_sock_set_keepintvl(ssk, msk->keepalive_intvl);
 	tcp_sock_set_keepcnt(ssk, msk->keepalive_cnt);
