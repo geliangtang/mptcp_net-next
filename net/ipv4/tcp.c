@@ -3706,7 +3706,7 @@ void tcp_sock_set_nodelay(struct sock *sk)
 }
 EXPORT_SYMBOL(tcp_sock_set_nodelay);
 
-void __tcp_sock_set_quickack(struct sock *sk, int val)
+static void __tcp_sock_set_quickack(struct sock *sk, int val)
 {
 	if (!val) {
 		inet_csk_enter_pingpong_mode(sk);
@@ -3722,7 +3722,6 @@ void __tcp_sock_set_quickack(struct sock *sk, int val)
 			inet_csk_enter_pingpong_mode(sk);
 	}
 }
-EXPORT_SYMBOL(__tcp_sock_set_quickack);
 
 void tcp_sock_set_quickack(struct sock *sk, int val)
 {

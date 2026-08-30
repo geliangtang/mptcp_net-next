@@ -1093,8 +1093,6 @@ void mptcp_data_ready(struct sock *sk, struct sock *ssk)
 	} else {
 		__mptcp_move_skbs_from_subflow(msk, ssk, false);
 	}
-	__tcp_sock_set_quickack(ssk, 1);
-	tcp_send_ack(ssk);
 	mptcp_data_unlock(sk);
 }
 
