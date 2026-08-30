@@ -627,10 +627,6 @@ static void chunked_sendfile(struct __test_metadata *_metadata,
 		size -= ret;
 	}
 
-	EXPECT_EQ(setsockopt(self->fd, IPPROTO_TCP, TCP_QUICKACK,
-			    &(int){1}, sizeof(int)), 0);
-	EXPECT_EQ(setsockopt(self->cfd, IPPROTO_TCP, TCP_QUICKACK,
-			    &(int){1}, sizeof(int)), 0);
 	EXPECT_EQ(recv(self->cfd, buf, test_payload_size, MSG_WAITALL),
 		  test_payload_size);
 
