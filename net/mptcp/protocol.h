@@ -341,7 +341,6 @@ struct mptcp_sock {
 	u8		recvmsg_inq:1,
 			cork:1,
 			nodelay:1,
-			quickack:1,
 			fastopening:1,
 			in_accept_queue:1,
 			free_first:1,
