@@ -115,6 +115,26 @@ been sent to the netdev mailing list for review [3].
 
 Implementation Approach
 
+sendmsg_locked
+peek_len
+read_sock
+poll
+
++struct tls_prot_ops {
++	struct module		*owner;
++	struct list_head	list;
++	int			protocol;
++
++	struct sk_buff *(*recv_skb)(struct sock *sk, u32 *off);
++	bool (*lock_is_held)(struct sock *sk);
++	void (*read_done)(struct sock *sk, size_t len);
++	u32 (*get_skb_seq)(struct sk_buff *skb);
++	int (*skb_get_header)(const struct sk_buff *skb, int offset,
++			      void *to, int len);
++	bool (*epollin_ready)(const struct sock *sk);
++	void (*check_app_limited)(struct sock *sk);
++};
+
 More than ten MPTCP-specific functions are the core of this
 implementation. Most are either already available on the MPTCP side or
 can be implemented as simple wrappers, such as mptcp_sendmsg_locked,
