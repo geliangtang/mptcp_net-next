@@ -432,4 +432,17 @@ static inline bool tls_epollin_ready(const struct sock *sk, int target)
 	}
 }
 
+static inline __poll_t tls_poll(struct file *file, struct socket *sock,
+				struct poll_table_struct *wait)
+{
+	switch (sock->sk->sk_protocol) {
+	case IPPROTO_TCP:
+		return tcp_poll(file, sock, wait);
+	case IPPROTO_MPTCP:
+		return mptcp_poll(file, sock, wait);
+	default:
+		return 0;
+	}
+}
+
 #endif
