@@ -1,0 +1,882 @@
+[
+1
+
+MPTCP KTLS Support: Bringing TLS to Multipath TCP
+
+    Geliang Tang - MPTCP community
+                   Kylin Software
+
+                   LPC 2026 Networking Track
+                   Prague, Oct 2026
+
+]
+
+Hello everyone. I'm Geliang from the MPTCP community. I've been one of the
+core upstream developers of MPTCP since 2020. I live in Beijing, China,
+and work at a Chinese Linux distribution company called Kylin Software.
+
+Here I bring a proposal to add TLS support for MPTCP.
+
+MPTCP did not support TLS before. The two protocols conflict with each other to
+some extent because both MPTCP and TLS use the ULP (Upper Layer Protocol).
+ULP settings, including TLS configurations, are disabled in MPTCP.
+
+This proposal presents a solution to make MPTCP and TLS compatible,
+and to make MPTCP and TLS work together.
+
+[
+2
+
+Thanks to Paolo Abeni, Jakub Kicinski, Matthieu Baerts, Mat Martineau, Hannes Reinecke, Zqiang, Gang Yan,
+and others for their help during the development of MPTCP KTLS support.
+
+]
+
+First of all, I want to say thanks to everyone who helped me during the
+development of this feature.
+
+[
+3
+
+Agenda
+
+ - Introduction to MPTCP
+ - Motivation
+ - Current Status /ˈsteɪ.təs/
+ - Implementation
+ - Limitation
+ - Selftests and Validation
+
+]
+
+And here is the agenda /əˈdʒen.də/. First, I'll give a very brief introduction
+to MPTCP for those who don't know it. Then I'll explain the motivations behind
+MPTCP TLS support. Next, I'll show the patch list of all the changes. After that,
+I'll explain how MPTCP TLS is implemented. And finally, I'll cover the tests
+and validation.
+
+[
+4
+
+Introduction to MPTCP
+
+What is MPTCP
+
+- Multipath TCP or MPTCP is an extension to the standard TCP and is
+  described in RFC 8684.
+- MPTCP is implemented via TCP Options, kind number of MPTCP is 30.
+- It allows a device to make use of multiple interfaces at once to send
+  and receive TCP packets over a single MPTCP connection.
+- MPTCP can aggregate the bandwidth of multiple interfaces or prefer the
+  one with the lowest latency. It also allows a fail-over if one path is
+  down, and the traffic is seamlessly reinjected on other paths.
+- Introduced in Linux kernel v5.6
+
+For more details, please visit the project website: https://www.mptcp.dev
+
+]
+
+Here I will give a very brief introduction to MPTCP.
+
+MPTCP, or Multipath TCP, is an extension to the standard TCP and is
+defined in RFC 8684. MPTCP is implemented via TCP options. A dedicated
+TCP option is defined for MPTCP, and its kind number is 30. It allows a
+device to use multiple network interfaces at the same time to send and
+receive TCP packets /ˈpæk.ɪt/ over a single connection.
+
+MPTCP can be used to combine the bandwidth of multiple interfaces or to
+choose the best path with the lowest latency. It also supports
+fail-over /ˈfeɪl/: if one path goes down, traffic is smoothly switched to another
+path without interruption.
+
+It was introduced in Linux kernel 5.6. After more than six years of
+development, it has become mature /məˈtʃʊə/ and stable, and more and more
+network applications already support MPTCP.
+
+For more details, please visit the project website: mptcp.dev
+
+[
+5
+
+How to use MPTCP?
+
+- Address config: ip mptcp (manual), mptcpd daemon or Network Manager (automatic)
+
+	# ip mptcp endpoint add 10.1.2.2 subflow
+
+- Create MPTCP socket:
+
+	fd = socket(AF_INET, SOCK_STREAM, IPPROTO_MPTCP);
+
+  or force with 'mptcpize' or 'mptcpify-bpfcc' (no code change)
+
+- Use: same as TCP sockets
+
+  kernel creates multiple TCP subflows to send and receive data
+
+]
+
+How to use MPTCP?
+
+First, we need to do address /əˈdres/ configuration to let MPTCP know
+which IP addresses are available. This is handled by the path manager.
+We can use 'ip mptcp' commands to do it manually, or we can use the
+MPTCP daemon (ˈdiː.mən) (mptcpd) or Network Manager to do it automatically.
+
+Then, we need to create MPTCP sockets instead of TCP ones on both the
+server side and the client side. If only one side uses MPTCP, the connection
+will fall back /fɔːl bæk/ to TCP. We need to explicitly pass the protocol
+number IPPROTO_MPTCP (that is 262, not IPPROTO_TCP) as the third parameter of the socket()
+syscall to create an MPTCP socket. Alternatively, without changing any code,
+we can use 'mptcpize' or the BPF tool to force a TCP application to use MPTCP.
+
+After the MPTCP sockets are created, we can use them just like TCP sockets,
+with no difference. Inside the MPTCP protocol stack /stæk/, multiple TCP
+sockets are created in kernel space to send and receive data, based on the
+address configuration; we call each of these TCP sockets a subflow.
+
+[
+6
+
+How to configure TLS
+
+set:
+	setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", sizeof("tls"));	(NOT SUPPORTED)
+
+        struct tls12_crypto_info_aes_gcm_128 tls_tx = {
+                .info = {
+                        .version     = TLS_1_3_VERSION,
+                        .cipher_type = TLS_CIPHER_AES_GCM_128,
+                },
+        };
+	setsockopt(fd, SOL_TLS, TLS_TX, (void *)&tls_tx, sizeof(tls_tx));
+
+        struct tls12_crypto_info_aes_gcm_128 tls_rx = {
+                .info = {
+                        .version     = TLS_1_3_VERSION,
+                        .cipher_type = TLS_CIPHER_AES_GCM_128,
+                },
+        };
+	setsockopt(fd, SOL_TLS, TLS_RX, (void *)&tls_rx, sizeof(tls_rx));
+
+get:
+	getsockopt(fd, IPPROTO_TCP, TCP_ULP, buf, &buflen);		("mptcp")
+
+Problem:
+
+	- TLS is configured through ULP
+	- MPTCP also uses ULP for subflow management
+	- Every subflow's ULP is occupied by MPTCP ("mptcp")
+	- getsockopt(ULP) returns the first subflow's ULP
+	- Setting TLS on MPTCP returns NOT SUPPORTED
+
+]
+
+How to configure TLS?
+
+TLS is configured /kənˈfɪɡəd/ through the ULP (Upper Layer Protocol) socket option.
+Here is the typical code.
+
+First, we use setsockopt to set the ULP name to "tls".
+Then we need to configure the TLS version and cipher type for both the transmit side
+and the receive side.
+
+But if we set TLS for an MPTCP socket, we will get an error code of 'NOT SUPPORTED',
+because MPTCP also uses ULP for subflow management.
+
+The ULP of every subflow is occupied by MPTCP, so every subflow's ULP name is "mptcp".
+We can verify this by doing getsockopt(ULP) on an MPTCP socket, it returns the ULP
+name of the first subflow, which is "mptcp".
+
+So we cannot use TLS for MPTCP sockets. That is the problem.
+
+[
+7
+
+Motivation
+
+MPTCP-adapted applications need TLS:
+
+ - lighttpd
+
+	MPTCP and KTLS support #480
+
+	@matttbe opened on Mar 19, 2024
+
+	Currently, an MPTCP socket cannot support other TCP ULP extensions. This
+	includes KTLS. KTLS is supported in GnuTLS and OpenSSL libraries. It is
+	then tempting to use it without too much of an effort, e.g. lighttpd is
+	using KTLS with OpenSSL and GnuTLS if available since January 2023.
+
+	It might be good to see if KTLS and MPTCP subflows hooks can be chained
+	somehow.
+
+	@matttbe assigned @geliangtang on May 20, 2024
+
+ - NVMe over MPTCP
+
+	From:	Hannes Reinecke <hare@suse.de>
+	To:	Geliang Tang <geliang@kernel.org>
+	Subject:	Re: [RFC 2/3] nvmet-tcp: add mptcp support
+	Date:	Thu, 15 May 2025 12:06:02 +0200 (05/15/2025 06:06:02 PM)
+
+	On 5/14/25 12:51, Geliang Tang wrote:
+	> On the target side, reuse TSAS (Transport Specific Address Subtype)
+	> field with MPTCP and TLS instead of adding a new one. Since MPTCP
+	> and TLS are mutually exclusive and cannot be used at the same time,
+	> they are both implemented through TCP ULP.
+	>
+	> Signed-off-by: Geliang Tang <geliang@kernel.org>
+	> ---
+	>   drivers/nvme/target/configfs.c | 1 +
+	>   drivers/nvme/target/tcp.c      | 7 ++++++-
+	>   include/linux/nvme.h           | 1 +
+	>   3 files changed, 8 insertions(+), 1 deletion(-)
+	>
+	Hmm. Why fold it into 'tsas', and not 'PROTO' itself?
+	That seems a far more natural choice, and would allow us to
+	run TLS on top of MPTCP.
+
+Why:
+	- lighttpd: one feature of lighttpd does not work with MPTCP
+	  because TLS is not supported
+	- NVMe over MPTCP: needs the same TLS support as NVMe over TCP
+	- Not just a missing socket option
+
+]
+
+Why do we need MPTCP TLS?
+
+Some MPTCP-adapted applications need to use TLS for encryption.
+
+The first one is lighttpd, a secure web server that already supports MPTCP. In
+2024, lighttpd developers reported that one feature of lighttpd did not work with
+MPTCP because TLS was not supported. We opened an issue on GitHub to address it,
+and this issue was assigned to me. I tried to add MPTCP TLS support for the first
+time, but found it very difficult. It is not simply a matter of adding a missing
+socket option. So this feature was put on hold.
+
+The second one is NVMe over MPTCP. One year later, while adding MPTCP support for
+NVMe, I encountered the TLS requirement again. With MPTCP, NVMe can aggregate the
+bandwidth of all available network devices, achieving a multi-fold performance
+improvement. But NVMe over TCP can use TLS encryption. If MPTCP support is added,
+MPTCP also needs to provide the same TLS support. To avoid blocking the NVMe over
+MPTCP feature, it was time to implement MPTCP TLS.
+
+These are the main motivations behind this work.
+
+[
+8
+
+Current Status
+
+Patchsets:
+
+- mptcp: implement .read_sock			  (Mainlined)
+- mptcp: reduce differences between TCP and MPTCP (Paolo Abeni)
+- MPTCP KTLS support				  (Under Review) (bold characters)
+- mptcp: address stall under memory pressure	  (Paolo Abeni)
+- selftests: tls: add mptcp test cases		  (Under Review)
+- tlshd: add mptcp support			  (Under development)
+- enable KTLS for NVMe over MPTCP		  (Under development)
+
+]
+
+I finally found a solution to make MPTCP and TLS compatible, and
+supported TLS for MPTCP.
+
+Currently, the implementation and testing are mostly done. Some code
+is upstreamed, while most remains under review on the MPTCP side, in
+RFC stage.
+
+Here are all the patchsets of this feature.
+
+Here I would like to thank Paolo. Paolo's patches happened to help this
+work, made the subsequent MPTCP TLS support much easier, and the entire
+series is built on top of his patches.
+
+1 mptcp: implement .read_sock (/riːd/ underscore)
+
+TLS uses the read_sock interface for receiving data. However, it was
+not implemented in MPTCP before /bɪˈfɔː(r)/, since all current use
+cases for MPTCP are in userspace, where read_sock is not used. So my
+first task was to implement this interface for MPTCP.
+
+After several rounds of iteration, this set was merged into the Linux
+kernel in February this year.
+
+2
+
+Next set is developed together with Paolo to reduce the differences
+between TCP and MPTCP for TLS usage. It includes adding copied_seq for
+the MPTCP socket, removing the offset in the MPTCP sk_buff control block,
+and making the MPTCP sk_buff control block layout compatible with the TCP.
+
+3
+
+With Paolo's patches, the next set MPTCP TLS support is much easier.
+I implemented MPTCP support on the TLS side and enabled TLS configurations on
+the MPTCP side. This set is currently under review on the TLS side in RFC stage.
+
+4 selftests: tls: add mptcp test cases
+
+Next is the selftests. We added MPTCP support to the TLS selftests.
+We hoped all TCP TLS tests - there are over 800 in total - could pass on
+MPTCP as well. Most of them passed, but a few of them failed. Debugging showed
+that they triggered corner cases of MPTCP under memory pressure /ˈpreʃ.ə/.
+
+Thanks again to Paolo's patches to resolve it and make all tests pass.
+
+5 Enable KTLS for NVMe over MPTCP
+
+Next, we use a real-world case to verify the correctness of MPTCP TLS:
+using TLS for NVMe over MPTCP to test it, and it works well.
+
+6 The last is the user space changes
+
+The user space tool ktls-utils also needs to add MPTCP support.
+
+That's all the patch list.
+
+[
+9
+
+MPTCP Implementation
+
+Set and get ULP on the MPTCP socket itself, not on any subflow sockets.
+
+ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
+                                    char __user *optval, int __user *optlen)
+ {
+        switch (optname) {
+        case TCP_ULP:
++               return mptcp_getsockopt_tcp_ulp(sk, optval, optlen);
+        case TCP_CONGESTION:
+        case TCP_INFO:
+        case TCP_CC_INFO:
+                return mptcp_getsockopt_first_sf_only(msk, SOL_TCP, optname,
+                                                      optval, optlen);
+
+ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
+                                    sockptr_t optval, unsigned int optlen)
+ {
+        switch (optname) {
+        case TCP_ULP:
+-               return -EOPNOTSUPP;
++               return mptcp_setsockopt_tcp_ulp(sk, optval, optlen);
+
+Key points:
+
+	- Every subflow's ULP is occupied by MPTCP
+	- Only the MPTCP socket's ULP is unused
+	- setsockopt: set "tls" on the MPTCP socket
+	- getsockopt: read ULP from the MPTCP socket
+	- TLS settings are NOT synced to subflows
+
+]
+
+The first priority on the MPTCP side is to enable TLS configuration on MPTCP.
+
+The ULP of every subflow is occupied by MPTCP, but the ULP of the MPTCP socket
+itself is unused. So the only place where TLS can be set is the ULP of the
+MPTCP socket.
+
+So in setsockopt, we check whether the ULP is "tls", and if so, we set it on
+the sk, which is the MPTCP socket.
+
+In getsockopt, we read the ULP of the MPTCP socket, rather than reading
+the ULP of the first subflow as before.
+
+This is the implementation for the MPTCP socket option.
+
+[
+10
+
+MPTCP Implementation
+
+9 TCP functions used by TLS need MPTCP-specific versions:
+
+ - tcp_sendmsg_locked		->	mptcp_sendmsg_locked
+ - tcp_inq			->	mptcp_inq
+ - tcp_read_sock		->	mptcp_read_sock
+ - tcp_poll			->	mptcp_poll
+ - tcp_read_done		->	mptcp_read_done
+ - tcp_recv_skb			->	mptcp_recv_skb
+ - tcp_epollin_ready		->	mptcp_epollin_ready
+ - TCP_SKB_CB(skb)		->	MPTCP_SKB_CB(skb)
+ - tcp_rate_check_app_limited	->	mptcp_rate_check_app_limited
+
+Over half already implemented in MPTCP
+Only 4 new: mptcp_read_sock, mptcp_read_done
+	    mptcp_inq, mptcp_rate_check_app_limited
+
+]
+
+The current TLS implementation is bound to TCP, and it calls nine TCP functions
+to send and receive TCP data. With TLS, these functions are called on the TCP
+socket, and thanks to the TCP ULP framework, TCP gives callbacks in some places
+so that TLS can modify TCP's behavior.
+
+But with MPTCP, we need to deal with the MPTCP socket, which in turn manages the
+different subflows, which are TCP sockets. So we cannot simply call the hardcoded
+TCP functions; we need MPTCP-specific versions of them.
+
+To support MPTCP, MPTCP also needs to provide the same nine functions to send
+and receive MPTCP data, for TLS to call.
+
+Fortunately, over half of these MPTCP-specific functions are already implemented
+in MPTCP, and only four of them need to be implemented from scratch: they are
+mptcp_read_sock, mptcp_read_done, mptcp_inq and mptcp_rate_check_app_limited.
+
+After all these functions are implemented on the MPTCP side,
+we are ready to add MPTCP support on the TLS side.
+
+[
+11
+
+TLS Implementation in RFC version
+
+TCP is currently hardcoded in a few places, and all these places should
+switch between different functions for TCP and MPTCP
+
+A struct tls_prot_ops is defined to describe the differences between TCP and MPTCP:
+
+struct tls_prot_ops {
+	int (*sendmsg_locked)(...);
+	int (*inq)(...);
+	int (*read_sock)(...);
+	__poll_t (*poll)(...);
+
+	void (*read_done)(...);
+	struct sk_buff *(*recv_skb)(...);
+	bool (*epollin_ready)(...);
+
+	void (*check_app_limited)(...);
+	bool (*lock_is_held)(...);
+	int (*skb_get_header)(...);
+	u32 (*get_skb_seq)(...);
+};
+
+struct tls_context {
+	...
+	const struct tls_prot_ops *ops;
+	...
+};
+
+- Two instances: one for TCP, one for MPTCP
+- Pointer set at TLS setup time
+- Replaces hardcoded TCP calls
+- Works, but too much protocol awareness
+- This struct is deprecated in later versions.
+
+]
+
+The implementation on the TLS side went through two different versions.
+In the RFC version, I defined a new structure tls_prot_ops, and the implementation
+was built around this structure. In later versions, however, this structure
+was deprecated /ˈdep.rə.keɪ.tɪd/, and a new approach that fits the TLS framework
+better was used. Here I will introduce both versions in turn.
+
+On this slide, this is the RFC version of the implementation.
+Here I defined a struct tls_prot_ops to put all the functions and
+more into it to describe the differences between TCP and MPTCP.
+
+I defined two instances of this structure, one for TCP and the other for MPTCP.
+
+I added a pointer to this structure in tls_context. When TLS is set, this
+pointer is initialized to a different instance based on whether the socket protocol is TCP or MPTCP.
+
+Afterwards, we access the instance through the pointer in tls_context, and
+call the corresponding interfaces of this instance to replace the originally
+hardcoded TCP functions.
+
+This RFC version works, but there is still a lot of room for improvement.
+We should minimize TLS's awareness of TCP or MPTCP protocols.
+
+In later versions, I refactored this part of the code, and eventually removed this
+structure entirely.
+
+[
+12
+
+Refactoring 1: drop the first four interfaces
+
+Save proto_ops in struct tls_context:
+
+struct tls_context {
+	...
+        struct proto *sk_proto;
++       const struct proto_ops *sk_proto_ops;
+        struct sock *sk;
+	...
+}
+
+static struct tls_context *tls_ctx_create(struct sock *sk)
+{
+	...
+        mutex_init(&ctx->tx_lock);
+        ctx->sk_proto = READ_ONCE(sk->sk_prot);
++       ctx->sk_proto_ops = READ_ONCE(sk->sk_socket->ops);
+        ctx->sk = sk;
+	...
+}
+
+-       ret = tcp_sendmsg_locked(sk, &msg, size);
++       ret = ctx->sk_proto_ops->sendmsg_locked(sk, &msg, size);
+
+-       inq = tcp_inq(strp->sk);
++       inq = ctx->sk_proto_ops->peek_len(strp->sk->sk_socket);
+
+-       tcp_read_sock(strp->sk, &desc, tls_strp_copyin);
++       ctx->sk_proto_ops->read_sock(strp->sk, &desc, tls_strp_copyin);
+
+-       mask = tcp_poll(file, sock, wait);
++       mask = tls_ctx->sk_proto_ops->poll(file, sock, wait);
+
+- First 4 are generic socket ops (already in proto_ops)
+- read_sock and poll are overwritten by TLS
+- Save proto_ops before overwriting
+- Access original protocol via saved pointer
+
+]
+
+The first refactoring is we dropped the first four interfaces of this structure.
+
+The first four interfaces in struct tls_prot_ops are generic socket operations
+that are already defined in struct proto_ops. There is no need to redefine them
+in struct tls_prot_ops; we can access them directly through struct proto_ops.
+
+However, two interfaces, read_sock and poll, are overwritten by TLS. If we
+want to access the interfaces of the original protocol (TCP or MPTCP), we
+need to save struct proto_ops before they are overwritten. Just like the
+socket proto pointer in struct tls_context is used to save the original struct proto,
+we added the socket proto_ops pointer to save the original struct proto_ops.
+
+In this way, in TLS we can access the interfaces of the original protocol through
+the saved socket proto_ops pointer, replacing the calls of TCP functions.
+
+[
+13
+
+Refactoring 2: drop the last four interfaces
+
+ - check_app_limited()
+   tls: drop duplicate check_app_limited in tls_push_sg
+
+ - lock_is_held()
+   mptcp: defer read_sock cleanup to mptcp_worker
+
+ - skb_get_header()
+   9466ef3ec972 ("tls: fix RX desync on overlapping skbs")
+
+ - get_skb_seq()
+   mptcp: sync mptcp skb cb layout with tcp one
+   tls: read skb sequence through a TLS_SKB_CB overlay
+
+]
+
+The second refactoring is the last four interfaces in struct tls_prot_ops can
+also be dropped.
+
+1 check_app_limited
+
+When running MPTCP TLS, the code crashed in tls_push_sg. Debugging showed
+that the crash occurred when an MPTCP socket was passed to the TCP version
+of check_app_limited. We needed to implement an MPTCP-specific version of
+check_app_limited for MPTCP sockets, so a check_app_limited interface was
+added here.
+
+Recently I found that the check_app_limited call in tls_push_sg is
+duplicate, since it is always called inside sendmsg_locked. So I
+removed this check_app_limited call, and this interface is
+no longer needed.
+
+2 lock_is_held
+
+Then we encountered a deadlock problem when running MPTCP TLS.
+TLS needs to call read_sock from softirq context, and mptcp_read_sock
+holds an additional MPTCP data lock. So we added a lock_is_held
+interface to customize MPTCP's behavior.
+
+Recently, Paolo's patch removed the MPTCP data lock in mptcp_read_sock,
+so this interface is no longer needed either.
+
+3 skb_get_header
+
+Next, during testing we found that TLS decryption sometimes failed on MPTCP.
+Debugging showed that this happened in the overlapping skbs scenario /sɪˈnɑː.ri.əʊ/.
+MPTCP is more likely to trigger overlapping skbs than TCP, and in that case
+the TLS header cannot be read correctly, so decryption fails. We added a
+skb_get_header interface to customize MPTCP's behavior and read the TLS header
+correctly.
+
+Recently this overlapping skbs issue was fixed upstream in TLS, so this
+interface is no longer needed either.
+
+4 get_skb_seq
+
+The last one is get_skb_seq. Because the sk_buff control block layouts of MPTCP
+and TCP are different, we needed to use this interface to obtain the seq from the
+control block separately.
+
+Now Paolo's patch has made the MPTCP sk_buff control block layout compatible with
+TCP, so this interface is no longer needed either.
+
+[
+14
+
+Refactoring 3: drop the entire struct tls_prot_ops
+
+Add the last three interfaces to struct tls_sw_context_rx:
+
+struct tls_sw_context_rx {
+	...
+        void (*saved_data_ready)(struct sock *sk);
+
++       bool (*epollin_ready)(const struct sock *sk);
++       struct sk_buff *(*recv_skb)(struct sock *sk, u32 *off);
++       void (*read_done)(struct sock *sk, size_t len);
+	...
+};
+
+Set them based on protocol:
+
+void tls_sw_strparser_arm(struct sock *sk, struct tls_context *tls_ctx)
+{
+	...
+        write_lock_bh(&sk->sk_callback_lock);
+        rx_ctx->saved_data_ready = sk->sk_data_ready;
+        sk->sk_data_ready = tls_data_ready;
++
++       if (sk->sk_protocol == IPPROTO_MPTCP) {
++               rx_ctx->epollin_ready = mptcp_epollin_ready;
++               rx_ctx->recv_skb = mptcp_recv_skb;
++               rx_ctx->read_done = mptcp_read_done;
++       } else {
++               rx_ctx->epollin_ready = tls_sw_tcp_epollin_ready_max;
++               rx_ctx->recv_skb = tls_sw_tcp_recv_skb;
++               rx_ctx->read_done = tcp_read_done;
++       }
+        write_unlock_bh(&sk->sk_callback_lock);
+ }
+
+-       if (likely(qshort && !tcp_epollin_ready(strp->sk)))
++       if (likely(qshort && !rx->epollin_ready(strp->sk)))
+
+-       first = tcp_recv_skb(strp->sk, &offset);
++       first = rx->recv_skb(strp->sk, &offset);
+
+-               tcp_read_done(strp->sk, strp->stm.full_len);
++               rx->read_done(strp->sk, strp->stm.full_len);
+
+- Remaining three are all receive-related
+- Move them to TLS software receive context
+- struct tls_prot_ops can be dropped entirely
+
+]
+
+The last refactoring is we dropped the entire struct tls_prot_ops.
+
+After refactoring, the remaining three interfaces in struct tls_prot_ops
+are all related to receive, so a more suitable place is to add them to
+the receive side of the TLS software context.
+
+In this way, the entire struct tls_prot_ops can be dropped.
+
+This's the new implementation on the TLS side.
+
+[
+15
+
+Limitation
+
+- TLS is not supported by fallback MPTCP sockets
+  will be supported in the future
+
+- Hardware TLS offload is not supported
+  per-subflow hardware offload is very difficult on MPTCP
+  possible approach: trigger MPTCP fallback, then use the first subflow's hardware TLS offload
+
+]
+
+MPTCP TLS support currently has two key limitations.
+
+First, only non-fallback MPTCP sockets support TLS.
+Setting TLS on a fallback MPTCP socket is not supported.
+
+We will support this feature in the future, and the path to handle the
+fallback to TCP is already clear.
+
+Second, only software TLS encryption is supported for MPTCP;
+hardware TLS is not supported.
+
+Hardware TLS offload typically requires binding to a specific network
+device. Per-subflow hardware TLS offload is very difficult to implement
+on MPTCP: the NIC would need to see the whole traffic, identify subflows
+that belong to the same connection, and deal with the MPTCP data sequence
+numbers. That is already much more complex than just dealing with one
+flow and keeping an offset.
+
+The only possible approach is to trigger MPTCP fallback when hardware TLS
+is used, and then use the hardware TLS offload on the first subflow only.
+
+[
+16
+
+MPTCP TLS selftests
+
+Selftest Test: ./mptcp_tls.sh
+# # Starting 884 tests from 13 test cases.
+# #  RUN           tls.12_aes_gcm_mptcp.sendfile ...
+# #            OK  tls.12_aes_gcm_mptcp.sendfile
+# ok 1 tls.12_aes_gcm_mptcp.sendfile
+# #  RUN           tls.12_aes_gcm_mptcp.send_then_sendfile ...
+# #            OK  tls.12_aes_gcm_mptcp.send_then_sendfile
+# ok 2 tls.12_aes_gcm_mptcp.send_then_sendfile
+# #  RUN           tls.12_aes_gcm_mptcp.multi_chunk_sendfile ...
+# #            OK  tls.12_aes_gcm_mptcp.multi_chunk_sendfile
+# ok 3 tls.12_aes_gcm_mptcp.multi_chunk_sendfile
+# #  RUN           tls.12_aes_gcm_mptcp.recv_max ...
+# #            OK  tls.12_aes_gcm_mptcp.recv_max
+... ...
+# ok 881 tls.12_aria_gcm_256_mptcp.rekey_peek_splice
+# #  RUN           tls.12_aria_gcm_256_mptcp.rekey_getsockopt ...
+# #            OK  tls.12_aria_gcm_256_mptcp.rekey_getsockopt
+# ok 882 tls.12_aria_gcm_256_mptcp.rekey_getsockopt
+# #  RUN           tls.12_aria_gcm_256_mptcp.rekey_poll_pending ...
+# #            OK  tls.12_aria_gcm_256_mptcp.rekey_poll_pending
+# ok 883 tls.12_aria_gcm_256_mptcp.rekey_poll_pending
+# #  RUN           tls.12_aria_gcm_256_mptcp.rekey_poll_delay ...
+# #            OK  tls.12_aria_gcm_256_mptcp.rekey_poll_delay
+# ok 884 tls.12_aria_gcm_256_mptcp.rekey_poll_delay
+# # PASSED: 884 / 884 tests passed.
+# # Totals: pass:884 fail:0 xfail:0 xpass:0 skip:0 error:0
+
+- All TCP TLS test items now pass on MPTCP
+- All cipher types work on MPTCP for both TLS 1.2 and TLS 1.3
+
+]
+
+We added MPTCP support to the TLS selftests. Currently, all TCP TLS tests
+now pass on MPTCP as well.
+
+This test iteratively verifies that all cipher types work on MPTCP sockets,
+for both TLS 1.2 and TLS 1.3.
+
+[
+17
+
+Validation Using TLS for NVMe over MPTCP
+
+# nvme discover -a 10.1.1.1 --tos=0x10 --host-iface=ns2eth1 --tls
+# Discovery Log Number of Records 2, Generation counter 2
+...
+# =====Discovery Log Entry 1======
+# trtype:  mptcp
+# adrfam:  ipv4
+# subtype: nvme subsystem
+# treq:    required, sq flow control disable supported
+# portid:  20541
+# trsvcid: 25256
+# subnqn:  nqn.2014-08.org.nvmexpress.mptcpdev.497.24223
+# traddr:  10.1.1.1
+# eflags:  none
+# sectype: tls13
+
+# Connecting to 10.1.1.1:25256 --tos=0x10 --host-iface=ns2eth1 --tls
+nvmet: Created nvm controller 1 for subsystem nqn.2014-08.org.nvmexpress.mptcpdev.497.24223 for
+	NQN nqn.2014-08.org.nvmexpress:uuid:f7f6b5e0-ff97-4894-98ac-c85309e0bc77, TLS.
+nvme nvme0: creating 24 I/O queues.
+nvme nvme0: mapped 24/0/0 default/read/poll queues.
+nvme nvme0: new ctrl: NQN "nqn.2014-08.org.nvmexpress.mptcpdev.497.24223", addr 10.1.1.1:25256,
+	hostnqn: nqn.2014-08.org.nvmexpress:uuid:f7f6b5e0-ff97-4894-98ac-c85309e0bc77
+# PASS: mptcp socket bound to ns2eth1
+
+# nvme list
+...
+# /dev/nvme0n1 /dev/ng0n1 4ed80418956e8730c1e5	Linux 0x1 536.87 MB / 536.87 MB	512 B +  0 B 7.3.0-rc
+
+# fio randread /dev/nvme0n1
+...
+# fio-3.41
+# Starting 4 threads
+#
+# Run status group 0 (all jobs):
+#    READ: bw=107MiB/s (112MB/s), 107MiB/s-107MiB/s (112MB/s-112MB/s), io=1193MiB (1251MB), run=11202-11202msec
+#
+# Disk stats (read/write):
+#   nvme0n1: ios=9528/0, sectors=2439168/0, merge=0/0, ticks=8649677/0, in_queue=8649677, util=99.20%
+...
+# fio randwrite /dev/nvme0n1
+...
+
+]
+
+Here we use a real-world case to verify the correctness of MPTCP TLS:
+using TLS for NVMe over MPTCP.
+
+As you can see, when we run nvme discover with TLS, the output shows that
+the transport type is mptcp and the security type is tls13, which indicates
+that MPTCP TLS is working properly.
+
+When we run nvme connect with TLS, a new NVMe controller with TLS is created
+on the target side.
+
+When we run nvme list, a new NVMe device appears. We can use fio to benchmark
+reads and writes on this device, and no errors occur, which shows that it works
+well.
+
+[
+18
+
+Contact (ˈkɒn.tækt) information
+
+GitHub:
+@geliangtang
+
+Email:
+geliang@kernel.org
+
+MPTCP Community:
+Website:        https://www.mptcp.dev/
+Repositories:   https://github.com/multipath-tcp/
+Mailing List:   mptcp@lists.linux.dev
+
+]
+
+Here is the contact information for myself and the MPTCP community.
+You can find me on GitHub, and you can send me an email.
+
+[
+19
+
+References
+
+[1] MPTCP and KTLS support #480
+https://github.com/multipath-tcp/mptcp_net-next/issues/480
+
+[2] implement mptcp read_sock
+https://lore.kernel.org/all/20260130-net-next-mptcp-splice-v2-0-31332ba70d7f@kernel.org/
+
+[3] MPTCP KTLS support
+https://patchwork.kernel.org/project/netdevbpf/cover/cover.1782123118.git.tanggeliang@kylinos.cn/
+
+[4] tlshd: add mptcp support
+https://github.com/oracle/ktls-utils/commit/8fd3c7071e195206c4119575f40546f7243cc4c1
+
+]
+
+Here are the references. If you want to use this feature,
+you can find all the patches here.
+
+[
+20
+
+Questions?
+
+]
+
+If you have any questions, we can address them here.
+If I can't answer it immediately, I'll follow up with you by email or some other way.
+
+Thank you very much for your interest in MPTCP TLS.
