@@ -1362,6 +1362,56 @@ out:
 	test_sockmap_pass_prog__destroy(skel);
 }
 
+static void test_sockmap_self_redirect(void)
+{
+	int map, err, sent, recvd, zero = 0;
+	struct test_sockmap_pass_prog *skel;
+	char snd[9] = "123456789";
+	int c0 = -1, p0 = -1;
+	char rcv[10];
+
+	skel = test_sockmap_pass_prog__open_and_load();
+	if (!ASSERT_OK_PTR(skel, "open_and_load"))
+		return;
+
+	map = bpf_map__fd(skel->maps.sock_map_rx);
+
+	err = bpf_prog_attach(
+		bpf_program__fd(skel->progs.prog_skb_verdict_self_redirect),
+		map, BPF_SK_SKB_STREAM_VERDICT, 0);
+	if (!ASSERT_OK(err, "bpf_prog_attach stream verdict"))
+		goto end;
+
+	err = create_pair(AF_INET, SOCK_STREAM, &c0, &p0);
+	if (!ASSERT_OK(err, "create_pair"))
+		goto end;
+
+	err = bpf_map_update_elem(map, &zero, &p0, BPF_ANY);
+	if (!ASSERT_OK(err, "bpf_map_update_elem(p0)"))
+		goto end;
+
+	sent = send(c0, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "send(c0)"))
+		goto end;
+
+	usleep(100000);
+	bpf_map_delete_elem(map, &zero);
+
+	sent = send(c0, snd, sizeof(snd), 0);
+	if (!ASSERT_EQ(sent, sizeof(snd), "send(c0) 2nd"))
+		goto end;
+
+	recvd = recv(p0, rcv, sizeof(rcv), 0);
+	ASSERT_EQ(recvd, sizeof(snd), "recv(p0)");
+
+end:
+	if (c0 >= 0)
+		close(c0);
+	if (p0 >= 0)
+		close(p0);
+	test_sockmap_pass_prog__destroy(skel);
+}
+
 void test_sockmap_basic(void)
 {
 	if (test__start_subtest("sockmap create_update_free"))
@@ -1438,4 +1488,6 @@ void test_sockmap_basic(void)
 		test_sockmap_multi_channels(SOCK_STREAM);
 	if (test__start_subtest("sockmap udp multi channels"))
 		test_sockmap_multi_channels(SOCK_DGRAM);
+	if (test__start_subtest("sockmap self redirect"))
+		test_sockmap_self_redirect();
 }
