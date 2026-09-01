@@ -4628,28 +4628,19 @@ int do_tcp_getsockopt(struct sock *sk, int level,
 		return 0;
 	}
 	case TCP_ULP:
-		lock_sock(sk);
-		if (copy_from_sockptr(&len, optlen, sizeof(int))) {
-			release_sock(sk);
+		if (copy_from_sockptr(&len, optlen, sizeof(int)))
 			return -EFAULT;
-		}
 		len = min_t(unsigned int, len, TCP_ULP_NAME_MAX);
 		if (!icsk->icsk_ulp_ops) {
-			release_sock(sk);
 			len = 0;
 			if (copy_to_sockptr(optlen, &len, sizeof(int)))
 				return -EFAULT;
 			return 0;
 		}
-		if (copy_to_sockptr(optlen, &len, sizeof(int))) {
-			release_sock(sk);
+		if (copy_to_sockptr(optlen, &len, sizeof(int)))
 			return -EFAULT;
-		}
-		if (copy_to_sockptr(optval, icsk->icsk_ulp_ops->name, len)) {
-			release_sock(sk);
+		if (copy_to_sockptr(optval, icsk->icsk_ulp_ops->name, len))
 			return -EFAULT;
-		}
-		release_sock(sk);
 		return 0;
 
 	case TCP_FASTOPEN_KEY: {
