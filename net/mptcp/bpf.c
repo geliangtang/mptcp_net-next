@@ -465,3 +465,21 @@ BPF_CALL_4(mptcp_sock_map_update, struct bpf_sock_ops_kern *, sops,
 	return sock_map_update_common(map, *(u32 *)key, sk, flags);
 }
 EXPORT_SYMBOL_GPL(mptcp_sock_map_update);
+
+void mptcp_eat_skb(struct sock *sk, struct sk_buff *skb)
+{
+	struct mptcp_sock *msk;
+
+	if (!skb || !skb->len || !sk_is_msk(sk))
+		return;
+
+	if (skb_bpf_strparser(skb))
+		return;
+
+	msk = mptcp_sk(sk);
+	WRITE_ONCE(msk->bytes_consumed, msk->bytes_consumed + skb->len);
+	WRITE_ONCE(msk->copied_seq, msk->copied_seq + skb->len);
+	msk->read_copied += skb->len;
+	set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
+	mptcp_schedule_work(sk);
+}
