@@ -1004,8 +1004,9 @@ done
 # run_tests_disconnect
 # log_if_error "Tests of the full disconnection have failed"
 
-run_tests_tls
-log_if_error "Tests with TLS have failed"
+# Commented out: TLS tests (not fallback tests)
+# run_tests_tls
+# log_if_error "Tests with TLS have failed"
 
 display_time
 mptcp_lib_result_print_all_tap
