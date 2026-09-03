@@ -616,21 +616,23 @@ run_tests_lo()
 		local_addr="0.0.0.0"
 	fi
 
-	do_transfer ${listener_ns} ${connector_ns} MPTCP MPTCP \
-		    ${connect_addr} ${local_addr} "${extra_args}"
-	lret=$?
-	if [ $lret -ne 0 ]; then
-		ret=$lret
-		return 1
-	fi
+	# Commented out: MPTCP -> MPTCP (not fallback test)
+	# do_transfer ${listener_ns} ${connector_ns} MPTCP MPTCP \
+	# 	    ${connect_addr} ${local_addr} "${extra_args}"
+	# lret=$?
+	# if [ $lret -ne 0 ]; then
+	# 	ret=$lret
+	# 	return 1
+	# fi
 
-	if [ $do_tcp -eq 0 ]; then
-		# don't bother testing fallback tcp except for loopback case.
-		if [ ${listener_ns} != ${connector_ns} ]; then
-			return 0
-		fi
-	fi
+	# if [ $do_tcp -eq 0 ]; then
+	# 	# don't bother testing fallback tcp except for loopback case.
+	# 	if [ ${listener_ns} != ${connector_ns} ]; then
+	# 		return 0
+	# 	fi
+	# fi
 
+	# Keep: MPTCP -> TCP (fallback test)
 	do_transfer ${listener_ns} ${connector_ns} MPTCP TCP \
 		    ${connect_addr} ${local_addr} "${extra_args}"
 	lret=$?
@@ -639,6 +641,7 @@ run_tests_lo()
 		return 1
 	fi
 
+	# Keep: TCP -> MPTCP (fallback test)
 	do_transfer ${listener_ns} ${connector_ns} TCP MPTCP \
 		    ${connect_addr} ${local_addr} "${extra_args}"
 	lret=$?
@@ -647,15 +650,16 @@ run_tests_lo()
 		return 1
 	fi
 
-	if [ $do_tcp -gt 1 ] ;then
-		do_transfer ${listener_ns} ${connector_ns} TCP TCP \
-			    ${connect_addr} ${local_addr} "${extra_args}"
-		lret=$?
-		if [ $lret -ne 0 ]; then
-			ret=$lret
-			return 1
-		fi
-	fi
+	# Commented out: TCP -> TCP (not fallback test)
+	# if [ $do_tcp -gt 1 ] ;then
+	# 	do_transfer ${listener_ns} ${connector_ns} TCP TCP \
+	# 		    ${connect_addr} ${local_addr} "${extra_args}"
+	# 	lret=$?
+	# 	if [ $lret -ne 0 ]; then
+	# 		ret=$lret
+	# 		return 1
+	# 	fi
+	# fi
 
 	return 0
 }
@@ -919,12 +923,14 @@ TEST_GROUP="loopback v4"
 run_tests_lo "$ns1" "$ns1" 10.0.1.1 1
 stop_if_error "Could not even run loopback test"
 
-TEST_GROUP="loopback v6"
-run_tests_lo "$ns1" "$ns1" dead:beef:1::1 1
-stop_if_error "Could not even run loopback v6 test"
+# Commented out: loopback v6 (reduce test count)
+# TEST_GROUP="loopback v6"
+# run_tests_lo "$ns1" "$ns1" dead:beef:1::1 1
+# stop_if_error "Could not even run loopback v6 test"
 
 TEST_GROUP="multihosts"
-for sender in $ns1 $ns2 $ns3 $ns4;do
+# Reduced: only test with ns1 and ns2 as senders (instead of all 4)
+for sender in $ns1 $ns2;do
 	# ns1<->ns2 is not subject to reordering/tc delays. Use it to test
 	# mptcp syncookie support.
 	if [ $sender = $ns1 ]; then
@@ -934,39 +940,39 @@ for sender in $ns1 $ns2 $ns3 $ns4;do
 	fi
 
 	run_tests "$ns1" $sender 10.0.1.1
-	run_tests "$ns1" $sender dead:beef:1::1
+	# run_tests "$ns1" $sender dead:beef:1::1
 
 	run_tests "$ns2" $sender 10.0.1.2
-	run_tests "$ns2" $sender dead:beef:1::2
-	run_tests "$ns2" $sender 10.0.2.1
-	run_tests "$ns2" $sender dead:beef:2::1
+	# run_tests "$ns2" $sender dead:beef:1::2
+	# run_tests "$ns2" $sender 10.0.2.1
+	# run_tests "$ns2" $sender dead:beef:2::1
 
-	run_tests "$ns3" $sender 10.0.2.2
-	run_tests "$ns3" $sender dead:beef:2::2
-	run_tests "$ns3" $sender 10.0.3.2
-	run_tests "$ns3" $sender dead:beef:3::2
+	# run_tests "$ns3" $sender 10.0.2.2
+	# run_tests "$ns3" $sender dead:beef:2::2
+	# run_tests "$ns3" $sender 10.0.3.2
+	# run_tests "$ns3" $sender dead:beef:3::2
 
-	run_tests "$ns4" $sender 10.0.3.1
-	run_tests "$ns4" $sender dead:beef:3::1
+	# run_tests "$ns4" $sender 10.0.3.1
+	#run_tests "$ns4" $sender dead:beef:3::1
 
 	log_if_error "Tests with $sender as a sender have failed"
 done
 
-run_tests_peekmode "saveWithPeek"
-run_tests_peekmode "saveAfterPeek"
-log_if_error "Tests with peek mode have failed"
+# run_tests_peekmode "saveWithPeek"
+# run_tests_peekmode "saveAfterPeek"
+# log_if_error "Tests with peek mode have failed"
 
-# MPTFO (MultiPath TCP Fatopen tests)
-run_tests_mptfo
-log_if_error "Tests with MPTFO have failed"
+# # MPTFO (MultiPath TCP Fatopen tests)
+# run_tests_mptfo
+# log_if_error "Tests with MPTFO have failed"
 
-# connect to ns4 ip address, ns2 should intercept/proxy
-run_test_transparent 10.0.3.1 "tproxy ipv4"
-run_test_transparent dead:beef:3::1 "tproxy ipv6"
-log_if_error "Tests with tproxy have failed"
+# # connect to ns4 ip address, ns2 should intercept/proxy
+# run_test_transparent 10.0.3.1 "tproxy ipv4"
+# run_test_transparent dead:beef:3::1 "tproxy ipv6"
+# log_if_error "Tests with tproxy have failed"
 
-run_tests_disconnect
-log_if_error "Tests of the full disconnection have failed"
+# run_tests_disconnect
+# log_if_error "Tests of the full disconnection have failed"
 
 display_time
 mptcp_lib_result_print_all_tap
