@@ -147,6 +147,7 @@ int sk_msg_recvmsg(struct sock *sk, struct sk_psock *psock, struct msghdr *msg,
 int __sk_msg_recvmsg(struct sock *sk, struct sk_psock *psock, struct msghdr *msg,
 		     int len, int flags, int *copied_from_self);
 bool sk_msg_is_readable(struct sock *sk);
+int sk_msg_wait_data(struct sock *sk, struct sk_psock *psock, int flags);
 
 static inline void sk_msg_check_to_free(struct sk_msg *msg, u32 i, u32 bytes)
 {
