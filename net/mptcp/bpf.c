@@ -361,3 +361,21 @@ static int __init bpf_mptcp_kfunc_init(void)
 	return ret;
 }
 late_initcall(bpf_mptcp_kfunc_init);
+
+void mptcp_eat_skb(struct sock *sk, struct sk_buff *skb)
+{
+	struct mptcp_sock *msk;
+
+	if (!skb || !skb->len || !sk_is_msk(sk))
+		return;
+
+	if (skb_bpf_strparser(skb))
+		return;
+
+	msk = mptcp_sk(sk);
+	WRITE_ONCE(msk->bytes_consumed, msk->bytes_consumed + skb->len);
+	WRITE_ONCE(msk->copied_seq, msk->copied_seq + skb->len);
+	msk->read_copied += skb->len;
+	set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
+	mptcp_schedule_work(sk);
+}
