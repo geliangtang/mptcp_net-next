@@ -1181,6 +1181,15 @@ static void test_sockmap_copied_seq(bool strp)
 	if (!ASSERT_OK(err, "bpf_map_update_elem(p1)"))
 		goto end;
 
+	/* self redirect: data sent by c1 is redirected back to p1 itself */
+	sent = xsend(c1, buf, sizeof(buf), 0);
+	if (!ASSERT_EQ(sent, sizeof(buf), "xsend(c1), self"))
+		goto end;
+
+	recvd = recv_timeout(p1, rcv, sizeof(buf), MSG_DONTWAIT, 1);
+	if (!ASSERT_EQ(recvd, sent, "recv_timeout(p1), self"))
+		goto end;
+
 	/* just trigger sockamp: data sent by c0 will be received by p1 */
 	sent = xsend(c0, buf, sizeof(buf), 0);
 	if (!ASSERT_EQ(sent, sizeof(buf), "xsend(c0), bpf"))
@@ -1372,77 +1381,80 @@ out:
 
 static void run_basic_tests(void)
 {
-	if (test__start_subtest("sockmap create_update_free"))
+	char n[80];
+#define SUBTEST(fmt) ({ snprintf(n, sizeof(n), fmt, mptcp ? " mptcp" : " tcp"); test__start_subtest(n); })
+
+	if (SUBTEST("sockmap create_update_free%s"))
 		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash create_update_free"))
+	if (SUBTEST("sockhash create_update_free%s"))
 		test_sockmap_create_update_free(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap vsock delete on close"))
+	if (SUBTEST("sockmap vsock delete on close%s"))
 		test_sockmap_vsock_delete_on_close();
-	if (test__start_subtest("sockmap sk_msg load helpers"))
+	if (SUBTEST("sockmap sk_msg load helpers%s"))
 		test_skmsg_helpers(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash sk_msg load helpers"))
+	if (SUBTEST("sockhash sk_msg load helpers%s"))
 		test_skmsg_helpers(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap update in unsafe context"))
+	if (SUBTEST("sockmap update in unsafe context%s"))
 		test_sockmap_invalid_update();
-	if (test__start_subtest("sockmap copy"))
+	if (SUBTEST("sockmap copy%s"))
 		test_sockmap_copy(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash copy"))
+	if (SUBTEST("sockhash copy%s"))
 		test_sockmap_copy(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap skb_verdict attach")) {
+	if (SUBTEST("sockmap skb_verdict attach%s")) {
 		test_sockmap_skb_verdict_attach(BPF_SK_SKB_VERDICT,
 						BPF_SK_SKB_STREAM_VERDICT);
 		test_sockmap_skb_verdict_attach(BPF_SK_SKB_STREAM_VERDICT,
 						BPF_SK_SKB_VERDICT);
 	}
-	if (test__start_subtest("sockmap skb_verdict attach_with_link"))
+	if (SUBTEST("sockmap skb_verdict attach_with_link%s"))
 		test_sockmap_skb_verdict_attach_with_link();
-	if (test__start_subtest("sockmap msg_verdict progs query"))
+	if (SUBTEST("sockmap msg_verdict progs query%s"))
 		test_sockmap_progs_query(BPF_SK_MSG_VERDICT);
-	if (test__start_subtest("sockmap stream_parser progs query"))
+	if (SUBTEST("sockmap stream_parser progs query%s"))
 		test_sockmap_progs_query(BPF_SK_SKB_STREAM_PARSER);
-	if (test__start_subtest("sockmap stream_verdict progs query"))
+	if (SUBTEST("sockmap stream_verdict progs query%s"))
 		test_sockmap_progs_query(BPF_SK_SKB_STREAM_VERDICT);
-	if (test__start_subtest("sockmap skb_verdict progs query"))
+	if (SUBTEST("sockmap skb_verdict progs query%s"))
 		test_sockmap_progs_query(BPF_SK_SKB_VERDICT);
-	if (test__start_subtest("sockmap skb_verdict shutdown"))
+	if (SUBTEST("sockmap skb_verdict shutdown%s"))
 		test_sockmap_skb_verdict_shutdown();
-	if (test__start_subtest("sockmap skb_verdict fionread"))
+	if (SUBTEST("sockmap skb_verdict fionread%s"))
 		test_sockmap_skb_verdict_fionread(true);
-	if (test__start_subtest("sockmap no_verdict fionread"))
+	if (SUBTEST("sockmap no_verdict fionread%s"))
 		test_sockmap_no_verdict_fionread();
-	if (test__start_subtest("sockmap skb_verdict fionread on drop"))
+	if (SUBTEST("sockmap skb_verdict fionread on drop%s"))
 		test_sockmap_skb_verdict_fionread(false);
-	if (test__start_subtest("sockmap skb_verdict change tail"))
+	if (SUBTEST("sockmap skb_verdict change tail%s"))
 		test_sockmap_skb_verdict_change_tail();
-	if (test__start_subtest("sockmap msg_verdict pop_data overflow"))
+	if (SUBTEST("sockmap msg_verdict pop_data overflow%s"))
 		test_sockmap_msg_verdict_pop_data();
-	if (test__start_subtest("sockmap skb_verdict msg_f_peek"))
+	if (SUBTEST("sockmap skb_verdict msg_f_peek%s"))
 		test_sockmap_skb_verdict_peek();
-	if (test__start_subtest("sockmap skb_verdict msg_f_peek with link"))
+	if (SUBTEST("sockmap skb_verdict msg_f_peek with link%s"))
 		test_sockmap_skb_verdict_peek_with_link();
-	if (test__start_subtest("sockmap unconnected af_unix"))
+	if (SUBTEST("sockmap unconnected af_unix%s"))
 		test_sockmap_unconnected_unix();
-	if (test__start_subtest("sockmap one socket to many map entries"))
+	if (SUBTEST("sockmap one socket to many map entries%s"))
 		test_sockmap_many_socket();
-	if (test__start_subtest("sockmap one socket to many maps"))
+	if (SUBTEST("sockmap one socket to many maps%s"))
 		test_sockmap_many_maps();
-	if (test__start_subtest("sockmap same socket replace"))
+	if (SUBTEST("sockmap same socket replace%s"))
 		test_sockmap_same_sock();
-	if (test__start_subtest("sockmap sk_msg attach sockmap helpers with link"))
+	if (SUBTEST("sockmap sk_msg attach sockmap helpers with link%s"))
 		test_skmsg_helpers_with_link(BPF_MAP_TYPE_SOCKMAP);
-	if (test__start_subtest("sockhash sk_msg attach sockhash helpers with link"))
+	if (SUBTEST("sockhash sk_msg attach sockhash helpers with link%s"))
 		test_skmsg_helpers_with_link(BPF_MAP_TYPE_SOCKHASH);
-	if (test__start_subtest("sockmap skb_verdict vsock poll"))
+	if (SUBTEST("sockmap skb_verdict vsock poll%s"))
 		test_sockmap_skb_verdict_vsock_poll();
-	if (test__start_subtest("sockmap vsock unconnected"))
+	if (SUBTEST("sockmap vsock unconnected%s"))
 		test_sockmap_vsock_unconnected();
-	if (test__start_subtest("sockmap with zc"))
+	if (SUBTEST("sockmap with zc%s"))
 		test_sockmap_zc();
-	if (test__start_subtest("sockmap recover"))
+	if (SUBTEST("sockmap recover%s"))
 		test_sockmap_copied_seq(false);
-	if (test__start_subtest("sockmap recover with strp"))
+	if (SUBTEST("sockmap recover with strp%s"))
 		test_sockmap_copied_seq(true);
-	if (test__start_subtest("sockmap tcp multi channels"))
+	if (SUBTEST("sockmap tcp multi channels%s"))
 		test_sockmap_multi_channels(SOCK_STREAM);
 	/* UDP is unaffected by MPTCP, only run it once (in tcp mode) */
 	if (!mptcp && test__start_subtest("sockmap udp multi channels"))
