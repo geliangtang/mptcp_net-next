@@ -201,6 +201,51 @@ static int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
 	return ret;
 }
 
+int sk_msg_wait_data(struct sock *sk, struct sk_psock *psock, int flags)
+{
+	int copied = 0;
+	long timeo;
+	int data;
+
+	if (sock_flag(sk, SOCK_DONE))
+		goto out;
+
+	copied = sock_error(sk);
+	if (copied)
+		goto out;
+
+	if (sk->sk_shutdown & RCV_SHUTDOWN)
+		goto out;
+
+	if (sk->sk_state == TCP_CLOSE) {
+		copied = -ENOTCONN;
+		goto out;
+	}
+
+	timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+	if (!timeo) {
+		copied = -EAGAIN;
+		goto out;
+	}
+
+	if (signal_pending(current)) {
+		copied = sock_intr_errno(timeo);
+		goto out;
+	}
+
+	data = tcp_msg_wait_data(sk, psock, timeo);
+	if (data < 0) {
+		copied = data;
+		goto out;
+	}
+	if (data && !sk_psock_queue_empty(psock))
+		copied = 1;
+	else
+		copied = -EAGAIN;
+out:
+	return copied;
+}
+
 static bool is_next_msg_fin(struct sk_psock *psock)
 {
 	struct scatterlist *sge;
@@ -281,52 +326,19 @@ msg_bytes_ready:
 	}
 	seq += copied_from_self;
 	if (!copied) {
-		long timeo;
-		int data;
-
-		if (sock_flag(sk, SOCK_DONE))
-			goto out;
-
-		copied = sock_error(sk);
-		if (copied)
-			goto out;
-
-		if (sk->sk_shutdown & RCV_SHUTDOWN)
-			goto out;
-
-		if (sk->sk_state == TCP_CLOSE) {
-			copied = -ENOTCONN;
-			goto out;
-		}
-
-		timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
-		if (!timeo) {
-			copied = -EAGAIN;
-			goto out;
-		}
-
-		if (signal_pending(current)) {
-			copied = sock_intr_errno(timeo);
-			goto out;
-		}
-
-		data = tcp_msg_wait_data(sk, psock, timeo);
-		if (data < 0) {
-			copied = data;
-			goto unlock;
-		}
-		if (data && !sk_psock_queue_empty(psock))
+		copied = sk_msg_wait_data(sk, psock, flags);
+		if (copied > 0)
 			goto msg_bytes_ready;
-		copied = -EAGAIN;
 	}
 out:
-	if (!peek)
-		WRITE_ONCE(tcp->copied_seq, seq);
-	tcp_rcv_space_adjust(sk);
-	if (copied > 0)
-		__tcp_cleanup_rbuf(sk, copied);
+	if (copied >= 0) {
+		if (!peek)
+			WRITE_ONCE(tcp->copied_seq, seq);
+		tcp_rcv_space_adjust(sk);
+		if (copied > 0)
+			__tcp_cleanup_rbuf(sk, copied);
+	}
 
-unlock:
 	release_sock(sk);
 	sk_psock_put(sk, psock);
 	return copied;
