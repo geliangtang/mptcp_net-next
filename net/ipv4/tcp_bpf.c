@@ -177,8 +177,8 @@ int tcp_bpf_sendmsg_redir(struct sock *sk, bool ingress,
 EXPORT_SYMBOL_GPL(tcp_bpf_sendmsg_redir);
 
 #ifdef CONFIG_BPF_SYSCALL
-static int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
-			     long timeo)
+int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
+		      long timeo)
 {
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	int ret = 0;
