@@ -201,6 +201,38 @@ static int tcp_msg_wait_data(struct sock *sk, struct sk_psock *psock,
 	return ret;
 }
 
+int sk_msg_wait_data(struct sock *sk, struct sk_psock *psock, int flags)
+{
+	long timeo;
+	int data;
+
+	if (sock_flag(sk, SOCK_DONE))
+		return 0;
+
+	if (sk->sk_err)
+		return sock_error(sk);
+
+	if (sk->sk_shutdown & RCV_SHUTDOWN)
+		return 0;
+
+	if (sk->sk_state == TCP_CLOSE)
+		return -ENOTCONN;
+
+	timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+	if (!timeo)
+		return -EAGAIN;
+
+	if (signal_pending(current))
+		return sock_intr_errno(timeo);
+
+	data = tcp_msg_wait_data(sk, psock, timeo);
+	if (data < 0)
+		return data;
+	if (data && !sk_psock_queue_empty(psock))
+		return 1;
+	return -EAGAIN;
+}
+
 static bool is_next_msg_fin(struct sk_psock *psock)
 {
 	struct scatterlist *sge;
@@ -281,44 +313,9 @@ msg_bytes_ready:
 	}
 	seq += copied_from_self;
 	if (!copied) {
-		long timeo;
-		int data;
-
-		if (sock_flag(sk, SOCK_DONE))
-			goto out;
-
-		if (sk->sk_err) {
-			copied = sock_error(sk);
-			goto out;
-		}
-
-		if (sk->sk_shutdown & RCV_SHUTDOWN)
-			goto out;
-
-		if (sk->sk_state == TCP_CLOSE) {
-			copied = -ENOTCONN;
-			goto out;
-		}
-
-		timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
-		if (!timeo) {
-			copied = -EAGAIN;
-			goto out;
-		}
-
-		if (signal_pending(current)) {
-			copied = sock_intr_errno(timeo);
-			goto out;
-		}
-
-		data = tcp_msg_wait_data(sk, psock, timeo);
-		if (data < 0) {
-			copied = data;
-			goto unlock;
-		}
-		if (data && !sk_psock_queue_empty(psock))
+		copied = sk_msg_wait_data(sk, psock, flags);
+		if (copied > 0)
 			goto msg_bytes_ready;
-		copied = -EAGAIN;
 	}
 out:
 	if (!peek)
@@ -327,7 +324,6 @@ out:
 	if (copied > 0)
 		__tcp_cleanup_rbuf(sk, copied);
 
-unlock:
 	release_sock(sk);
 	sk_psock_put(sk, psock);
 	return copied;

@@ -15,6 +15,7 @@
 #include <linux/btf_ids.h>
 #include <linux/skmsg.h>
 #include <net/bpf_sk_storage.h>
+#include <net/inet_common.h>
 #include "protocol.h"
 
 #ifdef CONFIG_BPF_JIT
@@ -403,6 +404,59 @@ static int mptcp_bpf_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 	return __tcp_bpf_recvmsg(sk, msg, len, flags, mptcp_recvmsg);
 }
 
+static int mptcp_bpf_recvmsg_parser(struct sock *sk, struct msghdr *msg,
+				    size_t len, int flags)
+{
+	int peek = flags & MSG_PEEK;
+	int copied_from_self = 0;
+	struct sk_psock *psock;
+	struct mptcp_sock *msk;
+	int copied = 0;
+	u64 seq;
+
+	if (unlikely(flags & MSG_ERRQUEUE))
+		return inet_recv_error(sk, msg, len);
+
+	if (!len)
+		return 0;
+
+	psock = sk_psock_get(sk);
+	if (unlikely(!psock))
+		return mptcp_recvmsg(sk, msg, len, flags);
+
+	if (!skb_queue_empty(&sk->sk_receive_queue) &&
+	    sk_psock_queue_empty(psock)) {
+		sk_psock_put(sk, psock);
+		return mptcp_recvmsg(sk, msg, len, flags);
+	}
+
+	lock_sock(sk);
+	msk = mptcp_sk(sk);
+	seq = READ_ONCE(msk->copied_seq);
+
+msg_bytes_ready:
+	copied = __sk_msg_recvmsg(sk, psock, msg, len, flags,
+				  &copied_from_self);
+	if (!READ_ONCE(psock->progs.stream_parser))
+		seq += copied_from_self;
+	if (!copied) {
+		copied = sk_msg_wait_data(sk, psock, flags);
+		if (copied > 0)
+			goto msg_bytes_ready;
+	}
+	if (!peek)
+		WRITE_ONCE(msk->copied_seq, seq);
+	if (copied > 0) {
+		msk->read_copied += copied;
+		set_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags);
+		mptcp_schedule_work(sk);
+	}
+
+	release_sock(sk);
+	sk_psock_put(sk, psock);
+	return copied;
+}
+
 static int mptcp_bpf_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 {
 	return __tcp_bpf_sendmsg(sk, msg, size, mptcp_sendmsg);
@@ -427,8 +481,10 @@ static void mptcp_bpf_rebuild_protos(struct proto prot[MPTCP_BPF_NUM_CFGS],
 	prot[MPTCP_BPF_TX].sendmsg		= mptcp_bpf_sendmsg;
 
 	prot[MPTCP_BPF_RX]			= prot[MPTCP_BPF_BASE];
+	prot[MPTCP_BPF_RX].recvmsg		= mptcp_bpf_recvmsg_parser;
 
 	prot[MPTCP_BPF_TXRX]			= prot[MPTCP_BPF_TX];
+	prot[MPTCP_BPF_TXRX].recvmsg		= mptcp_bpf_recvmsg_parser;
 }
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
