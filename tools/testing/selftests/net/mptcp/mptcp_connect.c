@@ -49,6 +49,7 @@ extern int optind;
 static int  poll_timeout = 10 * 1000;
 static bool listen_mode;
 static bool quit;
+static pid_t shell_pid;
 
 enum cfg_mode {
 	CFG_MODE_POLL,
@@ -215,17 +216,28 @@ again:
 	}
 }
 
-static void print_err_stats(void)
+static volatile int shell_woken;
+
+static void wake_handler(int sig)
 {
-	char cmd[128];
+	shell_woken = 1;
+}
 
-	snprintf(cmd, sizeof(cmd), "ss -Menitam -o '%cport = :%s' >&2",
-		 listen_mode ? 's' : 'd', cfg_port);
+/* Notify the shell script that a poll timeout occurred, then pause with the
+ * socket still open. The shell collects socket stats via ss/nstat while the
+ * fd is still alive, then sends us SIGUSR1 to wake us up so we can exit.
+ */
+static void notify_shell(void)
+{
+	if (!shell_pid)
+		return;
 
-	fprintf(stderr, "socket stats before socket closure:\n");
-	(void)!system(cmd);
-	(void)!system("NSTAT_HISTORY=\"/tmp/$(ip netns identify).nstat\" "
-		      "nstat -s '*Tcp*' >&2");
+	shell_woken = 0;
+	signal(SIGUSR1, wake_handler);
+	kill(shell_pid, SIGUSR1);
+
+	while (!shell_woken)
+		pause();
 }
 
 static void set_rcvbuf(int fd, unsigned int size)
@@ -718,7 +730,7 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 			fprintf(stderr, "%s: poll timed out (events: "
 				"POLLIN %u, POLLOUT %u)\n", __func__,
 				fds.events & POLLIN, fds.events & POLLOUT);
-			print_err_stats();
+			notify_shell();
 			return 2;
 		}
 
@@ -1453,7 +1465,7 @@ again:
 		goto out;
 	case 0:
 		fprintf(stderr, "%s: timed out\n", __func__);
-		print_err_stats();
+		notify_shell();
 		err = 2;
 		goto out;
 	}
@@ -1788,7 +1800,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "6c:f:hi:I:jlm:M:o:p:P:r:R:s:S:t:T:w:")) != -1) {
+	while ((c = getopt(argc, argv, "6c:f:hi:I:jlm:M:o:p:P:r:R:s:S:t:T:w:W:")) != -1) {
 		switch (c) {
 		case 'f':
 			cfg_truncate = atoi(optarg);
@@ -1854,6 +1866,9 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'w':
 			cfg_wait = atoi(optarg)*1000000;
+			break;
+		case 'W':
+			shell_pid = atoi(optarg);
 			break;
 		case 'M':
 			cfg_mark = strtol(optarg, NULL, 0);
