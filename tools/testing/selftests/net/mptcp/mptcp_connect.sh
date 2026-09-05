@@ -403,7 +403,7 @@ do_transfer()
 	fi
 
 	ip netns exec ${listener_ns} \
-		./mptcp_connect -t ${timeout_poll} -l -p $port -s ${srv_proto} \
+		./mptcp_connect -t ${timeout_poll} -W $$ -l -p $port -s ${srv_proto} \
 			$extra_args $local_addr < "$sin" > "$sout" &
 	local spid=$!
 
@@ -412,7 +412,7 @@ do_transfer()
 	local start
 	start=$(date +%s%N)
 	ip netns exec ${connector_ns} \
-		./mptcp_connect -t ${timeout_poll} -p $port -s ${cl_proto} \
+		./mptcp_connect -t ${timeout_poll} -W $$ -p $port -s ${cl_proto} \
 			$extra_args $connect_addr < "$cin" > "$cout" &
 	local cpid=$!
 
@@ -420,10 +420,22 @@ do_transfer()
 		"${connector_ns}" "${port}" "${cpid}" "${spid}" &
 	local timeout_pid=$!
 
+	local timed_out=0
+	trap 'timed_out=1' USR1
+
 	wait $cpid
 	local retc=$?
 	wait $spid
 	local rets=$?
+
+	if [ ${timed_out} -eq 1 ]; then
+		# mptcp_connect paused on poll timeout, socket still open —
+		# collect stats now while the fd is alive, then wake them up
+		mptcp_lib_pr_err_stats "${listener_ns}" "${connector_ns}" "${port}"
+		kill -USR1 $cpid $spid 2>/dev/null
+		wait $cpid; retc=$?
+		wait $spid; rets=$?
+	fi
 
 	if kill -0 $timeout_pid; then
 		# Finished before the timeout: kill the background job
