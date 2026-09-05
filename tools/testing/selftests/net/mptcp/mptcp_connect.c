@@ -215,6 +215,19 @@ again:
 	}
 }
 
+static void print_err_stats(void)
+{
+	char cmd[128];
+
+	snprintf(cmd, sizeof(cmd), "ss -Menitam -o '%cport = :%s' >&2",
+		 listen_mode ? 's' : 'd', cfg_port);
+
+	fprintf(stderr, "socket stats before socket closure:\n");
+	(void)!system(cmd);
+	(void)!system("NSTAT_HISTORY=\"/tmp/$(ip netns identify).nstat\" "
+		      "nstat -s '*Tcp*' >&2");
+}
+
 static void set_rcvbuf(int fd, unsigned int size)
 {
 	int err;
@@ -705,6 +718,7 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 			fprintf(stderr, "%s: poll timed out (events: "
 				"POLLIN %u, POLLOUT %u)\n", __func__,
 				fds.events & POLLIN, fds.events & POLLOUT);
+			print_err_stats();
 			return 2;
 		}
 
@@ -1439,6 +1453,7 @@ again:
 		goto out;
 	case 0:
 		fprintf(stderr, "%s: timed out\n", __func__);
+		print_err_stats();
 		err = 2;
 		goto out;
 	}
