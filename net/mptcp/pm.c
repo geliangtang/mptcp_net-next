@@ -553,7 +553,7 @@ void mptcp_pm_new_connection(struct mptcp_sock *msk, const struct sock *ssk, int
 	WRITE_ONCE(pm->server_side, server_side);
 
 	if (mptcp_pm_is_userspace(msk))
-		mptcp_pm_userspace_created(msk, ssk);
+		mptcp_pm_get_local_id(msk, (struct sock_common *)ssk);
 
 	mptcp_event(MPTCP_EVENT_CREATED, msk, ssk, GFP_ATOMIC);
 }
@@ -1047,7 +1047,8 @@ int mptcp_pm_get_local_id(struct mptcp_sock *msk, struct sock_common *skc)
 	 */
 	mptcp_local_address((struct sock_common *)msk, &msk_local);
 	mptcp_local_address((struct sock_common *)skc, &skc_local.addr);
-	if (mptcp_addresses_equal(&msk_local, &skc_local.addr, false))
+	if (mptcp_addresses_equal(&msk_local, &skc_local.addr, false) &&
+	    !mptcp_pm_is_userspace(msk))
 		return 0;
 
 	skc_local.addr.id = 0;
