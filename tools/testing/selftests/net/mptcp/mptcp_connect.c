@@ -82,7 +82,6 @@ static char *cfg_input;
 static int cfg_repeat = 1;
 static int cfg_truncate;
 static int cfg_rcv_trunc;
-static bool cfg_disconnect;
 
 struct cfg_cmsg_types {
 	unsigned int cmsg_enabled:1;
@@ -307,7 +306,7 @@ static void do_setsockopt_tls(int fd)
 	int so_buf = 6553500;
 	int err;
 
-	if (cfg_disconnect || cfg_sockopt_types.mptfo)
+	if (cfg_sockopt_types.mptfo)
 		return;
 
 	err = do_ulp_so(fd, "tls");
@@ -1686,6 +1685,10 @@ again:
 		set_nonblock(fd, false);
 		if (connect(fd, peer->ai_addr, peer->ai_addrlen))
 			xerror("can't reconnect: %d", errno);
+
+		if (cfg_sockopt_types.tls)
+			do_setsockopt_tls(fd);
+
 		if (cfg_input)
 			close(fd_in);
 		memset(&winfo, 0, sizeof(winfo));
@@ -1818,7 +1821,6 @@ static void parse_opts(int argc, char **argv)
 			break;
 		case 'I':
 			cfg_repeat = atoi(optarg);
-			cfg_disconnect = true;
 			break;
 		case 'l':
 			listen_mode = true;
