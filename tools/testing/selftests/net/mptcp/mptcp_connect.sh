@@ -829,6 +829,10 @@ run_tests_disconnect()
 	run_tests_lo "$ns1" "$ns1" 10.0.1.1 1 "-I 3 -i $old_cin"
 	run_tests_lo "$ns1" "$ns1" dead:beef:1::1 1 "-I 3 -i $old_cin"
 
+	# TCP -> TCP disconnect test
+	do_transfer "$ns1" "$ns1" TCP TCP "10.0.1.1" "0.0.0.0" "-I 3 -i $old_cin"
+	do_transfer "$ns1" "$ns1" TCP TCP "dead:beef:1::1" "::" "-I 3 -i $old_cin"
+
 	# restore previous status
 	sin=$old_sin
 	cin=$old_cin
