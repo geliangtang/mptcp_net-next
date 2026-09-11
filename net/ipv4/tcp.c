@@ -1187,6 +1187,9 @@ int tcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t size)
 			goto out;
 		else if (err)
 			goto out_err;
+
+		if (flags & MSG_FASTOPEN)
+			goto out;
 	}
 
 	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
@@ -1652,6 +1655,38 @@ struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
 	return NULL;
 }
 EXPORT_SYMBOL(tcp_recv_skb);
+
+struct sk_buff *tcp_drain_pre_tls_data(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sk_buff *skb, *copy;
+	u32 offset, drain_len;
+
+	if (!tp->syn_data_acked || !tp->tfo_data_len)
+		return NULL;
+
+	skb = tcp_recv_skb(sk, tp->copied_seq, &offset);
+	if (!skb)
+		return NULL;
+
+	drain_len = min_t(u32, skb->len - offset, tp->tfo_data_len);
+	if (!drain_len)
+		return NULL;
+
+	copy = alloc_skb(drain_len, GFP_ATOMIC);
+	if (!copy)
+		return NULL;
+
+	if (skb_copy_bits(skb, offset, skb_put(copy, drain_len), drain_len)) {
+		kfree_skb(copy);
+		return NULL;
+	}
+
+	tp->copied_seq += drain_len;
+
+	return copy;
+}
+EXPORT_SYMBOL(tcp_drain_pre_tls_data);
 
 /*
  * This routine provides an alternative to tcp_recvmsg() for routines

@@ -318,9 +318,6 @@ static void do_setsockopt_tls(int fd)
 	int so_buf = 6553500;
 	int err;
 
-	if (cfg_sockopt_types.mptfo)
-		return;
-
 	err = do_ulp_so(fd, "tls");
 	if (err)
 		xerror("setsockopt TCP_ULP");

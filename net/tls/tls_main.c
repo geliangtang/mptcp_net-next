@@ -1124,7 +1124,8 @@ static int tls_init(struct sock *sk)
 	 * to modify the accept implementation to clone rather then
 	 * share the ulp context.
 	 */
-	if (sk->sk_state != TCP_ESTABLISHED)
+	if (sk->sk_state != TCP_ESTABLISHED &&
+	    sk->sk_state != TCP_SYN_RECV)
 		return -ENOTCONN;
 
 	/* allocate tls context */

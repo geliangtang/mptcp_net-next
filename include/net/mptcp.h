@@ -261,6 +261,8 @@ bool mptcp_epollin_ready(const struct sock *sk);
 
 __poll_t mptcp_poll(struct file *file, struct socket *sock,
 		    struct poll_table_struct *wait);
+
+struct sk_buff *mptcp_drain_pre_tls_data(struct sock *sk);
 #else
 
 static inline void mptcp_init(void)
@@ -373,6 +375,11 @@ static inline __poll_t mptcp_poll(struct file *file, struct socket *sock,
 				  struct poll_table_struct *wait)
 {
 	return 0;
+}
+
+static inline struct sk_buff *mptcp_drain_pre_tls_data(struct sock *sk)
+{
+	return NULL;
 }
 #endif /* CONFIG_MPTCP */
 

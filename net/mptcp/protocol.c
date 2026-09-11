@@ -2211,6 +2211,9 @@ static int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len)
 			goto out;
 		else if (ret)
 			goto do_error;
+
+		if (msg->msg_flags & MSG_FASTOPEN)
+			goto out;
 	}
 
 	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
@@ -5159,6 +5162,45 @@ void mptcp_read_done(struct sock *sk, size_t len)
 	}
 }
 EXPORT_SYMBOL_GPL(mptcp_read_done);
+
+struct sk_buff *mptcp_drain_pre_tls_data(struct sock *sk)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct sk_buff *skb, *copy;
+	u32 offset, drain_len;
+
+	if (!msk->tfo_skb_len)
+		return NULL;
+
+	skb = mptcp_recv_skb(sk, &offset);
+	if (!skb)
+		return NULL;
+
+	drain_len = min_t(u32, skb->len - offset, msk->tfo_skb_len);
+	if (!drain_len)
+		return NULL;
+
+	copy = alloc_skb(drain_len, GFP_ATOMIC);
+	if (!copy)
+		return NULL;
+
+	if (skb_copy_bits(skb, offset, skb_put(copy, drain_len), drain_len)) {
+		kfree_skb(copy);
+		return NULL;
+	}
+
+	msk->rcvd_dummy_seq = false;
+	if (test_and_clear_bit(MPTCP_SYNC_SEQ, &msk->cb_flags))
+		msk->copied_seq += mptcp_iasn(msk);
+
+	MPTCP_SKB_CB(skb)->map_seq64 = msk->copied_seq;
+	MPTCP_SKB_CB(skb)->map_seq = (u32)msk->copied_seq;
+
+	mptcp_read_done(sk, drain_len);
+
+	return copy;
+}
+EXPORT_SYMBOL_GPL(mptcp_drain_pre_tls_data);
 
 static const struct proto_ops mptcp_stream_ops = {
 	.family		   = PF_INET,
