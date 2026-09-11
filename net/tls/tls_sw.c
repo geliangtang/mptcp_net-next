@@ -1847,6 +1847,7 @@ int tls_sw_recvmsg(struct sock *sk,
 	struct tls_sw_context_rx *ctx = tls_sw_ctx_rx(tls_ctx);
 	struct tls_prot_info *prot = &tls_ctx->prot_info;
 	ssize_t decrypted = 0, async_copy_bytes = 0;
+	ssize_t pre_tls_copied = 0;
 	unsigned char control = 0;
 	size_t flushed_at = 0;
 	struct strp_msg *rxm;
@@ -1872,6 +1873,31 @@ int tls_sw_recvmsg(struct sock *sk,
 	err = ctx->async_wait.err;
 	if (err)
 		goto end;
+
+	if (ctx->pre_tls_data) {
+		struct sk_buff *skb = ctx->pre_tls_data;
+		size_t avail = skb->len - ctx->pre_tls_offset;
+		size_t chunk = min_t(size_t, avail, len);
+
+		err = skb_copy_datagram_msg(skb, ctx->pre_tls_offset,
+					    msg, chunk);
+		if (err)
+			goto end;
+
+		pre_tls_copied = chunk;
+		if (!is_peek) {
+			ctx->pre_tls_offset += chunk;
+			if (ctx->pre_tls_offset >= skb->len) {
+				consume_skb(skb);
+				ctx->pre_tls_data = NULL;
+				ctx->pre_tls_offset = 0;
+			}
+		}
+
+		if (pre_tls_copied >= len)
+			goto end;
+		len -= pre_tls_copied;
+	}
 
 	/* Process pending decrypted records. It must be non-zero-copy */
 	err = process_rx_list(ctx, msg, &control, 0, len, is_peek, &rx_more);
@@ -2028,6 +2054,7 @@ recv_end:
 
 end:
 	tls_rx_reader_unlock(sk, ctx);
+	copied += pre_tls_copied;
 	return copied ? : err;
 }
 
@@ -2212,7 +2239,8 @@ bool tls_sw_sock_is_readable(struct sock *sk)
 	struct tls_context *tls_ctx = tls_get_ctx(sk);
 	struct tls_sw_context_rx *ctx = tls_sw_ctx_rx(tls_ctx);
 
-	return tls_strp_msg_ready(ctx) ||
+	return ctx->pre_tls_data ||
+		tls_strp_msg_ready(ctx) ||
 		!skb_queue_empty(&ctx->rx_list);
 }
 
@@ -2374,6 +2402,12 @@ void tls_sw_release_resources_rx(struct sock *sk)
 			write_unlock_bh(&sk->sk_callback_lock);
 		}
 	}
+
+	if (ctx->pre_tls_data) {
+		consume_skb(ctx->pre_tls_data);
+		ctx->pre_tls_data = NULL;
+		ctx->pre_tls_offset = 0;
+	}
 }
 
 void tls_sw_strparser_done(struct tls_context *tls_ctx)
@@ -2484,6 +2518,11 @@ void tls_sw_strparser_arm(struct sock *sk, struct tls_context *tls_ctx)
 	rx_ctx->saved_data_ready = sk->sk_data_ready;
 	sk->sk_data_ready = tls_data_ready;
 	rx_ctx->strp_ops = ops;
+
+	if (sk->sk_protocol == IPPROTO_MPTCP)
+		rx_ctx->pre_tls_data = mptcp_drain_pre_tls_data(sk);
+	else
+		rx_ctx->pre_tls_data = tcp_drain_pre_tls_data(sk);
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
