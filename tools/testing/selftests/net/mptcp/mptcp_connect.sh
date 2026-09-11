@@ -799,6 +799,10 @@ run_tests_mptfo()
 	run_tests_lo "$ns1" "$ns2" dead:beef:1::1 0 "-o MPTFO"
 	run_tests_lo "$ns1" "$ns2" dead:beef:1::1 0 "-o MPTFO"
 
+	# TCP -> TCP with MPTFO (tests tcp_drain_pre_tls_data)
+	do_transfer "$ns1" "$ns2" TCP TCP "10.0.1.1" "0.0.0.0" "-o MPTFO"
+	do_transfer "$ns1" "$ns2" TCP TCP "dead:beef:1::1" "::" "-o MPTFO"
+
 	ip netns exec "$ns1" sysctl -q net.ipv4.tcp_fastopen=0
 	ip netns exec "$ns2" sysctl -q net.ipv4.tcp_fastopen=0
 	mptcp_lib_pr_info "with MPTFO end"

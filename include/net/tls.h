@@ -149,6 +149,9 @@ struct tls_sw_context_rx {
 	atomic_t decrypt_pending;
 	struct sk_buff_head async_hold;
 	struct wait_queue_head wq;
+
+	struct sk_buff *pre_tls_data;
+	size_t pre_tls_offset;
 };
 
 struct tls_record_info {

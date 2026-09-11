@@ -863,6 +863,7 @@ int tcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
 int tcp_read_skb(struct sock *sk, skb_read_actor_t recv_actor);
 struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off);
 void tcp_read_done(struct sock *sk, size_t len);
+struct sk_buff *tcp_drain_pre_tls_data(struct sock *sk);
 
 void tcp_initialize_rcv_mss(struct sock *sk);
 

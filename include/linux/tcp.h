@@ -412,6 +412,7 @@ struct tcp_sock {
 	u8	keepalive_probes; /* num of allowed keep alive probes	*/
 	u8	accecn_fail_mode:4,	/* AccECN failure handling */
 		saw_accecn_opt:2;	/* An AccECN option was seen */
+	u16	tfo_data_len;	/* bytes of TFO data received (server) */
 	u32	tcp_tx_delay;	/* delay (in usec) added to TX packets */
 
 /* RTT measurement */
