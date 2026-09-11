@@ -284,6 +284,7 @@ void tcp_fastopen_add_skb(struct sock *sk, struct sk_buff *skb)
 	tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 	tcp_add_receive_queue(sk, skb);
 	tp->syn_data_acked = 1;
+	tp->tfo_data_len = skb->len;
 
 	/* u64_stats_update_begin(&tp->syncp) not needed here,
 	 * as we certainly are not changing upper 32bit value (0)
