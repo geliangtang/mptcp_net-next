@@ -969,6 +969,9 @@ TEST_GROUP="loopback v4"
 run_tests_lo "$ns1" "$ns1" 10.0.1.1 1
 stop_if_error "Could not even run loopback test"
 
+run_tests_mptfo
+log_if_error "Tests with MPTFO have failed"
+
 TEST_GROUP="loopback v6"
 run_tests_lo "$ns1" "$ns1" dead:beef:1::1 1
 stop_if_error "Could not even run loopback v6 test"
@@ -1007,8 +1010,8 @@ run_tests_peekmode "saveAfterPeek"
 log_if_error "Tests with peek mode have failed"
 
 # MPTFO (MultiPath TCP Fatopen tests)
-run_tests_mptfo
-log_if_error "Tests with MPTFO have failed"
+#run_tests_mptfo
+#log_if_error "Tests with MPTFO have failed"
 
 # connect to ns4 ip address, ns2 should intercept/proxy
 run_test_transparent 10.0.3.1 "tproxy ipv4"
