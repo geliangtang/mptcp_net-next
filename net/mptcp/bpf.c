@@ -603,8 +603,12 @@ BPF_CALL_4(mptcp_sock_map_update, struct bpf_sock_ops_kern *, sops,
 	WARN_ON_ONCE(!rcu_read_lock_held());
 
 	msk = bpf_mptcp_sock_from_subflow(sk);
-	if (msk)
+	if (msk) {
+		if (sk != READ_ONCE(msk->first))
+			return -EINVAL;
+
 		sk = (struct sock *)msk;
+	}
 
 	return sock_map_update_common(map, *(u32 *)key, sk, flags);
 }
