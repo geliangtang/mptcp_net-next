@@ -308,7 +308,7 @@ static int sock_map_link(struct bpf_map *map, struct sock *sk)
 	}
 
 	if (stream_parser && stream_verdict && !psock->saved_data_ready) {
-		if (sk_is_tcp(sk))
+		if (sk_is_tcp(sk) || msk_is_mptcp(sk))
 			ret = sk_psock_init_strp(sk, psock);
 		else
 			ret = -EOPNOTSUPP;
