@@ -993,6 +993,14 @@ static int sk_psock_skb_redirect(struct sk_psock *from, struct sk_buff *skb)
 	return 0;
 }
 
+static void sk_psock_eat_skb(struct sock *sk, struct sk_buff *skb)
+{
+	if (sk_is_tcp(sk))
+		tcp_eat_skb(sk, skb);
+	else if (sk_is_msk(sk))
+		mptcp_eat_skb(sk, skb);
+}
+
 static int sk_psock_verdict_apply(struct sk_psock *psock, struct sk_buff *skb,
 				  int verdict)
 {
@@ -1044,14 +1052,14 @@ static int sk_psock_verdict_apply(struct sk_psock *psock, struct sk_buff *skb,
 		}
 		break;
 	case __SK_REDIRECT:
-		tcp_eat_skb(psock->sk, skb);
+		sk_psock_eat_skb(psock->sk, skb);
 		err = sk_psock_skb_redirect(psock, skb);
 		break;
 	case __SK_DROP:
 	default:
 out_free:
 		skb_bpf_redirect_clear(skb);
-		tcp_eat_skb(psock->sk, skb);
+		sk_psock_eat_skb(psock->sk, skb);
 		sock_drop(psock->sk, skb);
 	}
 
@@ -1210,7 +1218,7 @@ static int sk_psock_verdict_recv(struct sock *sk, struct sk_buff *skb)
 	psock = sk_psock(sk);
 	if (unlikely(!psock)) {
 		len = 0;
-		tcp_eat_skb(sk, skb);
+		sk_psock_eat_skb(sk, skb);
 		sock_drop(sk, skb);
 		goto out;
 	}
