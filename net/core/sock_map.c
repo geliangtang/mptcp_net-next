@@ -527,7 +527,7 @@ static bool sock_map_op_okay(const struct bpf_sock_ops_kern *ops)
 
 static bool sock_map_redirect_allowed(const struct sock *sk)
 {
-	if (sk_is_tcp(sk))
+	if (sk_is_tcp(sk) || sk_is_msk(sk))
 		return sk->sk_state != TCP_LISTEN;
 	else
 		return READ_ONCE(sk->sk_state) == TCP_ESTABLISHED;
@@ -683,7 +683,7 @@ BPF_CALL_4(bpf_msg_redirect_map, struct sk_msg *, msg,
 	sk = __sock_map_lookup_elem(map, key);
 	if (unlikely(!sk || !sock_map_redirect_allowed(sk)))
 		return SK_DROP;
-	if (!(flags & BPF_F_INGRESS) && !sk_is_tcp(sk))
+	if (!(flags & BPF_F_INGRESS) && !(sk_is_tcp(sk) || sk_is_msk(sk)))
 		return SK_DROP;
 	if (sk_is_vsock(sk))
 		return SK_DROP;
@@ -1289,7 +1289,7 @@ BPF_CALL_4(bpf_msg_redirect_hash, struct sk_msg *, msg,
 	sk = __sock_hash_lookup_elem(map, key);
 	if (unlikely(!sk || !sock_map_redirect_allowed(sk)))
 		return SK_DROP;
-	if (!(flags & BPF_F_INGRESS) && !sk_is_tcp(sk))
+	if (!(flags & BPF_F_INGRESS) && !(sk_is_tcp(sk) || sk_is_msk(sk)))
 		return SK_DROP;
 	if (sk_is_vsock(sk))
 		return SK_DROP;

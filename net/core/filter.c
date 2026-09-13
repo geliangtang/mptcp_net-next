@@ -11738,15 +11738,14 @@ struct sock *bpf_run_sk_reuseport(struct sock_reuseport *reuse, struct sock *sk,
 		return ERR_PTR(-ECONNREFUSED);
 }
 
-BPF_CALL_4(sk_select_reuseport, struct sk_reuseport_kern *, reuse_kern,
-	   struct bpf_map *, map, void *, key, u32, flags)
+int sk_select_reuseport_lookup(struct sk_reuseport_kern *reuse_kern,
+			       struct sock *selected_sk,
+			       struct bpf_map *map)
 {
 	bool is_sockarray = map->map_type == BPF_MAP_TYPE_REUSEPORT_SOCKARRAY;
 	struct sock_reuseport *reuse;
-	struct sock *selected_sk;
 	int err;
 
-	selected_sk = map->ops->map_lookup_elem(map, key);
 	if (!selected_sk)
 		return -ENOENT;
 
@@ -11781,10 +11780,20 @@ BPF_CALL_4(sk_select_reuseport, struct sk_reuseport_kern *, reuse_kern,
 
 	return 0;
 error:
-	/* Lookup in sock_map can return TCP ESTABLISHED sockets. */
-	if (sk_is_refcounted(selected_sk))
-		sock_put(selected_sk);
+	return err;
+}
+EXPORT_SYMBOL(sk_select_reuseport_lookup);
 
+BPF_CALL_4(sk_select_reuseport, struct sk_reuseport_kern *, reuse_kern,
+	   struct bpf_map *, map, void *, key, u32, flags)
+{
+	struct sock *selected_sk;
+	int err;
+
+	selected_sk = map->ops->map_lookup_elem(map, key);
+	err = sk_select_reuseport_lookup(reuse_kern, selected_sk, map);
+	if (unlikely(err) && selected_sk && sk_is_refcounted(selected_sk))
+		sock_put(selected_sk);
 	return err;
 }
 
@@ -11798,6 +11807,7 @@ static const struct bpf_func_proto sk_select_reuseport_proto = {
 	.arg4_type	= ARG_ANYTHING,
 };
 
+#if IS_ENABLED(CONFIG_MPTCP)
 static const struct bpf_func_proto mptcp_sock_map_update_proto = {
 	.func		= mptcp_sock_map_update,
 	.gpl_only	= false,
@@ -11807,6 +11817,17 @@ static const struct bpf_func_proto mptcp_sock_map_update_proto = {
 	.arg3_type	= ARG_PTR_TO_MAP_KEY,
 	.arg4_type	= ARG_ANYTHING,
 };
+
+static const struct bpf_func_proto mptcp_sk_select_reuseport_proto = {
+	.func           = mptcp_sk_select_reuseport,
+	.gpl_only       = true,
+	.ret_type       = RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_CONST_MAP_PTR,
+	.arg3_type      = ARG_PTR_TO_MAP_KEY,
+	.arg4_type	= ARG_ANYTHING,
+};
+#endif
 
 BPF_CALL_4(sk_reuseport_load_bytes,
 	   const struct sk_reuseport_kern *, reuse_kern, u32, offset,
@@ -11851,6 +11872,10 @@ sk_reuseport_func_proto(enum bpf_func_id func_id,
 	switch (func_id) {
 	case BPF_FUNC_sk_select_reuseport:
 		return &sk_select_reuseport_proto;
+#if IS_ENABLED(CONFIG_MPTCP)
+	case BPF_FUNC_mptcp_sk_select_reuseport:
+		return &mptcp_sk_select_reuseport_proto;
+#endif
 	case BPF_FUNC_skb_load_bytes:
 		return &sk_reuseport_load_bytes_proto;
 	case BPF_FUNC_skb_load_bytes_relative:
