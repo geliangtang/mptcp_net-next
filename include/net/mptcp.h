@@ -247,6 +247,8 @@ static inline __be32 mptcp_reset_option(const struct sk_buff *skb)
 }
 
 void mptcp_active_detect_blackhole(struct sock *sk, bool expired);
+
+void mptcp_eat_skb(struct sock *sk, struct sk_buff *skb);
 #else
 
 static inline void mptcp_init(void)
@@ -335,6 +337,8 @@ static inline void mptcp_subflow_reqsk_clone(struct request_sock *req,
 static inline __be32 mptcp_reset_option(const struct sk_buff *skb)  { return htonl(0u); }
 
 static inline void mptcp_active_detect_blackhole(struct sock *sk, bool expired) { }
+
+static inline void mptcp_eat_skb(struct sock *sk, struct sk_buff *skb) { }
 #endif /* CONFIG_MPTCP */
 
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
