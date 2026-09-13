@@ -13,6 +13,8 @@
 #define MAX_TEST_NAME 80
 #define TCP_ULP 31
 
+static bool mptcp;
+
 static int init_ktls_pairs(int c, int p)
 {
 	int err;
@@ -50,7 +52,8 @@ static int create_ktls_pairs(int family, int sotype, int *c, int *p)
 {
 	int err;
 
-	err = create_pair(family, sotype, c, p);
+	err = create_pair_proto(family, sotype,
+				mptcp ? IPPROTO_MPTCP : 0, c, p);
 	if (!ASSERT_OK(err, "create_pair()"))
 		return -1;
 
@@ -82,7 +85,7 @@ static void test_sockmap_ktls_update_fails_when_sock_has_ulp(int family, int map
 		return;
 	}
 
-	s = socket(family, SOCK_STREAM, 0);
+	s = socket(family, SOCK_STREAM, mptcp ? IPPROTO_MPTCP : 0);
 	if (!ASSERT_GE(s, 0, "socket"))
 		return;
 
@@ -144,7 +147,7 @@ static void test_sockmap_ktls_enable_fails_when_in_sockmap(int family, int map)
 		return;
 	}
 
-	s = socket(family, SOCK_STREAM, 0);
+	s = socket(family, SOCK_STREAM, mptcp ? IPPROTO_MPTCP : 0);
 	if (!ASSERT_GE(s, 0, "socket"))
 		return;
 
@@ -186,7 +189,8 @@ static const char *fmt_test_name(const char *subtest_name, int family,
 	static char test_name[MAX_TEST_NAME];
 
 	snprintf(test_name, MAX_TEST_NAME,
-		 "sockmap_ktls %s %s %s",
+		 "sockmap_ktls %s %s %s %s",
+		 mptcp ? "mptcp" : "tcp",
 		 subtest_name, family_str, map_type_str);
 
 	return test_name;
@@ -240,11 +244,15 @@ static void run_tests(int family, enum bpf_map_type map_type)
 
 static void run_ktls_test(int family, int sotype)
 {
-	if (test__start_subtest("tls simple offload"))
+	char s[MAX_TEST_NAME];
+
+	snprintf(s, sizeof(s), "sockmap_ktls %s tls simple offload",
+		 mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
 		test_sockmap_ktls_offload(family, sotype);
 }
 
-void test_sockmap_ktls(void)
+static void run_ktls_tests(void)
 {
 	run_tests(AF_INET, BPF_MAP_TYPE_SOCKMAP);
 	run_tests(AF_INET, BPF_MAP_TYPE_SOCKHASH);
@@ -252,4 +260,16 @@ void test_sockmap_ktls(void)
 	run_tests(AF_INET6, BPF_MAP_TYPE_SOCKHASH);
 	run_ktls_test(AF_INET, SOCK_STREAM);
 	run_ktls_test(AF_INET6, SOCK_STREAM);
+}
+
+void test_sockmap_ktls(void)
+{
+	bool has_mptcp = is_mptcp_enable();
+
+	for (int i = 0; i < 2; i++) {
+		mptcp = i;
+		if (mptcp && !has_mptcp)
+			continue;
+		run_ktls_tests();
+	}
 }
