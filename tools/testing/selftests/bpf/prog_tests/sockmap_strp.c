@@ -10,6 +10,8 @@
 #define STRP_PKT_BODY_LEN 6
 #define STRP_PKT_FULL_LEN (STRP_PKT_HEAD_LEN + STRP_PKT_BODY_LEN)
 
+static bool mptcp;
+
 static const char packet[STRP_PKT_FULL_LEN] = "head+body\0";
 static const int test_packet_num = 100;
 
@@ -111,7 +113,9 @@ static void test_sockmap_strp_dispatch_pkt(int family, int sotype)
 	if (!ASSERT_TRUE(strp, "sockmap_strp_init"))
 		return;
 
-	err = create_socket_pairs(family, sotype, &c0, &c1, &p0, &p1);
+	err = create_socket_pairs_proto(family, sotype,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (!ASSERT_OK(err, "create_socket_pairs()"))
 		goto out;
 
@@ -178,7 +182,8 @@ static void test_sockmap_strp_multiple_pkt(int family, int sotype)
 	if (!ASSERT_TRUE(strp, "sockmap_strp_init"))
 		return;
 
-	err = create_pair(family, sotype, &c, &p);
+	err = create_pair_proto(family, sotype, mptcp ? IPPROTO_MPTCP : 0,
+				&c, &p);
 	if (err)
 		goto out;
 
@@ -238,7 +243,8 @@ static void test_sockmap_strp_partial_read(int family, int sotype)
 	if (!ASSERT_TRUE(strp, "sockmap_strp_init"))
 		return;
 
-	err = create_pair(family, sotype, &c, &p);
+	err = create_pair_proto(family, sotype, mptcp ? IPPROTO_MPTCP : 0,
+				&c, &p);
 	if (err)
 		goto out;
 
@@ -299,7 +305,8 @@ static void test_sockmap_strp_pass(int family, int sotype, bool fionread)
 	if (!ASSERT_TRUE(strp, "sockmap_strp_init"))
 		return;
 
-	err = create_pair(family, sotype, &c, &p);
+	err = create_pair_proto(family, sotype, mptcp ? IPPROTO_MPTCP : 0,
+				&c, &p);
 	if (err)
 		goto out;
 
@@ -382,7 +389,9 @@ static void test_sockmap_strp_verdict(int family, int sotype)
 	 * From c1's perspective, it will consider this data
 	 * as being sent by p1.
 	 */
-	err = create_socket_pairs(family, sotype, &c0, &c1, &p0, &p1);
+	err = create_socket_pairs_proto(family, sotype,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (!ASSERT_OK(err, "create_socket_pairs()"))
 		goto out;
 
@@ -460,26 +469,51 @@ out:
 	test_sockmap_strp__destroy(strp);
 }
 
+static void run_strp_tests(void)
+{
+	char s[MAX_TEST_NAME];
+
+	snprintf(s, sizeof(s), "sockmap strp %s pass", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_pass(AF_INET, SOCK_STREAM, false);
+	snprintf(s, sizeof(s), "sockmap strp %s v6 pass", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_pass(AF_INET6, SOCK_STREAM, false);
+	snprintf(s, sizeof(s), "sockmap strp %s pass fionread", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_pass(AF_INET, SOCK_STREAM, true);
+	snprintf(s, sizeof(s), "sockmap strp %s v6 pass fionread", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_pass(AF_INET6, SOCK_STREAM, true);
+	snprintf(s, sizeof(s), "sockmap strp %s verdict", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_verdict(AF_INET, SOCK_STREAM);
+	snprintf(s, sizeof(s), "sockmap strp %s v6 verdict", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_verdict(AF_INET6, SOCK_STREAM);
+	snprintf(s, sizeof(s), "sockmap strp %s partial read", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_partial_read(AF_INET, SOCK_STREAM);
+	snprintf(s, sizeof(s), "sockmap strp %s multiple packets", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_multiple_pkt(AF_INET, SOCK_STREAM);
+	snprintf(s, sizeof(s), "sockmap strp %s dispatch", mptcp ? "mptcp" : "tcp");
+	if (test__start_subtest(s))
+		test_sockmap_strp_dispatch_pkt(AF_INET, SOCK_STREAM);
+
+	/* Protocol-independent, only run once (in tcp mode) */
+	if (!mptcp && test__start_subtest("sockmap strp parser reject pkt mod"))
+		test_sockmap_strp_parser_reject();
+}
+
 void test_sockmap_strp(void)
 {
-	if (test__start_subtest("sockmap strp tcp pass"))
-		test_sockmap_strp_pass(AF_INET, SOCK_STREAM, false);
-	if (test__start_subtest("sockmap strp tcp v6 pass"))
-		test_sockmap_strp_pass(AF_INET6, SOCK_STREAM, false);
-	if (test__start_subtest("sockmap strp tcp pass fionread"))
-		test_sockmap_strp_pass(AF_INET, SOCK_STREAM, true);
-	if (test__start_subtest("sockmap strp tcp v6 pass fionread"))
-		test_sockmap_strp_pass(AF_INET6, SOCK_STREAM, true);
-	if (test__start_subtest("sockmap strp tcp verdict"))
-		test_sockmap_strp_verdict(AF_INET, SOCK_STREAM);
-	if (test__start_subtest("sockmap strp tcp v6 verdict"))
-		test_sockmap_strp_verdict(AF_INET6, SOCK_STREAM);
-	if (test__start_subtest("sockmap strp tcp partial read"))
-		test_sockmap_strp_partial_read(AF_INET, SOCK_STREAM);
-	if (test__start_subtest("sockmap strp tcp multiple packets"))
-		test_sockmap_strp_multiple_pkt(AF_INET, SOCK_STREAM);
-	if (test__start_subtest("sockmap strp tcp dispatch"))
-		test_sockmap_strp_dispatch_pkt(AF_INET, SOCK_STREAM);
-	if (test__start_subtest("sockmap strp parser reject pkt mod"))
-		test_sockmap_strp_parser_reject();
+	bool has_mptcp = is_mptcp_enable();
+
+	for (int i = 0; i < 2; i++) {
+		mptcp = i;
+		if (mptcp && !has_mptcp)
+			continue;
+		run_strp_tests();
+	}
 }
