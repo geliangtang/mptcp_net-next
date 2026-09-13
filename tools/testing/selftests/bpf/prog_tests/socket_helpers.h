@@ -408,16 +408,16 @@ static inline int create_pair_proto(int family, int sotype, int proto,
 #define create_pair(family, sotype, p0, p1) \
 	create_pair_proto(family, sotype, 0, p0, p1)
 
-static inline int create_socket_pairs(int family, int sotype, int *c0, int *c1,
-				      int *p0, int *p1)
+static inline int create_socket_pairs_proto(int family, int sotype, int proto,
+					    int *c0, int *c1, int *p0, int *p1)
 {
 	int err;
 
-	err = create_pair(family, sotype, c0, p0);
+	err = create_pair_proto(family, sotype, proto, c0, p0);
 	if (err)
 		return err;
 
-	err = create_pair(family, sotype, c1, p1);
+	err = create_pair_proto(family, sotype, proto, c1, p1);
 	if (err) {
 		close(*c0);
 		close(*p0);
@@ -425,6 +425,9 @@ static inline int create_socket_pairs(int family, int sotype, int *c0, int *c1,
 
 	return err;
 }
+
+#define create_socket_pairs(family, sotype, c0, c1, p0, p1) \
+	create_socket_pairs_proto(family, sotype, 0, c0, c1, p0, p1)
 
 static inline const char *socket_kind_to_str(int sock_fd)
 {

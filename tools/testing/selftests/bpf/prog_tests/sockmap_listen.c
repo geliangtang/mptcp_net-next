@@ -693,8 +693,9 @@ static void redir_to_connected(int family, int sotype, int sock_mapfd,
 
 	zero_verdict_count(verd_mapfd);
 
-	err = create_socket_pairs(family, sotype | SOCK_NONBLOCK, &c0, &c1,
-				  &p0, &p1);
+	err = create_socket_pairs_proto(family, sotype | SOCK_NONBLOCK,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (err)
 		return;
 
@@ -923,8 +924,9 @@ static void redir_partial(int family, int sotype, int sock_map, int parser_map)
 	if (err)
 		return;
 
-	err = create_socket_pairs(family, sotype | SOCK_NONBLOCK, &c0, &c1,
-				  &p0, &p1);
+	err = create_socket_pairs_proto(family, sotype | SOCK_NONBLOCK,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (err)
 		goto clean_parser_map;
 
