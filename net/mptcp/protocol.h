@@ -1410,6 +1410,8 @@ extern struct proto mptcp_prot;
 int mptcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags);
 int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len);
 int mptcp_ioctl(struct sock *sk, int cmd, int *karg);
+int mptcp_read_sock_noack(struct sock *sk, read_descriptor_t *desc,
+			  sk_read_actor_t recv_actor);
 
 #ifdef CONFIG_BPF_SYSCALL
 int mptcp_bpf_update_proto(struct sock *sk, struct sk_psock *psock,
