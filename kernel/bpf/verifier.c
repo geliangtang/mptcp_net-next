@@ -10658,6 +10658,7 @@ static int check_map_func_compatibility(struct bpf_verifier_env *env,
 		    func_id != BPF_FUNC_sk_select_reuseport &&
 		    func_id != BPF_FUNC_map_lookup_elem &&
 		    func_id != BPF_FUNC_mptcp_sock_map_update &&
+		    func_id != BPF_FUNC_mptcp_sk_select_reuseport &&
 		    !may_update_sockmap(env, func_id))
 			goto error;
 		break;
@@ -10667,11 +10668,13 @@ static int check_map_func_compatibility(struct bpf_verifier_env *env,
 		    func_id != BPF_FUNC_msg_redirect_hash &&
 		    func_id != BPF_FUNC_sk_select_reuseport &&
 		    func_id != BPF_FUNC_map_lookup_elem &&
+		    func_id != BPF_FUNC_mptcp_sk_select_reuseport &&
 		    !may_update_sockmap(env, func_id))
 			goto error;
 		break;
 	case BPF_MAP_TYPE_REUSEPORT_SOCKARRAY:
-		if (func_id != BPF_FUNC_sk_select_reuseport)
+		if (func_id != BPF_FUNC_sk_select_reuseport &&
+		    func_id != BPF_FUNC_mptcp_sk_select_reuseport)
 			goto error;
 		break;
 	case BPF_MAP_TYPE_QUEUE:
@@ -10782,6 +10785,7 @@ static int check_map_func_compatibility(struct bpf_verifier_env *env,
 			goto error;
 		break;
 	case BPF_FUNC_sk_select_reuseport:
+	case BPF_FUNC_mptcp_sk_select_reuseport:
 		if (map->map_type != BPF_MAP_TYPE_REUSEPORT_SOCKARRAY &&
 		    map->map_type != BPF_MAP_TYPE_SOCKMAP &&
 		    map->map_type != BPF_MAP_TYPE_SOCKHASH)
