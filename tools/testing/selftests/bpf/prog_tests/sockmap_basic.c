@@ -550,7 +550,9 @@ static void do_test_sockmap_skb_verdict_fionread(int sotype, bool pass_prog)
 	if (!ASSERT_OK(err, "bpf_prog_attach"))
 		goto out;
 
-	err = create_socket_pairs(AF_INET, sotype, &c0, &c1, &p0, &p1);
+	err = create_socket_pairs_proto(AF_INET, sotype,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (!ASSERT_OK(err, "create_socket_pairs()"))
 		goto out;
 
@@ -1098,7 +1100,9 @@ static void test_sockmap_zc(void)
 	if (!ASSERT_OK_PTR(skel, "open_and_load"))
 		return;
 
-	if (create_socket_pairs(AF_INET, SOCK_STREAM, &c0, &c1, &p0, &p1))
+	if (create_socket_pairs_proto(AF_INET, SOCK_STREAM,
+				      mptcp ? IPPROTO_MPTCP : 0,
+				      &c0, &c1, &p0, &p1))
 		goto end;
 
 	prog = skel->progs.prog_skb_verdict_ingress;
@@ -1170,7 +1174,9 @@ static void test_sockmap_copied_seq(bool strp)
 	if (!ASSERT_OK_PTR(skel, "open_and_load"))
 		return;
 
-	if (create_socket_pairs(AF_INET, SOCK_STREAM, &c0, &c1, &p0, &p1))
+	if (create_socket_pairs_proto(AF_INET, SOCK_STREAM,
+				      mptcp ? IPPROTO_MPTCP : 0,
+				      &c0, &c1, &p0, &p1))
 		goto end;
 
 	prog = skel->progs.prog_skb_verdict_ingress;
@@ -1279,7 +1285,9 @@ static void test_sockmap_multi_channels(int sotype)
 	if (!ASSERT_OK_PTR(skel, "open_and_load"))
 		return;
 
-	err = create_socket_pairs(AF_INET, sotype, &c0, &c1, &p0, &p1);
+	err = create_socket_pairs_proto(AF_INET, sotype,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (err)
 		goto end;
 
@@ -1362,7 +1370,9 @@ static void test_sockmap_no_verdict_fionread(void)
 		return;
 	map = bpf_map__fd(skel->maps.sock_map_rx);
 
-	err = create_socket_pairs(AF_INET, SOCK_STREAM, &c0, &c1, &p0, &p1);
+	err = create_socket_pairs_proto(AF_INET, SOCK_STREAM,
+					mptcp ? IPPROTO_MPTCP : 0,
+					&c0, &c1, &p0, &p1);
 	if (!ASSERT_OK(err, "create_socket_pairs()"))
 		goto out;
 

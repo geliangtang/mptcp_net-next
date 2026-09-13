@@ -45,6 +45,8 @@
  */
 #define SUPPORTED		_BITUL(0)
 
+static bool mptcp;
+
 /* Note on sk_skb-to-ingress ->af_vsock:
  *
  * Peer socket may receive the packet some time after the return from sendmsg().
@@ -110,9 +112,16 @@ struct socket_spec {
 
 static int socket_spec_pairs(struct socket_spec *s)
 {
-	return create_socket_pairs(s->family, s->sotype,
-				   &s->in[0], &s->out[0],
-				   &s->in[1], &s->out[1]);
+	int proto = 0;
+
+	/* IPPROTO_MPTCP only applies to INET/INET6 stream sockets */
+	if (mptcp && (s->family == AF_INET || s->family == AF_INET6) &&
+	    s->sotype == SOCK_STREAM)
+		proto = IPPROTO_MPTCP;
+
+	return create_socket_pairs_proto(s->family, s->sotype, proto,
+					 &s->in[0], &s->out[0],
+					 &s->in[1], &s->out[1]);
 }
 
 static void socket_spec_close(struct socket_spec *s)
@@ -344,9 +353,10 @@ static void test_socket(enum bpf_map_type type, struct redir_spec *redir,
 	status = get_support_status(redir->prog_type, in_str, out_str);
 
 	snprintf(s, sizeof(s),
-		 "%-4s %-17s %-5s %s %-5s%6s",
-		 /* hash sk_skb-to-ingress u_str → v_str (OOB) */
+		 "%-4s %-5s %-17s %-5s %s %-5s%6s",
+		 /* map  mptcp sk_skb-to-ingress u_str → v_str (OOB) */
 		 type == BPF_MAP_TYPE_SOCKMAP ? "map" : "hash",
+		 mptcp ? "mptcp" : "tcp",
 		 redir->name,
 		 in_str,
 		 status & SUPPORTED ? "→" : " ",
@@ -458,8 +468,20 @@ static void test_map(enum bpf_map_type type)
 	}
 }
 
-void serial_test_sockmap_redir(void)
+static void run_redir_tests(void)
 {
 	test_map(BPF_MAP_TYPE_SOCKMAP);
 	test_map(BPF_MAP_TYPE_SOCKHASH);
+}
+
+void serial_test_sockmap_redir(void)
+{
+	bool has_mptcp = is_mptcp_enable();
+
+	for (int i = 0; i < 2; i++) {
+		mptcp = i;
+		if (mptcp && !has_mptcp)
+			continue;
+		run_redir_tests();
+	}
 }
