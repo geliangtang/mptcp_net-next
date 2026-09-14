@@ -1215,7 +1215,8 @@ static void test_sockmap_copied_seq(bool strp)
 		if (!ASSERT_EQ(sent, sizeof(buf), "xsend(c1), native"))
 			goto end;
 
-		recvd = recv(p1, rcv, sizeof(rcv), MSG_DONTWAIT);
+		recvd = recv_timeout(p1, rcv, sizeof(rcv), MSG_DONTWAIT,
+				     IO_TIMEOUT_SEC);
 		if (!ASSERT_EQ(recvd, sent, "recv_timeout(p1), native"))
 			goto end;
 
@@ -1224,7 +1225,8 @@ static void test_sockmap_copied_seq(bool strp)
 		if (!ASSERT_EQ(sent, sizeof(buf), "xsend(c0), native"))
 			goto end;
 
-		recvd = recv(p0, rcv, sizeof(rcv), MSG_DONTWAIT);
+		recvd = recv_timeout(p0, rcv, sizeof(rcv), MSG_DONTWAIT,
+				     IO_TIMEOUT_SEC);
 		if (!ASSERT_EQ(recvd, sent, "recv_timeout(p0), native"))
 			goto end;
 	}
