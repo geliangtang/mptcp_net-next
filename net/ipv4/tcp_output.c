@@ -977,6 +977,10 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (tcp_key_is_ao(key)) {
 			opts->options |= OPTION_AO;
 			remaining -= tcp_ao_len_aligned(key->ao_key);
+
+			/* TCP-AO + MPTCP cannot coexist on the wire */
+			if (sk_is_mptcp(sk))
+				timestamps = false;
 		}
 	}
 

@@ -415,10 +415,34 @@ void __init mptcp_token_init(void)
 	}
 }
 
+void mptcp_token_repair_insert(struct mptcp_sock *msk)
+{
+	struct sock *sk = (struct sock *)msk;
+	struct hlist_nulls_node *node;
+	struct sock *stale_gend_sock;
+	struct token_bucket *bucket;
+
+	bucket = token_bucket(msk->token);
+	spin_lock_bh(&bucket->lock);
+	sk_nulls_for_each_rcu(stale_gend_sock, node, &bucket->msk_chain) {
+		if (stale_gend_sock == sk)
+			continue;
+		__sk_nulls_del_node_init_rcu(stale_gend_sock);
+		bucket->chain_len--;
+		sock_prot_inuse_add(sock_net(stale_gend_sock),
+				   stale_gend_sock->sk_prot, -1);
+	}
+	__sk_nulls_add_node_rcu(sk, &bucket->msk_chain);
+	bucket->chain_len++;
+	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
+	spin_unlock_bh(&bucket->lock);
+}
+
 #if IS_MODULE(CONFIG_MPTCP_KUNIT_TEST)
 EXPORT_SYMBOL_GPL(mptcp_token_new_request);
 EXPORT_SYMBOL_GPL(mptcp_token_new_connect);
 EXPORT_SYMBOL_GPL(mptcp_token_accept);
 EXPORT_SYMBOL_GPL(mptcp_token_destroy_request);
 EXPORT_SYMBOL_GPL(mptcp_token_destroy);
+EXPORT_SYMBOL_GPL(mptcp_token_repair_insert);
 #endif

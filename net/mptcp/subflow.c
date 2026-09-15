@@ -1140,6 +1140,7 @@ static enum mapping_status get_mapping_status(struct sock *ssk,
 	bool csum_reqd = READ_ONCE(msk->csum_enabled);
 	struct mptcp_ext *mpext;
 	struct sk_buff *skb;
+	struct tcp_key key;
 	u16 data_len;
 	u64 map_seq;
 
@@ -1220,6 +1221,11 @@ static enum mapping_status get_mapping_status(struct sock *ssk,
 		/* Adjust for DATA_FIN using 1 byte of sequence space */
 		data_len--;
 	}
+
+	/* MPTCP policy: AO subflow forces 32-bit ack, overriding mpext->dsn64. */
+	tcp_get_current_key(ssk, &key);
+	if (tcp_key_is_ao(&key) && mpext->dsn64)
+		mpext->dsn64 = 0;
 
 	map_seq = mptcp_expand_seq(READ_ONCE(msk->ack_seq), mpext->data_seq, mpext->dsn64);
 	WRITE_ONCE(mptcp_sk(subflow->conn)->use_64bit_ack, !!mpext->dsn64);

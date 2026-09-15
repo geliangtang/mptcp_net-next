@@ -481,6 +481,16 @@ static bool __mptcp_move_skb(struct sock *sk, struct sk_buff *skb)
 			__mptcp_sync_rcv_sequence(sk);
 	}
 
+	if (READ_ONCE(msk->fully_established) &&
+	    MPTCP_SKB_CB(skb)->map_seq64 == 0) {
+		copy_len = skb->len;
+		MPTCP_SKB_CB(skb)->map_seq64 = msk->ack_seq;
+		MPTCP_SKB_CB(skb)->map_seq = (u32)msk->ack_seq;
+		MPTCP_SKB_CB(skb)->end_seq = MPTCP_SKB_CB(skb)->map_seq +
+					     copy_len;
+		goto insert;
+	}
+
 	if (MPTCP_SKB_CB(skb)->map_seq64 == msk->ack_seq) {
 		/* in sequence */
 insert:
@@ -3531,6 +3541,11 @@ bool __mptcp_close(struct sock *sk, long timeout)
 		goto cleanup;
 	}
 
+	if (msk->first && tcp_sk(msk->first)->repair) {
+		mptcp_set_state(sk, TCP_CLOSE);
+		goto cleanup;
+	}
+
 	if (mptcp_data_avail(msk) || timeout < 0 ||
 	    (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime)) {
 		/* If the msk has read data, or the caller explicitly ask it,
@@ -4270,6 +4285,29 @@ static int mptcp_connect(struct sock *sk, struct sockaddr_unsized *uaddr,
 		goto out;
 
 	inet_assign_bit(DEFER_CONNECT, sk, inet_test_bit(DEFER_CONNECT, ssk));
+
+	if (unlikely(tcp_sk(ssk)->repair)) {
+		struct tcp_key key;
+
+		if (ssk->sk_state != TCP_ESTABLISHED) {
+			tcp_set_state(ssk, TCP_ESTABLISHED);
+			ssk->sk_state_change(ssk);
+		}
+		mptcp_subflow_ctx(ssk)->conn_finished = 1;
+		mptcp_subflow_ctx(ssk)->rel_write_seq = 1;
+		mptcp_subflow_ctx(ssk)->mp_capable = 1;
+
+		WRITE_ONCE(msk->snd_una, subflow->idsn + 1);
+		WRITE_ONCE(msk->wnd_end, subflow->idsn + 1 + tcp_sk(ssk)->snd_wnd);
+		tcp_get_current_key(ssk, &key);
+		if (tcp_key_is_ao(&key))
+			WRITE_ONCE(msk->use_64bit_ack, false);
+
+		if (sk->sk_state != TCP_ESTABLISHED) {
+			mptcp_set_state(sk, TCP_ESTABLISHED);
+			sk->sk_state_change(sk);
+		}
+	}
 
 out:
 	if (!msk->fastopening)

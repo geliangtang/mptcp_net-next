@@ -138,5 +138,37 @@ struct mptcp_full_info {
 #define MPTCP_TCPINFO		2
 #define MPTCP_SUBFLOW_ADDRS	3
 #define MPTCP_FULL_INFO		4
+#define MPTCP_REPAIR		5
+#define MPTCP_REPAIR_QUEUE	6
+#define MPTCP_QUEUE_SEQ		7
+#define MPTCP_REPAIR_OPTIONS	8
+#define MPTCP_REPAIR_WINDOW	9
+#define MPTCP_AO_ADD_KEY	10
+#define MPTCP_AO_DEL_KEY	11
+#define MPTCP_AO_GET_KEYS	12
+#define MPTCP_AO_REPAIR		13
+#define MPTCP_AO_INFO		14
+
+struct mptcp_repair_state {
+	__u64	local_key;
+	__u64	remote_key;
+	__u64	idsn;
+	__u64	ack_seq;
+	__u64	snd_una;
+	__u64	snd_nxt;
+	__u64	copied_seq;
+	__u32	token;
+	__u32	ssn_offset;
+	__u32	snd_isn;
+	__u32	map_subflow_seq;
+	__u8	mp_capable;
+	__u8	csum_enabled;
+	__u8	use_64bit_ack;
+	__u8	fully_established;
+	__be32	snt_isn;	/* TCP-AO send ISN  (from msk->first) */
+	__be32	rcv_isn;	/* TCP-AO recv ISN  (from msk->first) */
+	__u32	snd_sne;	/* TCP-AO send SNE  (from msk->first) */
+	__u32	rcv_sne;	/* TCP-AO recv SNE  (from msk->first) */
+} __attribute__((aligned(8)));
 
 #endif /* _UAPI_MPTCP_H */
