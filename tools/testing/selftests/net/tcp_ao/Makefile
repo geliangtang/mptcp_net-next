@@ -5,6 +5,7 @@ TEST_BOTH_AF += connect-deny
 TEST_BOTH_AF += icmps-accept icmps-discard
 TEST_BOTH_AF += key-management
 TEST_BOTH_AF += restore
+TEST_BOTH_AF += restore_mptcp
 TEST_BOTH_AF += rst
 TEST_BOTH_AF += self-connect
 TEST_BOTH_AF += seq-ext
@@ -50,6 +51,12 @@ $(OUTPUT)/%_ipv4: %.c
 
 $(OUTPUT)/%_ipv6: %.c
 	$(LINK.c) -DIPV6_TEST $^ $(LDLIBS) -o $@
+
+$(OUTPUT)/restore_mptcp_ipv4: restore.c
+	$(LINK.c) -DMPTCP_TEST $^ $(LDLIBS) -o $@
+
+$(OUTPUT)/restore_mptcp_ipv6: restore.c
+	$(LINK.c) -DMPTCP_TEST -DIPV6_TEST $^ $(LDLIBS) -o $@
 
 $(OUTPUT)/icmps-accept_ipv4: CFLAGS+= -DTEST_ICMPS_ACCEPT
 $(OUTPUT)/icmps-accept_ipv6: CFLAGS+= -DTEST_ICMPS_ACCEPT

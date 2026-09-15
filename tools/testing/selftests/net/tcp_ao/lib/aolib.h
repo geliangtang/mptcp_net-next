@@ -29,6 +29,46 @@
 # define SOL_TCP		6	/* TCP level */
 #endif
 
+#ifndef MPTCP_REPAIR
+#define MPTCP_REPAIR		5
+#endif
+#ifndef MPTCP_REPAIR_QUEUE
+#define MPTCP_REPAIR_QUEUE	6
+#endif
+#ifndef MPTCP_QUEUE_SEQ
+#define MPTCP_QUEUE_SEQ		7
+#endif
+#ifndef MPTCP_REPAIR_OPTIONS
+#define MPTCP_REPAIR_OPTIONS	8
+#endif
+#ifndef MPTCP_REPAIR_WINDOW
+#define MPTCP_REPAIR_WINDOW	9
+#endif
+#ifndef MPTCP_AO_ADD_KEY
+#define MPTCP_AO_ADD_KEY	10
+#endif
+#ifndef MPTCP_AO_DEL_KEY
+#define MPTCP_AO_DEL_KEY	11
+#endif
+#ifndef MPTCP_AO_GET_KEYS
+#define MPTCP_AO_GET_KEYS	12
+#endif
+#ifndef MPTCP_AO_REPAIR
+#define MPTCP_AO_REPAIR		13
+#endif
+#ifndef MPTCP_AO_INFO
+#define MPTCP_AO_INFO		14
+#endif
+
+#ifndef IPPROTO_MPTCP
+#define IPPROTO_MPTCP		262
+#endif
+
+enum test_proto {
+	PROTO_TCP = IPPROTO_TCP,
+	PROTO_MPTCP = IPPROTO_MPTCP,
+};
+
 /* Working around ksft, see the comment in lib/setup.c */
 extern void __test_msg(const char *buf);
 extern void __test_ok(const char *buf);
@@ -146,6 +186,7 @@ enum test_needs_kconfig {
 	KCONFIG_TCP_MD5,		/* optional, for TCP-MD5 features */
 	KCONFIG_NET_VRF,		/* optional, for L3/VRF testing */
 	KCONFIG_FTRACE,			/* optional, for tracepoints checks */
+	KCONFIG_MPTCP,			/* optional, only used by restore_mptcp_* */
 	__KCONFIG_LAST__
 };
 extern bool kernel_config_has(enum test_needs_kconfig k);
@@ -267,6 +308,8 @@ extern void switch_close_ns(int fd);
 extern __thread union tcp_addr this_ip_addr;
 extern __thread union tcp_addr this_ip_dest;
 extern int test_family;
+extern enum test_proto test_proto;
+extern const char *proto_name[];
 
 extern void randomize_buffer(void *buf, size_t buflen);
 extern __printf(3, 4) int test_echo(const char *fname, bool append,
@@ -440,7 +483,11 @@ static inline int test_add_key_vrf(int sk,
 	if (err)
 		return err;
 
+	#ifdef MPTCP_TEST
+	err = setsockopt(sk, SOL_MPTCP, MPTCP_AO_ADD_KEY, &tmp, sizeof(tmp));
+#else
 	err = setsockopt(sk, IPPROTO_TCP, TCP_AO_ADD_KEY, &tmp, sizeof(tmp));
+#endif
 	if (err < 0)
 		return -errno;
 
@@ -681,6 +728,33 @@ static inline void test_sock_checkpoint(int sk, struct tcp_sock_state *state,
 	__test_sock_checkpoint(sk, state, saddr, sizeof(*saddr));
 }
 extern void test_ao_checkpoint(int sk, struct tcp_ao_repair *state);
+
+struct mptcp_repair_state {
+	uint64_t	local_key;
+	uint64_t	remote_key;
+	uint64_t	idsn;
+	uint64_t	ack_seq;
+	uint64_t	snd_una;
+	uint64_t	snd_nxt;
+	uint64_t	copied_seq;
+	uint32_t	token;
+	uint32_t	ssn_offset;
+	uint32_t	snd_isn;
+	uint32_t	map_subflow_seq;
+	uint8_t		mp_capable;
+	uint8_t		csum_enabled;
+	uint8_t		use_64bit_ack;
+	uint8_t		fully_established;
+	uint32_t	snt_isn;	/* TCP-AO send ISN  (from msk->first) */
+	uint32_t	rcv_isn;	/* TCP-AO recv ISN  (from msk->first) */
+	uint32_t	snd_sne;	/* TCP-AO send SNE  (from msk->first) */
+	uint32_t	rcv_sne;	/* TCP-AO recv SNE  (from msk->first) */
+} __attribute__((aligned(8)));
+
+extern void test_mptcp_ao_checkpoint(int sk, struct mptcp_repair_state *state);
+extern void test_mptcp_ao_restore(int sk, struct mptcp_repair_state *state);
+extern void test_mptcp_repair_enable(int sk);
+extern void test_mptcp_repair_disable(int sk);
 extern void __test_sock_restore(int sk, const char *device,
 				struct tcp_sock_state *state,
 				void *saddr, void *daddr, size_t addr_size);
@@ -714,7 +788,11 @@ static inline int test_add_repaired_key(int sk,
 
 	tmp.set_current = 1;
 	tmp.set_rnext = 1;
+#ifdef MPTCP_TEST
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_AO_ADD_KEY, &tmp, sizeof(tmp)) < 0)
+#else
 	if (setsockopt(sk, IPPROTO_TCP, TCP_AO_ADD_KEY, &tmp, sizeof(tmp)) < 0)
+#endif
 		return -errno;
 
 	return test_verify_socket_key(sk, &tmp);

@@ -6,29 +6,45 @@
  * https://github.com/checkpoint-restore/criu/blob/criu-dev/soccr/soccr.h
  */
 #include <inttypes.h>
+#include <stdarg.h>
 #include "aolib.h"
+
+#ifdef MPTCP_TEST
+/* Override the weak symbol from sock.c with PROTO_MPTCP for MPTCP tests. */
+enum test_proto test_proto = PROTO_MPTCP;
+#endif
 
 const size_t nr_packets = 20;
 const size_t msg_len = 100;
 const size_t quota = nr_packets * msg_len;
 #define fault(type)	(inj == FAULT_ ## type)
 
-static void try_server_run(const char *tst_name, unsigned int port,
-			   fault_t inj, test_cnt cnt_expected)
+static void try_server_run(const char *tst_fmt, unsigned int port,
+			   fault_t inj, test_cnt cnt_expected, ...)
 {
 	test_cnt poll_cnt = (cnt_expected == TEST_CNT_GOOD) ? 0 : cnt_expected;
 	const char *cnt_name = "TCPAOGood";
 	struct tcp_counters cnt1, cnt2;
 	uint64_t before_cnt, after_cnt;
 	int sk, lsk, dummy;
+	char tst_name[128];
 	ssize_t bytes;
+	va_list args;
+
+	va_start(args, cnt_expected);
+	vsnprintf(tst_name, sizeof(tst_name), tst_fmt, args);
+	va_end(args);
 
 	if (fault(TIMEOUT))
 		cnt_name = "TCPAOBad";
 	lsk = test_listen_socket(this_ip_addr, port, 1);
 
 	if (test_add_key(lsk, DEFAULT_TEST_PASSWORD, this_ip_dest, -1, 100, 100))
+#ifdef MPTCP_TEST
+		test_error("setsockopt(MPTCP_AO_ADD_KEY)");
+#else
 		test_error("setsockopt(TCP_AO_ADD_KEY)");
+#endif
 	synchronize_threads(); /* 1: MKT added => connect() */
 
 	if (test_wait_fd(lsk, TEST_TIMEOUT_SEC, 0))
@@ -91,16 +107,17 @@ static void *server_fn(void *arg)
 {
 	unsigned int port = test_server_port;
 
-	try_server_run("TCP-AO migrate to another socket (server)", port++,
-		       0, TEST_CNT_GOOD);
-	try_server_run("TCP-AO with wrong send ISN (server)", port++,
-		       FAULT_TIMEOUT, TEST_CNT_BAD);
-	try_server_run("TCP-AO with wrong receive ISN (server)", port++,
-		       FAULT_TIMEOUT, TEST_CNT_BAD);
-	try_server_run("TCP-AO with wrong send SEQ ext number (server)", port++,
-		       FAULT_TIMEOUT, TEST_CNT_BAD);
-	try_server_run("TCP-AO with wrong receive SEQ ext number (server)",
-		       port++, FAULT_TIMEOUT, TEST_CNT_NS_BAD | TEST_CNT_GOOD);
+	try_server_run("%s-AO migrate to another socket (server)", port++,
+		       0, TEST_CNT_GOOD, proto_name[test_proto]);
+	try_server_run("%s-AO with wrong send ISN (server)", port++,
+		       FAULT_TIMEOUT, TEST_CNT_BAD, proto_name[test_proto]);
+	try_server_run("%s-AO with wrong receive ISN (server)", port++,
+		       FAULT_TIMEOUT, TEST_CNT_BAD, proto_name[test_proto]);
+	try_server_run("%s-AO with wrong send SEQ ext number (server)", port++,
+		       FAULT_TIMEOUT, TEST_CNT_BAD, proto_name[test_proto]);
+	try_server_run("%s-AO with wrong receive SEQ ext number (server)",
+		       port++, FAULT_TIMEOUT, TEST_CNT_NS_BAD | TEST_CNT_GOOD,
+		       proto_name[test_proto]);
 
 	synchronize_threads(); /* don't race to exit: client exits */
 	return NULL;
@@ -108,16 +125,21 @@ static void *server_fn(void *arg)
 
 static void test_get_sk_checkpoint(unsigned int server_port, sockaddr_af *saddr,
 				   struct tcp_sock_state *img,
-				   struct tcp_ao_repair *ao_img)
+				   struct tcp_ao_repair *ao_img,
+				   struct mptcp_repair_state *mptcp_img)
 {
 	int sk;
 
-	sk = socket(test_family, SOCK_STREAM, IPPROTO_TCP);
+	sk = socket(test_family, SOCK_STREAM, test_proto);
 	if (sk < 0)
-		test_error("socket()");
+		test_error("socket(%s)", proto_name[test_proto]);
 
 	if (test_add_key(sk, DEFAULT_TEST_PASSWORD, this_ip_dest, -1, 100, 100))
+#ifdef MPTCP_TEST
+		test_error("setsockopt(MPTCP_AO_ADD_KEY)");
+#else
 		test_error("setsockopt(TCP_AO_ADD_KEY)");
+#endif
 
 	synchronize_threads(); /* 1: MKT added => connect() */
 	if (test_connect_socket(sk, this_ip_dest, server_port) <= 0)
@@ -127,41 +149,72 @@ static void test_get_sk_checkpoint(unsigned int server_port, sockaddr_af *saddr,
 	if (test_client_verify(sk, msg_len, nr_packets))
 		test_fail("pre-migrate verify failed");
 
+#ifdef MPTCP_TEST
+	test_mptcp_repair_enable(sk);
+#else
 	test_enable_repair(sk);
+#endif
 	test_sock_checkpoint(sk, img, saddr);
+#ifdef MPTCP_TEST
+	test_mptcp_ao_checkpoint(sk, mptcp_img);
+#else
 	test_ao_checkpoint(sk, ao_img);
+#endif
 	test_kill_sk(sk);
 }
 
-static void test_sk_restore(const char *tst_name, unsigned int server_port,
+static void test_sk_restore(const char *tst_fmt, unsigned int server_port,
 			    sockaddr_af *saddr, struct tcp_sock_state *img,
 			    struct tcp_ao_repair *ao_img,
-			    fault_t inj, test_cnt cnt_expected)
+			    struct mptcp_repair_state *mptcp_img,
+			    fault_t inj, test_cnt cnt_expected, ...)
 {
 	test_cnt poll_cnt = (cnt_expected == TEST_CNT_GOOD) ? 0 : cnt_expected;
 	const char *cnt_name = "TCPAOGood";
 	struct tcp_counters cnt1, cnt2;
 	uint64_t before_cnt, after_cnt;
+	char tst_name[128];
 	int sk, dummy;
+	va_list args;
+
+	va_start(args, cnt_expected);
+	vsnprintf(tst_name, sizeof(tst_name), tst_fmt, args);
+	va_end(args);
 
 	if (fault(TIMEOUT))
 		cnt_name = "TCPAOBad";
 
 	before_cnt = netstat_get_one(cnt_name, NULL);
-	sk = socket(test_family, SOCK_STREAM, IPPROTO_TCP);
+	sk = socket(test_family, SOCK_STREAM, test_proto);
 	if (sk < 0)
-		test_error("socket()");
+		test_error("socket(%s)", proto_name[test_proto]);
 
+#ifdef MPTCP_TEST
+	test_mptcp_repair_enable(sk);
+#else
 	test_enable_repair(sk);
+#endif
 	test_sock_restore(sk, img, saddr, this_ip_dest, server_port);
 	if (test_add_repaired_key(sk, DEFAULT_TEST_PASSWORD, 0, this_ip_dest, -1, 100, 100))
+#ifdef MPTCP_TEST
+		test_error("setsockopt(MPTCP_AO_ADD_KEY)");
+#else
 		test_error("setsockopt(TCP_AO_ADD_KEY)");
+#endif
+#ifdef MPTCP_TEST
+	test_mptcp_ao_restore(sk, mptcp_img);
+#else
 	test_ao_restore(sk, ao_img);
+#endif
 
 	if (test_get_tcp_counters(sk, &cnt1))
 		test_error("test_get_tcp_counters()");
 
+#ifdef MPTCP_TEST
+	test_mptcp_repair_disable(sk);
+#else
 	test_disable_repair(sk);
+#endif
 	test_sock_state_free(img);
 
 	if (test_skpair_client(sk, msg_len, nr_packets, poll_cnt, &dummy)) {
@@ -197,55 +250,81 @@ static void test_sk_restore(const char *tst_name, unsigned int server_port,
 static void *client_fn(void *arg)
 {
 	unsigned int port = test_server_port;
+	struct mptcp_repair_state mptcp_img;
 	struct tcp_sock_state tcp_img;
 	struct tcp_ao_repair ao_img;
 	sockaddr_af saddr;
 
-	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img);
-	test_sk_restore("TCP-AO migrate to another socket (client)", port++,
-			&saddr, &tcp_img, &ao_img, 0, TEST_CNT_GOOD);
+	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img, &mptcp_img);
+	test_sk_restore("%s-AO migrate to another socket (client)", port++,
+			&saddr, &tcp_img, &ao_img, &mptcp_img, 0, TEST_CNT_GOOD,
+			proto_name[test_proto]);
 
-	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img);
+	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img, &mptcp_img);
+#ifdef MPTCP_TEST
+	mptcp_img.snt_isn += 1;
+#else
 	ao_img.snt_isn += 1;
+#endif
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_addr, this_ip_dest,
 			      -1, port, 0, -1, -1, -1, -1, -1, 100, 100, -1);
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_dest, this_ip_addr,
 			      port, -1, 0, -1, -1, -1, -1, -1, 100, 100, -1);
-	test_sk_restore("TCP-AO with wrong send ISN (client)", port++,
-			&saddr, &tcp_img, &ao_img, FAULT_TIMEOUT, TEST_CNT_BAD);
+	test_sk_restore("%s-AO with wrong send ISN (client)", port++,
+			&saddr, &tcp_img, &ao_img, &mptcp_img, FAULT_TIMEOUT, TEST_CNT_BAD,
+			proto_name[test_proto]);
 
-	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img);
+	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img, &mptcp_img);
+#ifdef MPTCP_TEST
+	mptcp_img.rcv_isn += 1;
+#else
 	ao_img.rcv_isn += 1;
+#endif
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_addr, this_ip_dest,
 			      -1, port, 0, -1, -1, -1, -1, -1, 100, 100, -1);
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_dest, this_ip_addr,
 			      port, -1, 0, -1, -1, -1, -1, -1, 100, 100, -1);
-	test_sk_restore("TCP-AO with wrong receive ISN (client)", port++,
-			&saddr, &tcp_img, &ao_img, FAULT_TIMEOUT, TEST_CNT_BAD);
+	test_sk_restore("%s-AO with wrong receive ISN (client)", port++,
+			&saddr, &tcp_img, &ao_img, &mptcp_img, FAULT_TIMEOUT, TEST_CNT_BAD,
+			proto_name[test_proto]);
 
-	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img);
+	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img, &mptcp_img);
+#ifdef MPTCP_TEST
+	mptcp_img.snd_sne += 1;
+#else
 	ao_img.snd_sne += 1;
+#endif
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_addr, this_ip_dest,
 			      -1, port, 0, -1, -1, -1, -1, -1, 100, 100, -1);
 	/* not expecting server => client mismatches as only snd sne is broken */
-	test_sk_restore("TCP-AO with wrong send SEQ ext number (client)",
-			port++, &saddr, &tcp_img, &ao_img, FAULT_TIMEOUT,
-			TEST_CNT_NS_BAD | TEST_CNT_GOOD);
+	test_sk_restore("%s-AO with wrong send SEQ ext number (client)",
+			port++, &saddr, &tcp_img, &ao_img, &mptcp_img, FAULT_TIMEOUT,
+			TEST_CNT_NS_BAD | TEST_CNT_GOOD,
+			proto_name[test_proto]);
 
-	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img);
+	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img, &mptcp_img);
+#ifdef MPTCP_TEST
+	mptcp_img.rcv_sne += 1;
+#else
 	ao_img.rcv_sne += 1;
+#endif
 	/* not expecting client => server mismatches as only rcv sne is broken */
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_dest, this_ip_addr,
 			      port, -1, 0, -1, -1, -1, -1, -1, 100, 100, -1);
-	test_sk_restore("TCP-AO with wrong receive SEQ ext number (client)",
-			port++, &saddr, &tcp_img, &ao_img, FAULT_TIMEOUT,
-			TEST_CNT_NS_GOOD | TEST_CNT_BAD);
+	test_sk_restore("%s-AO with wrong receive SEQ ext number (client)",
+			port++, &saddr, &tcp_img, &ao_img, &mptcp_img, FAULT_TIMEOUT,
+			TEST_CNT_NS_GOOD | TEST_CNT_BAD,
+			proto_name[test_proto]);
 
 	return NULL;
 }
 
 int main(int argc, char *argv[])
 {
+#ifdef MPTCP_TEST
+	if (should_skip_test("restore_mptcp", KCONFIG_MPTCP))
+		return 0;
+#endif
 	test_init(21, server_fn, client_fn);
 	return 0;
 }

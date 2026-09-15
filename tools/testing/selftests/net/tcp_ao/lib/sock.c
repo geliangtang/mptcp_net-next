@@ -7,10 +7,21 @@
 #include "../../../../../include/linux/stringify.h"
 #include "aolib.h"
 
+const char *proto_name[] = {
+	[PROTO_TCP]   = "TCP",
+	[PROTO_MPTCP] = "MPTCP",
+};
+/* Catch future enum additions that don't populate proto_name[]. */
+static_assert(ARRAY_SIZE(proto_name) > PROTO_MPTCP,
+	      "proto_name[] must cover every enum test_proto value");
+
+/* restore.c overrides this with PROTO_MPTCP when MPTCP_TEST is set. */
+__attribute__((weak)) enum test_proto test_proto = PROTO_TCP;
+
 const unsigned int test_server_port = 7010;
 int __test_listen_socket(int backlog, void *addr, size_t addr_sz)
 {
-	int err, sk = socket(test_family, SOCK_STREAM, IPPROTO_TCP);
+	int err, sk = socket(test_family, SOCK_STREAM, test_proto);
 	long flags;
 
 	if (sk < 0)
