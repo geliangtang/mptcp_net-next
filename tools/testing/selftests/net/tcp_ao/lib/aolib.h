@@ -29,6 +29,15 @@
 # define SOL_TCP		6	/* TCP level */
 #endif
 
+#ifndef IPPROTO_MPTCP
+#define IPPROTO_MPTCP		262
+#endif
+
+enum test_proto {
+	PROTO_TCP = IPPROTO_TCP,
+	PROTO_MPTCP = IPPROTO_MPTCP,
+};
+
 /* Working around ksft, see the comment in lib/setup.c */
 extern void __test_msg(const char *buf);
 extern void __test_ok(const char *buf);
@@ -267,6 +276,8 @@ extern void switch_close_ns(int fd);
 extern __thread union tcp_addr this_ip_addr;
 extern __thread union tcp_addr this_ip_dest;
 extern int test_family;
+extern enum test_proto test_proto;
+extern const char *proto_name[];
 
 extern void randomize_buffer(void *buf, size_t buflen);
 extern __printf(3, 4) int test_echo(const char *fname, bool append,
