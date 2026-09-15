@@ -3584,6 +3584,11 @@ bool __mptcp_close(struct sock *sk, long timeout)
 		goto cleanup;
 	}
 
+	if (msk->first && tcp_sk(msk->first)->repair) {
+		mptcp_set_state(sk, TCP_CLOSE);
+		goto cleanup;
+	}
+
 	if (mptcp_data_avail(msk) || timeout < 0 ||
 	    (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime)) {
 		/* If the msk has read data, or the caller explicitly ask it,
@@ -4324,6 +4329,15 @@ static int mptcp_connect(struct sock *sk, struct sockaddr_unsized *uaddr,
 		goto out;
 
 	inet_assign_bit(DEFER_CONNECT, sk, inet_test_bit(DEFER_CONNECT, ssk));
+
+	if (unlikely(tcp_sk(ssk)->repair)) {
+		tcp_set_state(ssk, TCP_ESTABLISHED);
+		mptcp_subflow_ctx(ssk)->conn_finished = 1;
+		ssk->sk_state_change(ssk);
+
+		mptcp_set_state(sk, TCP_ESTABLISHED);
+		sk->sk_state_change(sk);
+	}
 
 out:
 	if (!msk->fastopening)
