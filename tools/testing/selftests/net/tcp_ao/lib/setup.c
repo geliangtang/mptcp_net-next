@@ -154,12 +154,56 @@ static int nsfd_parent	= -1;
 static int nsfd_child	= -1;
 const char veth_name[]	= "ktst-veth";
 
+#ifdef MPTCP_TEST
+static void set_sysctl(const char *path, const char *val)
+{
+	int fd = open(path, O_WRONLY);
+
+	if (fd < 0)
+		test_error("open(%s)", path);
+	if (write(fd, val, strlen(val)) < 0)
+		test_error("write(%s)", path);
+	close(fd);
+}
+#endif
+
 static void init_namespaces(void)
 {
 	nsfd_outside = open_netns();
 	nsfd_parent = unshare_open_netns();
+#ifdef MPTCP_TEST
+	set_sysctl("/proc/sys/net/mptcp/dsn64", "0");
+#endif
 	nsfd_child = unshare_open_netns();
+#ifdef MPTCP_TEST
+	set_sysctl("/proc/sys/net/mptcp/dsn64", "0");
+#endif
 }
+
+#ifdef MPTCP_TEST
+#define PM_MAX_ENDPOINTS 4
+static void mptcp_pm_init(void)
+{
+	int i;
+
+	if (link_set_up("lo"))
+		test_error("Failed to bring up loopback");
+
+	if (system("ip mptcp limits set add_addr_accepted "
+		   __stringify(PM_MAX_ENDPOINTS) " subflows "
+		   __stringify(PM_MAX_ENDPOINTS)))
+		test_error("failed to set PM limits");
+
+	for (i = 1; i <= PM_MAX_ENDPOINTS; i++) {
+		char cmd[128];
+
+		snprintf(cmd, sizeof(cmd),
+			 "ip mptcp endpoint add 127.0.0.1 signal port 1000%d", i);
+		if (system(cmd))
+			test_error("failed to add PM endpoint %d", i);
+	}
+}
+#endif
 
 static void link_init(const char *veth, int family, uint8_t prefix,
 		      union tcp_addr addr, union tcp_addr dest)
@@ -272,6 +316,9 @@ void __test_init(unsigned int ntests, int family, unsigned int prefix,
 	}
 	switch_ns(nsfd_parent);
 	link_init(veth_name, family, prefix, addr1, addr2);
+#ifdef MPTCP_TEST
+	mptcp_pm_init();
+#endif
 
 	this_ip_addr = addr1;
 	this_ip_dest = addr2;
