@@ -671,14 +671,15 @@ static bool mptcp_supported_sockopt(int level, int optname)
 		case TCP_FASTOPEN_CONNECT:
 		case TCP_FASTOPEN_KEY:
 		case TCP_FASTOPEN_NO_COOKIE:
+		case TCP_REPAIR:
+		case TCP_REPAIR_QUEUE:
+		case TCP_QUEUE_SEQ:
+		case TCP_REPAIR_OPTIONS:
+		case TCP_REPAIR_WINDOW:
 			return true;
 		}
 
 		/* TCP_MD5SIG, TCP_MD5SIG_EXT are not supported, MD5 is not compatible with MPTCP */
-
-		/* TCP_REPAIR, TCP_REPAIR_QUEUE, TCP_QUEUE_SEQ, TCP_REPAIR_OPTIONS,
-		 * TCP_REPAIR_WINDOW are not supported, better avoid this mess
-		 */
 	}
 	return false;
 }
@@ -906,6 +907,32 @@ unlock:
 	return ret;
 }
 
+static int mptcp_setsockopt_sol_tcp_repair_or_ao(struct mptcp_sock *msk,
+						 int optname,
+						 sockptr_t optval,
+						 unsigned int optlen)
+{
+	struct sock *sk = (struct sock *)msk;
+	struct sock *ssk;
+	int ret;
+
+	lock_sock(sk);
+	ssk = msk->first;
+	if (!ssk) {
+		ssk = __mptcp_nmpc_sk(msk);
+		if (IS_ERR(ssk)) {
+			ret = PTR_ERR(ssk);
+			goto unlock;
+		}
+	}
+
+	ret = tcp_setsockopt(ssk, SOL_TCP, optname, optval, optlen);
+
+unlock:
+	release_sock(sk);
+	return ret;
+}
+
 static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 				    sockptr_t optval, unsigned int optlen)
 {
@@ -927,6 +954,13 @@ static int mptcp_setsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_FASTOPEN_NO_COOKIE:
 		return mptcp_setsockopt_first_sf_only(msk, SOL_TCP, optname,
 						      optval, optlen);
+	case TCP_REPAIR:
+	case TCP_REPAIR_QUEUE:
+	case TCP_QUEUE_SEQ:
+	case TCP_REPAIR_OPTIONS:
+	case TCP_REPAIR_WINDOW:
+		return mptcp_setsockopt_sol_tcp_repair_or_ao(msk, optname,
+							     optval, optlen);
 	}
 
 	ret = mptcp_get_int_option(msk, optval, optlen, &val);
@@ -1499,6 +1533,11 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_FASTOPEN_CONNECT:
 	case TCP_FASTOPEN_KEY:
 	case TCP_FASTOPEN_NO_COOKIE:
+	case TCP_REPAIR:
+	case TCP_REPAIR_QUEUE:
+	case TCP_QUEUE_SEQ:
+	case TCP_REPAIR_OPTIONS:
+	case TCP_REPAIR_WINDOW:
 		return mptcp_getsockopt_first_sf_only(msk, SOL_TCP, optname,
 						      optval, optlen);
 	case TCP_INQ:
