@@ -1707,6 +1707,11 @@ static int mptcp_getsockopt_sol_tcp(struct mptcp_sock *msk, int optname,
 	case TCP_FASTOPEN_CONNECT:
 	case TCP_FASTOPEN_KEY:
 	case TCP_FASTOPEN_NO_COOKIE:
+	case TCP_TIMESTAMP:
+	case TCP_AO_ADD_KEY:
+	case TCP_AO_DEL_KEY:
+	case TCP_AO_INFO:
+	case TCP_AO_GET_KEYS:
 		return mptcp_getsockopt_first_sf_only(msk, SOL_TCP, optname,
 						      optval, optlen);
 	case TCP_INQ:
@@ -1799,6 +1804,143 @@ static int mptcp_getsockopt_v6(struct mptcp_sock *msk, int optname,
 	return -EOPNOTSUPP;
 }
 
+static int mptcp_getsockopt_repair(struct mptcp_sock *msk,
+				   char __user *optval, int __user *optlen)
+{
+	struct sock *sk = (struct sock *)msk;
+	int val;
+
+	lock_sock(sk);
+	val = msk->repair ? TCP_REPAIR_ON : TCP_REPAIR_OFF;
+	release_sock(sk);
+	return mptcp_put_int_option(msk, optval, optlen, val);
+}
+
+static int mptcp_getsockopt_tcp_opt(struct mptcp_sock *msk, int optname,
+				    char __user *optval, int __user *optlen)
+{
+	struct sock *sk = (struct sock *)msk, *ssk;
+	struct mptcp_subflow_context *subflow;
+	int tcp_opt, ret = 0, err;
+
+	switch (optname) {
+	case MPTCP_REPAIR_QUEUE:
+		tcp_opt = TCP_REPAIR_QUEUE;
+		break;
+	case MPTCP_QUEUE_SEQ:
+		tcp_opt = TCP_QUEUE_SEQ;
+		break;
+	case MPTCP_REPAIR_OPTIONS:
+		tcp_opt = TCP_REPAIR_OPTIONS;
+		break;
+	case MPTCP_REPAIR_WINDOW:
+		tcp_opt = TCP_REPAIR_WINDOW;
+		break;
+	case MPTCP_AO_ADD_KEY:
+		tcp_opt = TCP_AO_ADD_KEY;
+		break;
+	case MPTCP_AO_DEL_KEY:
+		tcp_opt = TCP_AO_DEL_KEY;
+		break;
+	case MPTCP_AO_GET_KEYS:
+		tcp_opt = TCP_AO_GET_KEYS;
+		break;
+	case MPTCP_AO_INFO:
+		tcp_opt = TCP_AO_INFO;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	lock_sock(sk);
+	mptcp_for_each_subflow(msk, subflow) {
+		ssk = mptcp_subflow_tcp_sock(subflow);
+
+		err = tcp_getsockopt(ssk, SOL_TCP, tcp_opt,
+				     optval, optlen);
+		if (err && ret == 0)
+			ret = err;
+		/* Report state from the first subflow that has it */
+		if (!err)
+			break;
+	}
+	release_sock(sk);
+	return ret;
+}
+
+static int mptcp_getsockopt_ao_repair(struct mptcp_sock *msk,
+				      char __user *optval, int __user *optlen)
+{
+	struct mptcp_subflow_context *subflow;
+	struct mptcp_repair_state opt;
+	struct tcp_ao_repair ao;
+	sockptr_t ao_optlen;
+	sockptr_t ao_val;
+	int ao_ret, len;
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+	if (len <= 0)
+		return -EINVAL;
+	if (len < sizeof(opt))
+		return -EINVAL;
+
+	lock_sock((struct sock *)msk);
+	if (!msk->first) {
+		release_sock((struct sock *)msk);
+		return -EINVAL;
+	}
+	if (!msk->repair) {
+		release_sock((struct sock *)msk);
+		return -EPERM;
+	}
+	subflow = mptcp_subflow_ctx(msk->first);
+
+	opt.local_key		= READ_ONCE(msk->local_key);
+	opt.remote_key		= READ_ONCE(msk->remote_key);
+	opt.idsn		= subflow->idsn;
+	opt.ack_seq		= READ_ONCE(msk->ack_seq);
+	opt.snd_una		= READ_ONCE(msk->snd_una);
+	opt.snd_nxt		= READ_ONCE(msk->write_seq);
+	opt.copied_seq		= READ_ONCE(msk->copied_seq);
+	opt.token		= READ_ONCE(msk->token);
+	opt.ssn_offset		= subflow->ssn_offset;
+	opt.snd_isn		= subflow->snd_isn;
+	opt.map_subflow_seq	= subflow->map_subflow_seq;
+	opt.mp_capable		= subflow->mp_capable ? 1 : 0;
+	opt.csum_enabled	= READ_ONCE(msk->csum_enabled);
+	opt.use_64bit_ack	= READ_ONCE(msk->use_64bit_ack);
+	opt.dsn64		= READ_ONCE(msk->dsn64);
+	opt.fully_established	= subflow->fully_established ? 1 : 0;
+
+	ao_val = KERNEL_SOCKPTR(&ao);
+	ao_optlen = KERNEL_SOCKPTR(&ao_ret);
+	ao_ret = sizeof(ao);
+	ao_ret = tcp_ao_get_repair(msk->first, ao_val, ao_optlen);
+	if (ao_ret < 0) {
+		release_sock((struct sock *)msk);
+		return ao_ret;
+	}
+	if (ao_ret == 0) {
+		opt.snt_isn	= ao.snt_isn;
+		opt.rcv_isn	= ao.rcv_isn;
+		opt.snd_sne	= ao.snd_sne;
+		opt.rcv_sne	= ao.rcv_sne;
+	} else {
+		opt.snt_isn	= 0;
+		opt.rcv_isn	= 0;
+		opt.snd_sne	= 0;
+		opt.rcv_sne	= 0;
+	}
+	release_sock((struct sock *)msk);
+
+	if (copy_to_user(optval, &opt, sizeof(opt)))
+		return -EFAULT;
+	if (put_user(sizeof(opt), optlen))
+		return -EFAULT;
+	return 0;
+}
+
 static int mptcp_getsockopt_sol_mptcp(struct mptcp_sock *msk, int optname,
 				      char __user *optval, int __user *optlen)
 {
@@ -1811,6 +1953,19 @@ static int mptcp_getsockopt_sol_mptcp(struct mptcp_sock *msk, int optname,
 		return mptcp_getsockopt_tcpinfo(msk, optval, optlen);
 	case MPTCP_SUBFLOW_ADDRS:
 		return mptcp_getsockopt_subflow_addrs(msk, optval, optlen);
+	case MPTCP_REPAIR:
+		return mptcp_getsockopt_repair(msk, optval, optlen);
+	case MPTCP_REPAIR_QUEUE:
+	case MPTCP_QUEUE_SEQ:
+	case MPTCP_REPAIR_OPTIONS:
+	case MPTCP_REPAIR_WINDOW:
+	case MPTCP_AO_ADD_KEY:
+	case MPTCP_AO_DEL_KEY:
+	case MPTCP_AO_GET_KEYS:
+	case MPTCP_AO_INFO:
+		return mptcp_getsockopt_tcp_opt(msk, optname, optval, optlen);
+	case MPTCP_AO_REPAIR:
+		return mptcp_getsockopt_ao_repair(msk, optval, optlen);
 	}
 
 	return -EOPNOTSUPP;
