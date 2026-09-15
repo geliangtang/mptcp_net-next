@@ -4,4 +4,6 @@ mptcp_diag
 mptcp_inq
 mptcp_sockopt
 pm_nl_ctl
+restore_mptcp_ipv4
+restore_mptcp_ipv6
 *.pcap
