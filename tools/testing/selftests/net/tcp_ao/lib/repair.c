@@ -45,6 +45,15 @@ static void test_sock_checkpoint_queue(int sk, int queue, int qlen,
 	socklen_t len;
 	int ret;
 
+#ifdef MPTCP_TEST
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR_QUEUE, &queue, sizeof(queue)))
+		test_error("setsockopt(MPTCP_REPAIR_QUEUE)");
+
+	len = sizeof(q->seq);
+	ret = getsockopt(sk, SOL_MPTCP, MPTCP_QUEUE_SEQ, &q->seq, &len);
+	if (ret || len != sizeof(q->seq))
+		test_error("getsockopt(MPTCP_QUEUE_SEQ): %d", (int)len);
+#else
 	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)))
 		test_error("setsockopt(TCP_REPAIR_QUEUE)");
 
@@ -52,6 +61,7 @@ static void test_sock_checkpoint_queue(int sk, int queue, int qlen,
 	ret = getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &q->seq, &len);
 	if (ret || len != sizeof(q->seq))
 		test_error("getsockopt(TCP_QUEUE_SEQ): %d", (int)len);
+#endif
 
 	if (!qlen) {
 		q->buf = NULL;
@@ -83,9 +93,15 @@ void __test_sock_checkpoint(int sk, struct tcp_sock_state *state,
 		test_error("getsockname(): %d", (int)len);
 
 	len = sizeof(state->trw);
+#ifdef MPTCP_TEST
+	ret = getsockopt(sk, SOL_MPTCP, MPTCP_REPAIR_WINDOW, &state->trw, &len);
+	if (ret || len != sizeof(state->trw))
+		test_error("getsockopt(MPTCP_REPAIR_WINDOW): %d", (int)len);
+#else
 	ret = getsockopt(sk, SOL_TCP, TCP_REPAIR_WINDOW, &state->trw, &len);
 	if (ret || len != sizeof(state->trw))
 		test_error("getsockopt(TCP_REPAIR_WINDOW): %d", (int)len);
+#endif
 
 	if (ioctl(sk, SIOCOUTQ, &state->outq_len))
 		test_error("ioctl(SIOCOUTQ)");
@@ -126,11 +142,19 @@ void test_ao_checkpoint(int sk, struct tcp_ao_repair *state)
 
 static void test_sock_restore_seq(int sk, int queue, uint32_t seq)
 {
+#ifdef MPTCP_TEST
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR_QUEUE, &queue, sizeof(queue)))
+		test_error("setsockopt(MPTCP_REPAIR_QUEUE)");
+
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_QUEUE_SEQ, &seq, sizeof(seq)))
+		test_error("setsockopt(MPTCP_QUEUE_SEQ)");
+#else
 	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)))
 		test_error("setsockopt(TCP_REPAIR_QUEUE)");
 
 	if (setsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, sizeof(seq)))
 		test_error("setsockopt(TCP_QUEUE_SEQ)");
+#endif
 }
 
 static void test_sock_restore_queue(int sk, int queue, void *buf, int len)
@@ -141,8 +165,13 @@ static void test_sock_restore_queue(int sk, int queue, void *buf, int len)
 	if (len == 0)
 		return;
 
+#ifdef MPTCP_TEST
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR_QUEUE, &queue, sizeof(queue)))
+		test_error("setsockopt(MPTCP_REPAIR_QUEUE)");
+#else
 	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)))
 		test_error("setsockopt(TCP_REPAIR_QUEUE)");
+#endif
 
 	do {
 		int ret;
@@ -205,8 +234,13 @@ void __test_sock_restore(int sk, const char *device,
 	opts[opt_nr].opt_val = state->mss;
 	opt_nr++;
 
+	#ifdef MPTCP_TEST
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR_OPTIONS, opts, opt_nr * sizeof(opts[0])))
+		test_error("setsockopt(MPTCP_REPAIR_OPTIONS)");
+#else
 	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_OPTIONS, opts, opt_nr * sizeof(opts[0])))
 		test_error("setsockopt(TCP_REPAIR_OPTIONS)");
+#endif
 
 	if (state->info.tcpi_options & TCPI_OPT_TIMESTAMPS) {
 		if (setsockopt(sk, SOL_TCP, TCP_TIMESTAMP,
@@ -215,8 +249,13 @@ void __test_sock_restore(int sk, const char *device,
 	}
 	test_sock_restore_queue(sk, TCP_RECV_QUEUE, state->in.buf, state->inq_len);
 	test_sock_restore_queue(sk, TCP_SEND_QUEUE, state->out.buf, state->outq_len);
+#ifdef MPTCP_TEST
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR_WINDOW, &state->trw, sizeof(state->trw)))
+		test_error("setsockopt(MPTCP_REPAIR_WINDOW)");
+#else
 	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_WINDOW, &state->trw, sizeof(state->trw)))
 		test_error("setsockopt(TCP_REPAIR_WINDOW)");
+#endif
 }
 
 void test_ao_restore(int sk, struct tcp_ao_repair *state)
@@ -249,6 +288,48 @@ void test_disable_repair(int sk)
 
 void test_kill_sk(int sk)
 {
-	test_enable_repair(sk);
+	int protocol = 0;
+	socklen_t len;
+
+	len = sizeof(protocol);
+	if (!getsockopt(sk, SOL_SOCKET, SO_PROTOCOL, &protocol, &len) &&
+	    protocol == IPPROTO_MPTCP)
+		test_mptcp_repair_enable(sk);
+	else
+		test_enable_repair(sk);
 	close(sk);
+}
+
+void test_mptcp_ao_checkpoint(int sk, struct mptcp_repair_state *state)
+{
+	socklen_t len = sizeof(*state);
+	int ret;
+
+	memset(state, 0, sizeof(*state));
+
+	ret = getsockopt(sk, SOL_MPTCP, MPTCP_AO_REPAIR, state, &len);
+	if (ret || len != sizeof(*state))
+		test_error("getsockopt(MPTCP_AO_REPAIR): %d", (int)len);
+}
+
+void test_mptcp_ao_restore(int sk, struct mptcp_repair_state *state)
+{
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_AO_REPAIR, state, sizeof(*state)))
+		test_error("setsockopt(MPTCP_AO_REPAIR)");
+}
+
+void test_mptcp_repair_enable(int sk)
+{
+	int val = TCP_REPAIR_ON;
+
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR, &val, sizeof(val)))
+		test_error("setsockopt(MPTCP_REPAIR)");
+}
+
+void test_mptcp_repair_disable(int sk)
+{
+	int val = TCP_REPAIR_OFF_NO_WP;
+
+	if (setsockopt(sk, SOL_MPTCP, MPTCP_REPAIR, &val, sizeof(val)))
+		test_error("setsockopt(MPTCP_REPAIR)");
 }
