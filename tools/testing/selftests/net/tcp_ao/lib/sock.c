@@ -8,9 +8,14 @@
 #include "aolib.h"
 
 const unsigned int test_server_port = 7010;
+extern enum test_proto test_proto;
+const char *proto_name[] = {
+	[PROTO_TCP]   = "TCP",
+	[PROTO_MPTCP] = "MPTCP",
+};
 int __test_listen_socket(int backlog, void *addr, size_t addr_sz)
 {
-	int err, sk = socket(test_family, SOCK_STREAM, IPPROTO_TCP);
+	int err, sk = socket(test_family, SOCK_STREAM, test_proto);
 	long flags;
 
 	if (sk < 0)

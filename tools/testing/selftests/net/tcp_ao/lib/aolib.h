@@ -268,6 +268,15 @@ extern __thread union tcp_addr this_ip_addr;
 extern __thread union tcp_addr this_ip_dest;
 extern int test_family;
 
+#ifndef IPPROTO_MPTCP
+#define IPPROTO_MPTCP 262
+#endif
+
+enum test_proto {
+	PROTO_TCP = IPPROTO_TCP,
+	PROTO_MPTCP = IPPROTO_MPTCP,
+};
+
 extern void randomize_buffer(void *buf, size_t buflen);
 extern __printf(3, 4) int test_echo(const char *fname, bool append,
 				    const char *fmt, ...);
