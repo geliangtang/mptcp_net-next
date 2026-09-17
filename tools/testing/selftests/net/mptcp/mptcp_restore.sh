@@ -42,6 +42,30 @@ init
 ip -n "${ns1}" mptcp limits
 mptcp_lib_pm_nl_show_endpoints "$ns1"
 
+ip netns exec "$ns1" ./restore_ipv4 &
+pid=$!
+wait $pid
+if [ $? -ne 0 ]; then
+	mptcp_lib_pr_fail "restore_ipv4 failed"
+	mptcp_lib_result_fail "restore_ipv4"
+	ret=${KSFT_FAIL}
+
+	mptcp_lib_result_print_all_tap
+	exit $ret
+fi
+
+ip netns exec "$ns1" ./restore_ipv6 &
+pid=$!
+wait $pid
+if [ $? -ne 0 ]; then
+	mptcp_lib_pr_fail "restore_ipv6 failed"
+	mptcp_lib_result_fail "restore_ipv6"
+	ret=${KSFT_FAIL}
+
+	mptcp_lib_result_print_all_tap
+	exit $ret
+fi
+
 ip netns exec "$ns1" ./restore_mptcp_ipv4 &
 pid=$!
 wait $pid

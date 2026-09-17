@@ -34,6 +34,8 @@ TEST_GEN_FILES := \
 	mptcp_zerocopy \
 	multi_chunk \
 	pm_nl_ctl \
+	restore_ipv4 \
+	restore_ipv6 \
 	restore_mptcp_ipv4 \
 	restore_mptcp_ipv6 \
 	tls \
@@ -77,6 +79,12 @@ $(TCP_AO_LIB): $(TCP_AO_LIBOBJ)
 $(TCP_AO_LIBDIR)/%.o: ../tcp_ao/lib/%.c ../tcp_ao/lib/aolib.h Makefile
 	@mkdir -p $(TCP_AO_LIBDIR)
 	$(QUIET_CC)$(CC) $< -D_GNU_SOURCE $(TCP_AO_CFLAGS) -o $@ -c
+
+$(OUTPUT)/restore_ipv4: ../tcp_ao/restore.c $(TCP_AO_LIB)
+	$(QUIET_CC)$(CC) $< -D_GNU_SOURCE $(TCP_AO_CFLAGS) $(TCP_AO_LDLIBS) -o $@
+
+$(OUTPUT)/restore_ipv6: ../tcp_ao/restore.c $(TCP_AO_LIB)
+	$(QUIET_CC)$(CC) $< -D_GNU_SOURCE $(TCP_AO_CFLAGS) -DIPV6_TEST $(TCP_AO_LDLIBS) -o $@
 
 $(OUTPUT)/restore_mptcp_ipv4: ../tcp_ao/restore.c $(TCP_AO_LIB)
 	$(QUIET_CC)$(CC) $< -D_GNU_SOURCE $(TCP_AO_CFLAGS) -DMPTCP_TEST $(TCP_AO_LDLIBS) -o $@
