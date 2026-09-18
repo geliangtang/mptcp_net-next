@@ -983,6 +983,9 @@ tcp_ao_verify_hash(const struct sock *sk, const struct sk_buff *skb,
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPAOGOOD);
 	atomic64_inc(&info->counters.pkt_good);
 	atomic64_inc(&key->pkt_good);
+	trace_tcp_ao_good_with_counter(sk, skb, aoh->keyid, aoh->rnext_keyid, maclen,
+				       snmp_fold_field(sock_net(sk)->mib.net_statistics,
+						       LINUX_MIB_TCPAOGOOD));
 	return SKB_NOT_DROPPED_YET;
 }
 
