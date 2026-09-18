@@ -370,6 +370,15 @@ struct mptcp_sock *bpf_mptcp_sock_from_subflow(struct sock *sk);
 static inline struct mptcp_sock *bpf_mptcp_sock_from_subflow(struct sock *sk) { return NULL; }
 #endif
 
+#ifdef CONFIG_MPTCP
+u64 mptcp_parent_net_cookie(const struct sock *sk);
+#else
+static inline u64 mptcp_parent_net_cookie(const struct sock *sk)
+{
+	return sock_net(sk)->net_cookie;
+}
+#endif
+
 #if !IS_ENABLED(CONFIG_MPTCP)
 struct mptcp_sock { };
 #endif

@@ -130,6 +130,21 @@ static int __mptcp_socket_create(struct mptcp_sock *msk)
 	return 0;
 }
 
+u64 mptcp_parent_net_cookie(const struct sock *sk)
+{
+	struct mptcp_subflow_context *subflow;
+
+	if (!sk || !sk_fullsock(sk) || !sk_is_mptcp(sk))
+		return sock_net(sk)->net_cookie;
+
+	subflow = mptcp_subflow_ctx(sk);
+	if (!subflow || !subflow->conn)
+		return sock_net(sk)->net_cookie;
+
+	return sock_net(subflow->conn)->net_cookie;
+}
+EXPORT_SYMBOL_GPL(mptcp_parent_net_cookie);
+
 /* If the MPC handshake is not started, returns the first subflow,
  * eventually allocating it.
  */

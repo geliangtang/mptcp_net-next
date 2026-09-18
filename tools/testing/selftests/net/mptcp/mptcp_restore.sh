@@ -36,6 +36,46 @@ init()
 
 mptcp_lib_check_mptcp
 
+# Parse arguments: -t or --trace to enable ftrace
+do_ftrace=0
+for arg in "$@"; do
+	case "$arg" in
+	-t|--trace) do_ftrace=1 ;;
+	esac
+done
+
+TRACEFS=""
+ftrace_setup()
+{
+	[ "$do_ftrace" -eq 1 ] || return 0
+	for d in /sys/kernel/tracing /sys/kernel/debug/tracing; do
+		if [ -d "$d/events" ]; then
+			TRACEFS="$d"
+			break
+		fi
+	done
+	[ -n "$TRACEFS" ] || return 0
+
+	# Enable the new tracepoint with counter
+	echo 1 > "$TRACEFS/events/tcp/tcp_ao_good_with_counter/enable" 2>/dev/null || return 0
+	echo 0 > "$TRACEFS/trace"
+	echo 1 > "$TRACEFS/tracing_on"
+}
+
+ftrace_teardown()
+{
+	[ "$do_ftrace" -eq 1 ] || return 0
+	[ -n "$TRACEFS" ] || return 0
+	echo 0 > "$TRACEFS/tracing_on"
+	echo 0 > "$TRACEFS/events/tcp/tcp_ao_good_with_counter/enable"
+	echo "# === ftrace log ==="
+	cat "$TRACEFS/trace" 2>/dev/null | while IFS= read -r line; do
+		echo "# $line"
+	done
+	echo "# === end ftrace log ==="
+	echo '-:ao_good' > "$TRACEFS/kprobe_events" 2>/dev/null
+}
+
 trap cleanup EXIT
 
 run_test()
@@ -58,10 +98,17 @@ init
 ip -n "${ns1}" mptcp limits
 mptcp_lib_pm_nl_show_endpoints "$ns1"
 
-for name in restore_ipv4 restore_ipv6 \
-	    restore_mptcp_ipv4 restore_mptcp_ipv6; do
+# TCP tests
+for name in restore_ipv4 restore_ipv6; do
 	run_test "$name"
 done
+
+# MPTCP tests with ftrace
+ftrace_setup
+for name in restore_mptcp_ipv4 restore_mptcp_ipv6; do
+	run_test "$name"
+done
+ftrace_teardown
 
 mptcp_lib_result_print_all_tap
 exit $ret
