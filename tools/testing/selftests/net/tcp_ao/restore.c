@@ -226,9 +226,6 @@ static void *client_fn(void *arg)
 			&saddr, &tcp_img, &ao_img, 0, TEST_CNT_GOOD,
 			proto_name[test_proto]);
 
-	/* Wait for orphaned subflow packets */
-	usleep(300000);
-
 	test_get_sk_checkpoint(port, &saddr, &tcp_img, &ao_img);
 	ao_img.snt_isn += 1;
 	trace_ao_event_expect(TCP_AO_MISMATCH, this_ip_addr, this_ip_dest,
