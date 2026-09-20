@@ -1335,14 +1335,6 @@ struct proto {
 
 	void		(*release_cb)(struct sock *sk);
 
-	/* Called when TCP-AO verification fails on an established
-	 * connection in the early receive path, before the segment
-	 * reaches protocol-specific processing.  Protocols (e.g.
-	 * MPTCP) can override this to send a challenge ACK or take
-	 * other action.
-	 */
-	void		(*ao_failure)(struct sock *sk, struct sk_buff *skb);
-
 	/* Keeping track of sk's, looking them up, and port selection methods. */
 	int			(*hash)(struct sock *sk);
 	void			(*unhash)(struct sock *sk);

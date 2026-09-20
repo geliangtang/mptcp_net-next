@@ -1011,38 +1011,10 @@ static int mptcp_setsockopt_tcp_repair_ao(struct mptcp_sock *msk, int optname,
 		}
 	}
 
-	/* TCP_REPAIR must be applied to all subflows so that close() in
-	 * repair mode transitions every subflow to TCP_CLOSE without
-	 * sending FINs.  Store the state on the msk so that
-	 * sync_socket_options() propagates it to subflows created later
-	 * by the path manager.
-	 */
-	if (optname == TCP_REPAIR) {
-		struct mptcp_subflow_context *subflow;
-		int val;
-
-		ret = copy_from_sockptr(&val, optval, sizeof(int));
-		if (ret) {
-			ret = -EFAULT;
-			goto unlock;
-		}
-		msk->repair = !!val;
-
-		mptcp_for_each_subflow(msk, subflow) {
-			struct sock *sf_sk = mptcp_subflow_tcp_sock(subflow);
-
-			ret = tcp_setsockopt(sf_sk, SOL_TCP, optname,
-					     optval, optlen);
-			if (ret)
-				goto unlock;
-		}
-		ret = 0;
-	} else {
-		ret = tcp_setsockopt(ssk, SOL_TCP, optname, optval, optlen);
-		if (ret == 0 && optname == TCP_AO_ADD_KEY &&
-		    !__mptcp_try_fallback(msk, MPTCP_MIB_TCPAOFALLBACK))
-			WARN_ON_ONCE(1);
-	}
+	ret = tcp_setsockopt(ssk, SOL_TCP, optname, optval, optlen);
+	if (ret == 0 && optname == TCP_AO_ADD_KEY &&
+	    !__mptcp_try_fallback(msk, MPTCP_MIB_TCPAOFALLBACK))
+		WARN_ON_ONCE(1);
 
 unlock:
 	release_sock(sk);
@@ -1943,7 +1915,6 @@ static void sync_socket_options(struct mptcp_sock *msk, struct sock *ssk)
 		tcp_set_congestion_control(ssk, msk->ca_name, false, true);
 	__tcp_sock_set_cork(ssk, !!msk->cork);
 	__tcp_sock_set_nodelay(ssk, !!msk->nodelay);
-	tcp_sk(ssk)->repair = msk->repair;
 	tcp_sock_set_keepidle_locked(ssk, msk->keepalive_idle);
 	tcp_sock_set_keepintvl(ssk, msk->keepalive_intvl);
 	tcp_sock_set_keepcnt(ssk, msk->keepalive_cnt);
