@@ -361,7 +361,8 @@ struct mptcp_sock {
 			in_accept_queue:1,
 			free_first:1,
 			rcvspace_init:1,
-			fastclosing:1;
+			fastclosing:1,
+			repair:1;
 	u32		notsent_lowat;
 	int		keepalive_cnt;
 	int		keepalive_idle;

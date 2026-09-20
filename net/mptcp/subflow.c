@@ -2154,6 +2154,18 @@ static int tcp_abort_override(struct sock *ssk, int err)
 	return tcp_abort(ssk, err);
 }
 
+/* When TCP-AO verification fails on an MPTCP subflow, the segment is
+ * dropped in tcp_v4_rcv()/tcp_v6_rcv() before it reaches the normal
+ * tcp_validate_incoming() challenge-ACK path.  Send a challenge ACK
+ * here so the peer can detect the AO mismatch.
+ */
+static void mptcp_subflow_ao_failure(struct sock *ssk, struct sk_buff *skb)
+{
+	bh_lock_sock(ssk);
+	tcp_send_challenge_ack(ssk, false);
+	bh_unlock_sock(ssk);
+}
+
 static struct tcp_ulp_ops subflow_ulp_ops __read_mostly = {
 	.name		= "mptcp",
 	.owner		= THIS_MODULE,
@@ -2199,6 +2211,7 @@ void __init mptcp_subflow_init(void)
 	tcp_prot_override = tcp_prot;
 	tcp_prot_override.release_cb = tcp_release_cb_override;
 	tcp_prot_override.diag_destroy = tcp_abort_override;
+	tcp_prot_override.ao_failure = mptcp_subflow_ao_failure;
 #ifdef CONFIG_BPF_SYSCALL
 	/* Disable sockmap processing for subflows */
 	tcp_prot_override.psock_update_sk_prot = NULL;
@@ -2246,6 +2259,7 @@ void __init mptcp_subflow_v6_init(void)
 	tcpv6_prot_override = tcpv6_prot;
 	tcpv6_prot_override.release_cb = tcp_release_cb_override;
 	tcpv6_prot_override.diag_destroy = tcp_abort_override;
+	tcpv6_prot_override.ao_failure = mptcp_subflow_ao_failure;
 #ifdef CONFIG_BPF_SYSCALL
 	/* Disable sockmap processing for subflows */
 	tcpv6_prot_override.psock_update_sk_prot = NULL;
