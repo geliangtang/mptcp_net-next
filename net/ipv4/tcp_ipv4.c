@@ -2218,8 +2218,19 @@ process:
 
 	drop_reason = tcp_inbound_hash(sk, NULL, skb, &iph->saddr, &iph->daddr,
 				       AF_INET, dif, sdif);
-	if (drop_reason)
+	if (drop_reason) {
+		/* When TCP-AO verification fails on an established
+		 * connection, notify the protocol so it can send a
+		 * challenge ACK.  The normal tcp_validate_incoming()
+		 * challenge-ACK path is unreachable because the
+		 * segment is dropped before sequence-number checks.
+		 */
+		if (drop_reason == SKB_DROP_REASON_TCP_AOFAILURE &&
+		    sk->sk_state == TCP_ESTABLISHED &&
+		    sk->sk_prot->ao_failure)
+			sk->sk_prot->ao_failure(sk, skb);
 		goto discard_and_relse;
+	}
 
 	nf_reset_ct(skb);
 
