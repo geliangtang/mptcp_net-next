@@ -74,6 +74,7 @@ static int cfg_sndbuf;
 static int cfg_rcvbuf;
 static bool cfg_join;
 static bool cfg_remove;
+static bool cfg_force_timeout;
 static unsigned int cfg_time;
 static unsigned int cfg_do_w;
 static int cfg_wait;
@@ -114,11 +115,12 @@ static struct cfg_sockopt_types cfg_sockopt_types;
 
 static void die_usage(void)
 {
-	fprintf(stderr, "Usage: mptcp_connect [-6] [-c cmsg] [-f offset] [-i file] [-I num] [-j] [-l] "
+	fprintf(stderr, "Usage: mptcp_connect [-6] [-c cmsg] [-F] [-f offset] [-i file] [-I num] [-j] [-l] "
 		"[-m mode] [-M mark] [-o option] [-p port] [-P mode] [-r num] [-R num] "
 		"[-s MPTCP|TCP] [-S num] [-t num] [-T num] [-w sec] connect_address\n");
 	fprintf(stderr, "\t-6 use ipv6\n");
 	fprintf(stderr, "\t-c cmsg -- test cmsg type <cmsg>\n");
+	fprintf(stderr, "\t-F     -- force poll timeout (debug: triggers print_err_stats)\n");
 	fprintf(stderr, "\t-f offset -- stop the I/O after receiving and sending the specified amount "
 		"of bytes. If there are unread bytes in the receive queue, that will cause a MPTCP "
 		"fastclose at close/shutdown. If offset is negative, expect the peer to close before "
@@ -221,10 +223,14 @@ static void print_err_stats(void)
 	snprintf(cmd, sizeof(cmd), "ss -Menitam -o '%cport = :%s' >&2",
 		 listen_mode ? 's' : 'd', cfg_port);
 
+	fprintf(stderr, "=== print_err_stats called (listen_mode=%d, port=%s) ===\n",
+		listen_mode, cfg_port);
 	fprintf(stderr, "socket stats before socket closure:\n");
 	(void)!system(cmd);
 	(void)!system("NSTAT_HISTORY=\"/tmp/$(ip netns identify).nstat\" "
 		      "nstat -s '*Tcp*' >&2");
+	fprintf(stderr, "=== print_err_stats done (listen_mode=%d, port=%s) ===\n",
+		listen_mode, cfg_port);
 }
 
 static void set_rcvbuf(int fd, unsigned int size)
@@ -703,6 +709,9 @@ static int copyfd_io_poll(int infd, int peerfd, int outfd,
 
 		if (fds.events == 0 || quit)
 			break;
+
+		if (cfg_force_timeout)
+			poll_timeout = 1;
 
 		switch (poll(&fds, 1, poll_timeout)) {
 		case -1:
@@ -1442,6 +1451,9 @@ again:
 	polls.fd = listensock;
 	polls.events = POLLIN;
 
+	if (cfg_force_timeout)
+		poll_timeout = 1;
+
 	switch (poll(&polls, 1, poll_timeout)) {
 	case -1:
 		perror("poll");
@@ -1788,7 +1800,7 @@ static void parse_opts(int argc, char **argv)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "6c:f:hi:I:jlm:M:o:p:P:r:R:s:S:t:T:w:")) != -1) {
+	while ((c = getopt(argc, argv, "6c:f:Fhi:I:jlm:M:o:p:P:r:R:s:S:t:T:w:")) != -1) {
 		switch (c) {
 		case 'f':
 			cfg_truncate = atoi(optarg);
@@ -1800,6 +1812,9 @@ static void parse_opts(int argc, char **argv)
 				cfg_rcv_trunc = true;
 				signal(SIGPIPE, SIG_IGN);
 			}
+			break;
+		case 'F':
+			cfg_force_timeout = true;
 			break;
 		case 'j':
 			cfg_join = true;
