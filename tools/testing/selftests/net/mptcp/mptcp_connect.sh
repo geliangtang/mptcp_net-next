@@ -10,7 +10,7 @@
 
 time_start=$(date +%s)
 
-optstring="S:R:d:e:l:r:h4cm:f:tCu"
+optstring="S:R:d:e:l:r:h4cFm:f:tCu"
 ret=0
 final_ret=0
 sin=""
@@ -34,6 +34,7 @@ checksum=false
 filesize=0
 connect_per_transfer=1
 tls=false
+force_timeout=""
 port=$((10000 - 1))
 
 if [ $tc_loss -eq 100 ];then
@@ -61,6 +62,7 @@ usage() {
 	echo -e "\t-t: also run tests with TCP (use twice to non-fallback tcp)"
 	echo -e "\t-u: enable tls"
 	echo -e "\t-C: enable the MPTCP data checksum"
+	echo -e "\t-F: force poll timeout (debug: triggers print_err_stats in mptcp_connect)"
 }
 
 while getopts "$optstring" option;do
@@ -120,6 +122,9 @@ while getopts "$optstring" option;do
 		;;
 	"C")
 		checksum=true
+		;;
+	"F")
+		force_timeout="-F"
 		;;
 	"u")
 		tls=true
@@ -354,6 +359,10 @@ do_transfer()
 
 	if "$tls"; then
 		extra_args+=" -o TLS"
+	fi
+
+	if [ -n "$force_timeout" ]; then
+		extra_args+=" $force_timeout"
 	fi
 
 	if [ -n "$extra_args" ] && $options_log; then
