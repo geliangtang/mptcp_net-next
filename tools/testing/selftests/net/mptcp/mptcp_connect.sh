@@ -452,7 +452,9 @@ do_transfer()
 	printf "(duration %05sms) " "${duration}"
 	if [ ${rets} -ne 0 ] || [ ${retc} -ne 0 ] || [ ${timeout_pid} -ne 0 ]; then
 		mptcp_lib_pr_fail "client exit code $retc, server $rets"
-		mptcp_lib_pr_err_stats "${listener_ns}" "${connector_ns}" "${port}"
+		if [ ${rets} -ne 2 ] && [ ${retc} -ne 2 ]; then
+			mptcp_lib_pr_err_stats "${listener_ns}" "${connector_ns}" "${port}"
+		fi
 
 		echo
 		cat "$capout"
