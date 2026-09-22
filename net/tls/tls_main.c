@@ -117,10 +117,11 @@ CHECK_CIPHER_DESC(TLS_CIPHER_SM4_CCM, tls12_crypto_info_sm4_ccm);
 CHECK_CIPHER_DESC(TLS_CIPHER_ARIA_GCM_128, tls12_crypto_info_aria_gcm_128);
 CHECK_CIPHER_DESC(TLS_CIPHER_ARIA_GCM_256, tls12_crypto_info_aria_gcm_256);
 
-static const struct proto *saved_tcpv6_prot;
-static DEFINE_MUTEX(tcpv6_prot_mutex);
-static const struct proto *saved_tcpv4_prot;
-static DEFINE_MUTEX(tcpv4_prot_mutex);
+static const struct proto *saved_prot[TLS_NUM_PROTS];
+static struct mutex prot_mutex[TLS_NUM_PROTS] = {
+	[TLSV6] = __MUTEX_INITIALIZER(prot_mutex[TLSV6]),
+	[TLSV4] = __MUTEX_INITIALIZER(prot_mutex[TLSV4]),
+};
 static struct proto tls_prots[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
 static struct proto_ops tls_proto_ops[TLS_NUM_PROTS][TLS_NUM_CONFIG][TLS_NUM_CONFIG];
 static void build_protos(struct proto prot[TLS_NUM_CONFIG][TLS_NUM_CONFIG],
@@ -967,29 +968,17 @@ static void tls_build_proto(struct sock *sk)
 	int ip_ver = sk->sk_family == AF_INET6 ? TLSV6 : TLSV4;
 	struct proto *prot = READ_ONCE(sk->sk_prot);
 
-	/* Build IPv6 TLS whenever the address of tcpv6 _prot changes */
-	if (ip_ver == TLSV6 &&
-	    unlikely(prot != smp_load_acquire(&saved_tcpv6_prot))) {
-		mutex_lock(&tcpv6_prot_mutex);
-		if (likely(prot != saved_tcpv6_prot)) {
-			build_protos(tls_prots[TLSV6], prot);
-			build_proto_ops(tls_proto_ops[TLSV6],
+	/* smp_load_acquire pairs with smp_store_release below */
+	if (unlikely(prot != smp_load_acquire(&saved_prot[ip_ver]))) {
+		mutex_lock(&prot_mutex[ip_ver]);
+		if (likely(prot != saved_prot[ip_ver])) {
+			build_protos(tls_prots[ip_ver], prot);
+			build_proto_ops(tls_proto_ops[ip_ver],
 					sk->sk_socket->ops);
-			smp_store_release(&saved_tcpv6_prot, prot);
+			/* pairs with smp_load_acquire above */
+			smp_store_release(&saved_prot[ip_ver], prot);
 		}
-		mutex_unlock(&tcpv6_prot_mutex);
-	}
-
-	if (ip_ver == TLSV4 &&
-	    unlikely(prot != smp_load_acquire(&saved_tcpv4_prot))) {
-		mutex_lock(&tcpv4_prot_mutex);
-		if (likely(prot != saved_tcpv4_prot)) {
-			build_protos(tls_prots[TLSV4], prot);
-			build_proto_ops(tls_proto_ops[TLSV4],
-					sk->sk_socket->ops);
-			smp_store_release(&saved_tcpv4_prot, prot);
-		}
-		mutex_unlock(&tcpv4_prot_mutex);
+		mutex_unlock(&prot_mutex[ip_ver]);
 	}
 }
 
