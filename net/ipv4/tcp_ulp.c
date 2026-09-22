@@ -170,3 +170,23 @@ int tcp_set_ulp(struct sock *sk, const char *name)
 
 	return __tcp_set_ulp(sk, ulp_ops);
 }
+
+int tcp_get_ulp(struct sock *sk, sockptr_t optval, sockptr_t optlen,
+		int max)
+{
+	unsigned int len = min_t(unsigned int, max, TCP_ULP_NAME_MAX);
+	struct inet_connection_sock *icsk = inet_csk(sk);
+
+	if (!icsk->icsk_ulp_ops) {
+		len = 0;
+		if (copy_to_sockptr(optlen, &len, sizeof(int)))
+			return -EFAULT;
+		return 0;
+	}
+	if (copy_to_sockptr(optlen, &len, sizeof(int)))
+		return -EFAULT;
+	if (copy_to_sockptr(optval, icsk->icsk_ulp_ops->name, len))
+		return -EFAULT;
+	return 0;
+}
+EXPORT_SYMBOL(tcp_get_ulp);
