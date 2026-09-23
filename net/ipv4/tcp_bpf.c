@@ -119,7 +119,9 @@ retry:
 
 		bvec_set_page(&bvec, page, size, off);
 		iov_iter_bvec(&msghdr.msg_iter, ITER_SOURCE, &bvec, 1, size);
-		ret = tcp_sendmsg_locked(sk, &msghdr, size);
+		if (unlikely(!sk->sk_socket))
+			return -EPIPE;
+		ret = sk->sk_socket->ops->sendmsg_locked(sk, &msghdr, size);
 		if (ret <= 0)
 			return ret;
 
