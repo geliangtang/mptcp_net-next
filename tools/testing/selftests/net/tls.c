@@ -3677,6 +3677,67 @@ TEST(data_steal) {
 	close(cfd);
 }
 
+TEST(tls_op_cache)
+{
+	struct tls_crypto_info_keys tls12;
+	int mptcp_fd = -1, mptcp_cfd = -1;
+	int tcp_fd = -1, tcp_cfd = -1;
+	int ret, pid, status, bytes;
+	char buf[16];
+	bool notls;
+
+	if (!is_mptcp_enable())
+		SKIP(return, "no MPTCP support");
+
+	tls_crypto_info_init(TLS_1_2_VERSION, TLS_CIPHER_AES_GCM_128,
+			     &tls12, 0);
+
+	/* Create TCP+TLS socket pair. */
+	__ulp_sock_pair(_metadata, &tcp_fd, &tcp_cfd, &notls, 0, 0);
+	if (notls)
+		SKIP(return, "no TLS support");
+
+	ASSERT_EQ(setsockopt(tcp_fd, SOL_TLS, TLS_TX, &tls12, tls12.len), 0);
+	ASSERT_EQ(setsockopt(tcp_cfd, SOL_TLS, TLS_RX, &tls12, tls12.len), 0);
+
+	/* Create MPTCP+TLS socket pair. */
+	__ulp_sock_pair(_metadata, &mptcp_fd, &mptcp_cfd, &notls,
+			IPPROTO_MPTCP, IPPROTO_MPTCP);
+	if (notls) {
+		TH_LOG("MPTCP kTLS not available");
+		goto out;
+	}
+
+	ASSERT_EQ(setsockopt(mptcp_fd, SOL_TLS, TLS_TX, &tls12, tls12.len), 0);
+	ASSERT_EQ(setsockopt(mptcp_cfd, SOL_TLS, TLS_RX, &tls12, tls12.len), 0);
+
+	/* ioctl(TIOCINQ) on TCP socket in a child process. */
+	pid = fork();
+	ASSERT_NE(pid, -1);
+	if (pid == 0) {
+		bytes = -1;
+		ret = ioctl(tcp_cfd, TIOCINQ, &bytes);
+		_exit(ret == 0 && bytes == 0 ? 0 : 1);
+	}
+	ASSERT_EQ(wait(&status), pid);
+	EXPECT_EQ(WIFSIGNALED(status), 0);
+	EXPECT_EQ(WIFEXITED(status), 1);
+	EXPECT_EQ(WEXITSTATUS(status), 0);
+
+	/* Send on the TCP socket. */
+	EXPECT_EQ(send(tcp_fd, buf, sizeof(buf), MSG_DONTWAIT), sizeof(buf));
+
+out:
+	if (tcp_fd >= 0)
+		close(tcp_fd);
+	if (tcp_cfd >= 0)
+		close(tcp_cfd);
+	if (mptcp_fd >= 0)
+		close(mptcp_fd);
+	if (mptcp_cfd >= 0)
+		close(mptcp_cfd);
+}
+
 static void __attribute__((constructor)) fips_check(void) {
 	int res;
 	FILE *f;
