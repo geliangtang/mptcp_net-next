@@ -2120,7 +2120,7 @@ TEST_F(tls_basic, rekey_tx)
 	EXPECT_EQ(memcmp(buf, test_str, send_len), 0);
 }
 
-TEST_F(tls_basic, disconnect)
+TEST_F(tls, disconnect)
 {
 	char const *test_str = "test_message";
 	int send_len = strlen(test_str) + 1;
@@ -2132,22 +2132,15 @@ TEST_F(tls_basic, disconnect)
 	int sfd;
 
 	if (self->notls)
-		return;
+		SKIP(return, "no TLS support");
 
-	tls_crypto_info_init(TLS_1_3_VERSION, TLS_CIPHER_AES_GCM_128,
+	tls_crypto_info_init(variant->tls_version, variant->cipher_type,
 			     &key, 0);
-
-	ret = setsockopt(self->fd, SOL_TLS, TLS_TX, &key, key.len);
-	ASSERT_EQ(ret, 0);
 
 	/* Pre-queue the data so that setsockopt parses it but doesn't
 	 * dequeue it from the TCP socket. recvmsg would dequeue.
 	 */
 	EXPECT_EQ(send(self->fd, test_str, send_len, 0), send_len);
-
-	ret = setsockopt(self->cfd, SOL_TLS, TLS_RX, &key, key.len);
-	ASSERT_EQ(ret, 0);
-
 	bzero(buf, sizeof(buf));
 	EXPECT_EQ(recv(self->cfd, buf, send_len, 0), send_len);
 	EXPECT_EQ(memcmp(buf, test_str, send_len), 0);
@@ -2177,7 +2170,7 @@ TEST_F(tls_basic, disconnect)
 	/* Reconnect fd to a new server and re-setup TLS. */
 	addr.sin_family = AF_INET;
 	addr.sin_port = 0;
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	sfd = socket(AF_INET, SOCK_STREAM, variant->mptcp ? IPPROTO_MPTCP : 0);
 	EXPECT_GE(sfd, 0);
 	if (sfd < 0)
 		return;
