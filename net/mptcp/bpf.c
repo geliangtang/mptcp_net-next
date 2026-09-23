@@ -253,14 +253,7 @@ bpf_iter_mptcp_subflow_new(struct bpf_iter_mptcp_subflow *it,
 	BUILD_BUG_ON(__alignof__(struct bpf_iter_mptcp_subflow_kern) !=
 		     __alignof__(struct bpf_iter_mptcp_subflow));
 
-	if (unlikely(!sk || !sk_fullsock(sk))) {
-		kit->msk = NULL;
-		kit->pos = NULL;
-		return -EINVAL;
-	}
-
-	if (sk->sk_type != SOCK_STREAM ||
-	    sk->sk_protocol != IPPROTO_MPTCP) {
+	if (unlikely(!sk || !sk_fullsock(sk) || !sk_is_msk(sk))) {
 		kit->msk = NULL;
 		kit->pos = NULL;
 		return -EINVAL;
