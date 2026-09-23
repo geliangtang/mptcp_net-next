@@ -43,6 +43,7 @@ ip -n "${ns1}" mptcp limits
 mptcp_lib_pm_nl_show_endpoints "$ns1"
 
 #ip netns exec "$ns1" ./tls -t tls_op_cache &
+ip netns exec "$ns1" ./tls -t disconnect &
 #ip netns exec "$ns1" ./tls -t multi_chunk_sendfile &
 #ip netns exec "$ns1" ./tls -t tls_v4map &
 #ip netns exec "$ns1" ./tls -t nonblocking &
@@ -133,19 +134,19 @@ mptcp_lib_pm_nl_show_endpoints "$ns1"
 #-r tls.12_aria_gcm_256_mptcp.mutliproc_sendpage_readers \
 #-r tls.12_aria_gcm_256_mptcp.mutliproc_sendpage_writers &
 #ip netns exec "$ns1" ./tls &
-ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
-			   -v 13_aes_gcm_mptcp \
-			   -v 12_chacha_mptcp \
-			   -v 13_chacha_mptcp \
-			   -v 13_sm4_gcm_mptcp \
-			   -v 13_sm4_ccm_mptcp \
-			   -v 12_aes_ccm_mptcp \
-			   -v 13_aes_ccm_mptcp \
-			   -v 12_aes_gcm_256_mptcp \
-			   -v 13_aes_gcm_256_mptcp \
-			   -v 13_nopad_mptcp \
-			   -v 12_aria_gcm_mptcp \
-			   -v 12_aria_gcm_256_mptcp &
+#ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
+#			   -v 13_aes_gcm_mptcp \
+#			   -v 12_chacha_mptcp \
+#			   -v 13_chacha_mptcp \
+#			   -v 13_sm4_gcm_mptcp \
+#			   -v 13_sm4_ccm_mptcp \
+#			   -v 12_aes_ccm_mptcp \
+#			   -v 13_aes_ccm_mptcp \
+#			   -v 12_aes_gcm_256_mptcp \
+#			   -v 13_aes_gcm_256_mptcp \
+#			   -v 13_nopad_mptcp \
+#			   -v 12_aria_gcm_mptcp \
+#			   -v 12_aria_gcm_256_mptcp &
 #ip netns exec "$ns1" ./tls -v 12_aes_gcm_mptcp \
 #			   -v 13_aes_gcm \
 #			   -v 12_chacha_mptcp \
