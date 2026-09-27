@@ -1995,7 +1995,6 @@ bool tcp_oow_rate_limited(struct net *net, const struct sk_buff *skb,
 			  int mib_idx, u32 *last_oow_ack_time);
 void tcp_reqsk_send_challenge_ack(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req);
-void tcp_send_challenge_ack(struct sock *sk, bool accecn_reflector);
 
 static inline void tcp_mib_init(struct net *net)
 {

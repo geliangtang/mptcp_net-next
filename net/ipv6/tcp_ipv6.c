@@ -1875,13 +1875,8 @@ process:
 
 	drop_reason = tcp_inbound_hash(sk, NULL, skb, &hdr->saddr, &hdr->daddr,
 				       AF_INET6, dif, sdif);
-	if (drop_reason) {
-		if (drop_reason == SKB_DROP_REASON_TCP_AOFAILURE &&
-		    sk->sk_state == TCP_ESTABLISHED &&
-		    sk->sk_prot->ao_failure)
-			sk->sk_prot->ao_failure(sk, skb);
+	if (drop_reason)
 		goto discard_and_relse;
-	}
 
 	nf_reset_ct(skb);
 
