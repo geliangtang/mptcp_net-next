@@ -1260,6 +1260,7 @@ static int mptcp_repair_set_state(struct mptcp_sock *msk,
 	WRITE_ONCE(msk->write_seq, opt.snd_nxt);
 	WRITE_ONCE(msk->snd_nxt, opt.snd_nxt);
 	WRITE_ONCE(msk->copied_seq, opt.copied_seq);
+	pr_info("MPTCP_AO_REPAIR restore: use_64bit_ack saved=%d\n", opt.use_64bit_ack);
 	WRITE_ONCE(msk->use_64bit_ack, opt.use_64bit_ack);
 	WRITE_ONCE(msk->csum_enabled, opt.csum_enabled);
 	WRITE_ONCE(msk->can_ack, true);

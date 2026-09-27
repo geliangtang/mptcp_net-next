@@ -3931,6 +3931,7 @@ static int mptcp_disconnect(struct sock *sk, int flags)
 	WRITE_ONCE(msk->rcv_data_fin, false);
 	WRITE_ONCE(msk->snd_data_fin_enable, false);
 	WRITE_ONCE(msk->rcv_fastclose, false);
+	pr_info("__mptcp_close: use_64bit_ack -> false (was %d)\n", msk->use_64bit_ack);
 	WRITE_ONCE(msk->use_64bit_ack, false);
 	WRITE_ONCE(msk->csum_enabled, mptcp_is_checksum_enabled(sock_net(sk)));
 	mptcp_pm_data_reset(msk);
@@ -4543,8 +4544,11 @@ static int mptcp_connect(struct sock *sk, struct sockaddr_unsized *uaddr,
 		WRITE_ONCE(msk->snd_una, subflow->idsn + 1);
 		WRITE_ONCE(msk->wnd_end, subflow->idsn + 1 + tcp_sk(ssk)->snd_wnd);
 		tcp_get_current_key(ssk, &key);
-		if (tcp_key_is_ao(&key))
+		if (tcp_key_is_ao(&key)) {
+			pr_info("__mptcp_subflow_connect repair: AO key, use_64bit_ack -> false (was %d)\n",
+				msk->use_64bit_ack);
 			WRITE_ONCE(msk->use_64bit_ack, false);
+		}
 
 		if (sk->sk_state != TCP_ESTABLISHED) {
 			mptcp_set_state(sk, TCP_ESTABLISHED);

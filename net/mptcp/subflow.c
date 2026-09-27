@@ -1231,6 +1231,8 @@ static enum mapping_status get_mapping_status(struct sock *ssk,
 		mpext->dsn64 = 0;
 
 	map_seq = mptcp_expand_seq(READ_ONCE(msk->ack_seq), mpext->data_seq, mpext->dsn64);
+	pr_info("subflow DSS: dsn64=%d ao=%d use_64bit_ack_will=%d\n",
+		mpext->dsn64, tcp_key_is_ao(&key), !!mpext->dsn64);
 	WRITE_ONCE(mptcp_sk(subflow->conn)->use_64bit_ack, !!mpext->dsn64);
 
 	if (subflow->map_valid) {
