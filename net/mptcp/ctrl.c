@@ -39,6 +39,7 @@ struct mptcp_pernet {
 	u8 allow_join_initial_addr_port;
 	u8 pm_type;
 	u8 add_addr_v6_port_drop_ts;
+	u8 dsn64;
 	char scheduler[MPTCP_SCHED_NAME_MAX];
 	char path_manager[MPTCP_PM_NAME_MAX];
 };
@@ -100,6 +101,11 @@ unsigned int mptcp_add_addr_v6_port_drop_ts(const struct net *net)
 	return READ_ONCE(mptcp_get_pernet(net)->add_addr_v6_port_drop_ts);
 }
 
+unsigned int mptcp_dsn64(const struct net *net)
+{
+	return READ_ONCE(mptcp_get_pernet(net)->dsn64);
+}
+
 static void mptcp_pernet_set_defaults(struct mptcp_pernet *pernet)
 {
 	pernet->mptcp_enabled = 1;
@@ -115,6 +121,7 @@ static void mptcp_pernet_set_defaults(struct mptcp_pernet *pernet)
 	strscpy(pernet->scheduler, "default", sizeof(pernet->scheduler));
 	strscpy(pernet->path_manager, "kernel", sizeof(pernet->path_manager));
 	pernet->add_addr_v6_port_drop_ts = 1;
+	pernet->dsn64 = 1;
 }
 
 #ifdef CONFIG_SYSCTL
@@ -377,6 +384,14 @@ static struct ctl_table mptcp_sysctl_table[] = {
 		.extra1       = SYSCTL_ZERO,
 		.extra2       = SYSCTL_ONE
 	},
+	{
+		.procname = "dsn64",
+		.maxlen = sizeof(u8),
+		.mode = 0644,
+		.proc_handler = proc_dou8vec_minmax,
+		.extra1       = SYSCTL_ZERO,
+		.extra2       = SYSCTL_ONE
+	},
 };
 
 static int mptcp_pernet_new_table(struct net *net, struct mptcp_pernet *pernet)
@@ -405,6 +420,7 @@ static int mptcp_pernet_new_table(struct net *net, struct mptcp_pernet *pernet)
 	table[11].data = &pernet->path_manager;
 	/* table[12] is for available_path_managers which is read-only info */
 	table[13].data = &pernet->add_addr_v6_port_drop_ts;
+	table[14].data = &pernet->dsn64;
 
 	hdr = register_net_sysctl_sz(net, MPTCP_SYSCTL_PATH, table,
 				     ARRAY_SIZE(mptcp_sysctl_table));

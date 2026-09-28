@@ -1087,6 +1087,7 @@ void mptcp_diag_fill_info(struct mptcp_sock *msk, struct mptcp_info *info)
 
 	slow = lock_sock_fast(sk);
 	info->mptcpi_csum_enabled = READ_ONCE(msk->csum_enabled);
+	info->mptcpi_dsn64 = READ_ONCE(msk->dsn64);
 	info->mptcpi_token = msk->token;
 	info->mptcpi_write_seq = msk->write_seq;
 	info->mptcpi_retransmits = inet_csk(sk)->icsk_retransmits;
