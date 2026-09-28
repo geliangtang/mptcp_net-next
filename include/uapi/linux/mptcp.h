@@ -63,7 +63,8 @@ struct mptcp_info {
 	__u8	mptcpi_local_addr_max;
 	#define mptcpi_endp_subflow_max mptcpi_local_addr_max
 	__u8	mptcpi_csum_enabled;
-	/* 8-bit hole that can no longer be filled */
+	__u8	mptcpi_dsn64;
+	/* 16-bit hole that can no longer be filled */
 	__u32	mptcpi_retransmits;
 	__u64	mptcpi_bytes_retrans;
 	__u64	mptcpi_bytes_sent;
