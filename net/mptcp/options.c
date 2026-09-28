@@ -604,6 +604,7 @@ static void mptcp_write_data_fin(struct mptcp_subflow_context *subflow,
 	 * sequence number for the DATA_FIN is one less.
 	 */
 	u64 data_fin_tx_seq = READ_ONCE(mptcp_sk(subflow->conn)->write_seq) - 1;
+	struct mptcp_sock *msk = mptcp_sk(subflow->conn);
 
 	if (!ext->use_map || !skb->len) {
 		/* RFC6824 requires a DSS mapping with specific values
@@ -611,7 +612,7 @@ static void mptcp_write_data_fin(struct mptcp_subflow_context *subflow,
 		 */
 		ext->data_fin = 1;
 		ext->use_map = 1;
-		ext->dsn64 = 1;
+		ext->dsn64 = READ_ONCE(msk->dsn64);
 		ext->data_seq = data_fin_tx_seq;
 		ext->subflow_seq = 0;
 		ext->data_len = 1;
