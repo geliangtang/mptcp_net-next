@@ -85,6 +85,24 @@ close_timeout - INTEGER (seconds)
 
 	Default: 60
 
+dsn64 - BOOLEAN
+	Control the Data Sequence Number (DSN) length in outgoing DSS
+	options.
+
+	When the value is 1, MPTCP uses 64-bit DSN in outgoing DSS mappings.
+	When the value is 0, MPTCP uses 32-bit DSN, saving 4 bytes of TCP
+	option space per segment. This is useful when the full 64-bit data
+	sequence range is not needed and TCP option space is at a premium
+	(e.g. fitting MPTCP DSS together with TCP-AO).
+
+	Note that this sysctl only controls the outgoing DSN length. The
+	incoming DSN length is determined by the peer, and the outgoing
+	Data ACK length follows the peer's DSN format independently.
+
+	This is a per-namespace sysctl.
+
+	Default: 1
+
 enabled - BOOLEAN
 	Control whether MPTCP sockets can be created.
 
