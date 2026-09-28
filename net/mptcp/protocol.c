@@ -3937,6 +3937,8 @@ static void mptcp_close(struct sock *sk, long timeout)
 {
 	bool do_cancel_work;
 
+	set_bit(MPTCP_CLOSING, &mptcp_sk(sk)->flags);
+
 	lock_sock(sk);
 
 	do_cancel_work = __mptcp_close(sk, timeout);
@@ -4003,6 +4005,8 @@ static int mptcp_disconnect(struct sock *sk, int flags)
 	 */
 	if (msk->fastopening)
 		return -EBUSY;
+
+	set_bit(MPTCP_CLOSING, &msk->flags);
 
 	mptcp_check_listen_stop(sk);
 	mptcp_set_state(sk, TCP_CLOSE);
@@ -4511,6 +4515,8 @@ bool mptcp_finish_join(struct sock *ssk)
 			list_add_tail(&subflow->node, &msk->conn_list);
 			mptcp_sock_check_graft(parent, ssk);
 		}
+	} else if (test_bit(MPTCP_CLOSING, &msk->flags)) {
+		ret = false;
 	} else {
 		sock_hold(ssk);
 		list_add_tail(&subflow->node, &msk->join_list);
