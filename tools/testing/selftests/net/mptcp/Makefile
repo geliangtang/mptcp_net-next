@@ -9,6 +9,7 @@ TEST_PROGS := \
 	diag.sh \
 	mptcp_connect.sh \
 	mptcp_connect_checksum.sh \
+	mptcp_connect_dsn64.sh \
 	mptcp_connect_mmap.sh \
 	mptcp_connect_sendfile.sh \
 	mptcp_connect_splice.sh \
