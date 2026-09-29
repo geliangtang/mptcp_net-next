@@ -541,6 +541,12 @@ mptcp_lib_check_tools() {
 				exit ${KSFT_SKIP}
 			fi
 			;;
+		"tcpdump")
+			if ! tcpdump --version &> /dev/null; then
+				mptcp_lib_pr_skip "tcpdump tool not found"
+				exit ${KSFT_SKIP}
+			fi
+			;;
 		*)
 			mptcp_lib_pr_fail "Internal error: unsupported tool: ${tool}"
 			exit ${KSFT_FAIL}
