@@ -108,35 +108,55 @@ run_test()
 		return
 	fi
 
-	local pkt_count
-	pkt_count=$(tcpdump -r "$capfile" -n 2>/dev/null | wc -l)
-	echo "DEBUG ($label): $pkt_count packets in pcap, size=$(stat -c%s "$capfile" 2>/dev/null)"
+	# Use tcpdump decoded output to identify DSS MAP by option length.
+	# Without checksum (default):
+	#   dsn64=0 → "mptcp 18 dss" (ACK32+MAP32, 4+4+4+4+2=18)
+	#   dsn64=1 → "mptcp 26 dss" (ACK64+MAP64, 4+8+8+4+2=26)
+	#   "mptcp 22 dss" can occur in transition (ACK32+MAP64 before use_64bit_ack is set)
+	# Count ACK sizes from decoded DSS output
+	count_ack() {
+		echo "$1" | grep "$2" | \
+			awk -v max32="4294967295" -v want="$3" \
+			'{for(i=1;i<=NF;i++) if($i=="ack") {
+				v=$(i+1)+0
+				if (want=="32" && v<=max32) c++
+				if (want=="64" && v>max32) c++
+			}} END{print c+0}'
+	}
 
-	# DSS: kind=0x1e, len=0x12(32-bit,18B)=1e122 or len=0x1a(64-bit,26B)=1e1a2
-	local dss32_count dss64_count hexdump
-	hexdump=$(tcpdump -r "$capfile" -n -xx 2>/dev/null | tr -d ' \n\t')
-	dss32_count=$(echo "$hexdump" | grep -o -i "1e122" | wc -l)
-	dss64_count=$(echo "$hexdump" | grep -o -i "1e1a2" | wc -l)
+	local decoded dss18 dss22 dss26
+	decoded=$(tcpdump -r "$capfile" -n 2>/dev/null)
+	dss18=$(echo "$decoded" | grep -c "mptcp 18 dss")
+	dss22=$(echo "$decoded" | grep -c "mptcp 22 dss")
+	dss26=$(echo "$decoded" | grep -c "mptcp 26 dss")
 
-	local mptcp_opt_count
-	mptcp_opt_count=$(echo "$hexdump" | grep -o -i "1e" | wc -l)
-	echo "DEBUG ($label): dss32=$dss32_count dss64=$dss64_count mptcp_opts=$mptcp_opt_count"
+	local ack32 ack64 out_ack32 out_ack64 in_ack32 in_ack64
+	ack32=$(count_ack "$decoded" "dss.*ack" 32)
+	ack64=$(count_ack "$decoded" "dss.*ack" 64)
+	out_ack32=$(count_ack "$decoded" "Out.*dss.*ack" 32)
+	out_ack64=$(count_ack "$decoded" "Out.*dss.*ack" 64)
+	in_ack32=$(count_ack "$decoded" "In.*dss.*ack" 32)
+	in_ack64=$(count_ack "$decoded" "In.*dss.*ack" 64)
+	local ack_info
+	ack_info="Out ACK32:$out_ack32 ACK64:$out_ack64"
+	ack_info="$ack_info | In ACK32:$in_ack32 ACK64:$in_ack64"
+	mptcp_lib_print_info "$label: $ack_info"
 
 	if [ "$dsn64_val" = "1" ]; then
-		if [ "$dss64_count" -gt 0 ] && [ "$dss32_count" -eq 0 ]; then
-			mptcp_lib_pr_ok "$label: $dss64_count packets with 64-bit DSS"
+		if [ "$dss26" -gt 0 ] && [ "$dss18" -eq 0 ]; then
+			mptcp_lib_pr_ok "$label: $dss26 pkts, 64-bit DSN ($ack_info)"
 			mptcp_lib_result_pass "$label"
 		else
-			mptcp_lib_pr_fail "$label: expected 64-bit DSS, got dss64=$dss64_count dss32=$dss32_count"
+			mptcp_lib_pr_fail "$label: dss26=$dss26 dss22=$dss22 dss18=$dss18"
 			mptcp_lib_result_fail "$label"
 			ret=1
 		fi
 	else
-		if [ "$dss32_count" -gt 0 ] && [ "$dss64_count" -eq 0 ]; then
-			mptcp_lib_pr_ok "$label: $dss32_count packets with 32-bit DSS"
+		if [ "$dss18" -gt 0 ] && [ "$dss26" -eq 0 ]; then
+			mptcp_lib_pr_ok "$label: $dss18 pkts, 32-bit DSN ($ack_info)"
 			mptcp_lib_result_pass "$label"
 		else
-			mptcp_lib_pr_fail "$label: expected 32-bit DSS, got dss32=$dss32_count dss64=$dss64_count"
+			mptcp_lib_pr_fail "$label: dss18=$dss18 dss22=$dss22 dss26=$dss26"
 			mptcp_lib_result_fail "$label"
 			ret=1
 		fi

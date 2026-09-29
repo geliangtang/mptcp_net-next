@@ -650,11 +650,15 @@ static bool mptcp_established_options_dss(struct sock *sk, struct sk_buff *skb,
 		if (mpext) {
 			if (!mpext->dsn64)
 				map_size = TCPOLEN_MPTCP_DSS_BASE + TCPOLEN_MPTCP_DSS_MAP32;
+			else
+				WRITE_ONCE(msk->use_64bit_ack, true);
 
 			if (opts->csum_reqd)
 				map_size += TCPOLEN_MPTCP_DSS_CHECKSUM;
 
 			opts->ext_copy = *mpext;
+		} else if (snd_data_fin_enable && READ_ONCE(msk->dsn64)) {
+			WRITE_ONCE(msk->use_64bit_ack, true);
 		}
 
 		dss_size = map_size;
@@ -678,6 +682,9 @@ static bool mptcp_established_options_dss(struct sock *sk, struct sk_buff *skb,
 	} else {
 		ack_size = TCPOLEN_MPTCP_DSS_ACK32;
 		opts->ext_copy.ack64 = 0;
+		//pr_info("MPTCP: ACK32! dss_size=%u use_map=%d dsn64=%d\n",
+		//	dss_size, mpext ? mpext->use_map : -1,
+		//	mpext ? mpext->dsn64 : -1);
 	}
 	opts->ext_copy.use_ack = 1;
 	opts->suboptions = OPTION_MPTCP_DSS;
@@ -1313,8 +1320,11 @@ bool mptcp_incoming_options(struct sock *sk, struct sk_buff *skb)
 	/* we can't wait for recvmsg() to update the ack_seq, otherwise
 	 * monodirectional flows will stuck
 	 */
-	if (mp_opt.use_ack)
+	if (mp_opt.use_ack) {
 		ack_update_msk(msk, sk, &mp_opt);
+		if (mp_opt.ack64)
+			WRITE_ONCE(msk->use_64bit_ack, true);
+	}
 	rwin_update(msk, sk, skb);
 
 	/* Zero-data-length packets are dropped by the caller and not
