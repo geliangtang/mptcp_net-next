@@ -52,6 +52,7 @@ struct mptcp_info {
 	__u8	mptcpi_local_addr_used;
 	__u8	mptcpi_local_addr_max;
 	__u8	mptcpi_csum_enabled;
+	__u8	mptcpi_dsn64;
 	__u32	mptcpi_retransmits;
 	__u64	mptcpi_bytes_retrans;
 	__u64	mptcpi_bytes_sent;
@@ -382,6 +383,10 @@ static void do_getsockopt_mptcp_info(struct so_state *s, int fd, size_t w)
 		s->mi = i;
 
 	assert(s->mi.mptcpi_write_seq + w == i.mptcpi_write_seq);
+
+	if (olen >= __builtin_offsetof(struct mptcp_info, mptcpi_dsn64) +
+		     sizeof(i.mptcpi_dsn64))
+		assert(i.mptcpi_dsn64 <= 1);
 
 	s->mptcpi_rcv_delta = i.mptcpi_rcv_nxt - s->mi.mptcpi_rcv_nxt;
 }
