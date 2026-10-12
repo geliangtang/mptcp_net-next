@@ -29,6 +29,7 @@ TEST_PROGS := \
 TEST_GEN_FILES := \
 	mptcp_connect \
 	mptcp_diag \
+	mptcp_join_race \
 	mptcp_sockopt \
 	mptcp_zerocopy \
 	multi_chunk \
