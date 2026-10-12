@@ -815,6 +815,17 @@ run_tests_disconnect()
 	connect_per_transfer=1
 }
 
+run_tests_dsn64()
+{
+	TEST_GROUP="DSN64"
+
+	mptcp_lib_pr_info "dsn64=0"
+	ip netns exec "$ns2" sysctl -q net.mptcp.dsn64=0
+	run_tests "$ns1" "$ns2" 10.0.1.1
+	run_tests "$ns1" "$ns2" dead:beef:1::1
+	ip netns exec "$ns2" sysctl -q net.mptcp.dsn64=1
+}
+
 display_time()
 {
 	time_end=$(date +%s)
@@ -958,6 +969,9 @@ log_if_error "Tests with tproxy have failed"
 
 run_tests_disconnect
 log_if_error "Tests of the full disconnection have failed"
+
+run_tests_dsn64
+log_if_error "Tests with dsn64 have failed"
 
 display_time
 mptcp_lib_result_print_all_tap
