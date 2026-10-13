@@ -987,6 +987,12 @@ trim_sgl:
 			goto send_end;
 		}
 
+		/* Re-check ctx after wait, disconnect may have freed it */
+		if (test_bit(TLS_DISCONNECTING, &tls_ctx->flags)) {
+			ret = -ENOTCONN;
+			goto trim_sgl;
+		}
+
 		if (ctx->open_rec && msg_en->sg.size < required_size)
 			goto alloc_encrypted;
 	}
@@ -1127,6 +1133,10 @@ tls_rx_rec_wait(struct sock *sk, bool nonblock, bool released, bool has_copied)
 		if (ret < 0)
 			return ret;
 
+		/* Check if disconnect is in progress */
+		if (test_bit(TLS_DISCONNECTING, &tls_ctx->flags))
+			return -ENOTCONN;
+
 		if (sk_flush_backlog(sk))
 			released = true;
 		if (!skb_queue_empty(&sk->sk_receive_queue)) {
@@ -1169,6 +1179,10 @@ tls_rx_rec_wait(struct sock *sk, bool nonblock, bool released, bool has_copied)
 		/* Handle signals */
 		if (signal_pending(current))
 			return sock_intr_errno(timeo);
+
+		/* Re-check ctx after wait, disconnect may have freed it */
+		if (test_bit(TLS_DISCONNECTING, &tls_ctx->flags))
+			return -ENOTCONN;
 	}
 
 	if (unlikely(!tls_strp_msg_load(&ctx->strp, released)))
@@ -1763,6 +1777,7 @@ tls_read_flush_backlog(struct sock *sk, struct tls_prot_info *prot,
 static int tls_rx_reader_acquire(struct sock *sk, struct tls_sw_context_rx *ctx,
 				 bool nonblock)
 {
+	struct tls_context *tls_ctx;
 	long timeo;
 	int ret;
 
@@ -1784,6 +1799,11 @@ static int tls_rx_reader_acquire(struct sock *sk, struct tls_sw_context_rx *ctx,
 			return sock_intr_errno(timeo);
 		if (ret < 0)
 			return ret;
+
+		/* Re-check ctx after wait, disconnect may have freed it */
+		tls_ctx = tls_get_ctx(sk);
+		if (!tls_ctx || test_bit(TLS_DISCONNECTING, &tls_ctx->flags))
+			return -ENOTCONN;
 	}
 
 	WRITE_ONCE(ctx->reader_present, 1);
