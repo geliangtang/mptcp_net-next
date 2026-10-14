@@ -386,10 +386,6 @@ static void tls_sk_proto_free(struct sock *sk,
 	if (sk->sk_write_space == tls_write_space)
 		sk->sk_write_space = ctx->sk_write_space;
 	if (free_ctx) {
-#ifdef CONFIG_TLS_DEVICE
-		if (sk->sk_destruct == tls_device_sk_destruct)
-			sk->sk_destruct = ctx->sk_destruct;
-#endif
 		rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
 		if (icsk->icsk_ulp_ops) {
 			/* Balance try_module_get in __tcp_ulp_find_autoload */
