@@ -2402,7 +2402,7 @@ int do_sock_setsockopt(struct socket *sock, bool compat, int level,
 out_put:
 	return err;
 }
-EXPORT_SYMBOL(do_sock_setsockopt);
+EXPORT_SYMBOL_GPL(do_sock_setsockopt);
 
 /* Set a socket option. Because we don't know the option lengths we have
  * to pass the user mode parameter for the protocols to sort out.
