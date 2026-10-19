@@ -1727,7 +1727,9 @@ int __mptcp_subflow_connect(struct sock *sk, const struct mptcp_pm_local *local,
 	if (addr.ss_family == AF_INET6)
 		addrlen = sizeof(struct sockaddr_in6);
 #endif
-	ssk->sk_bound_dev_if = local->ifindex;
+	/* Only override the bound device if the path manager picked one. */
+	if (local->ifindex)
+		ssk->sk_bound_dev_if = local->ifindex;
 	err = kernel_bind(sf, (struct sockaddr_unsized *)&addr, addrlen);
 	if (err) {
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_JOINSYNTXBINDERR);
@@ -1881,6 +1883,12 @@ int mptcp_subflow_create_socket(struct sock *sk, unsigned short family,
 	SOCK_INODE(sf)->i_ino = SOCK_INODE(sk->sk_socket)->i_ino;
 	SOCK_INODE(sf)->i_uid = SOCK_INODE(sk->sk_socket)->i_uid;
 	SOCK_INODE(sf)->i_gid = SOCK_INODE(sk->sk_socket)->i_gid;
+
+	/* Also update sk_uid so that SO_REUSEPORT checks during
+	 * kernel_bind() use the correct UID. This is important for
+	 * unprivileged users to avoid -EADDRINUSE errors.
+	 */
+	sf->sk->sk_uid = SOCK_INODE(sk->sk_socket)->i_uid;
 
 	subflow = mptcp_subflow_ctx(sf->sk);
 	pr_debug("subflow=%p\n", subflow);
