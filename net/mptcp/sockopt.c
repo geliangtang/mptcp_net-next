@@ -1610,6 +1610,64 @@ static int mptcp_getsockopt_sol_mptcp(struct mptcp_sock *msk, int optname,
 	return -EOPNOTSUPP;
 }
 
+static int mptcp_getsockopt_sol_socket(struct mptcp_sock *msk, int optname,
+				       sockptr_t optval, sockptr_t optlen)
+{
+	struct sock *sk = (struct sock *)msk;
+	int val, len;
+
+	if (copy_from_sockptr(&len, optlen, sizeof(int)))
+		return -EFAULT;
+	if (len < 0)
+		return -EINVAL;
+
+	lock_sock(sk);
+	val = sk->sk_bound_dev_if;
+	release_sock(sk);
+
+	switch (optname) {
+	case SO_BINDTODEVICE: {
+		struct net_device *dev;
+		char devname[IFNAMSIZ];
+
+		if (val == 0) {
+			len = 0;
+			if (copy_to_sockptr(optlen, &len, sizeof(int)))
+				return -EFAULT;
+			return 0;
+		}
+
+		if (len < IFNAMSIZ)
+			return -EINVAL;
+
+		dev = dev_get_by_index(sock_net(sk), val);
+		if (!dev)
+			return -ENODEV;
+
+		strscpy(devname, dev->name, sizeof(devname));
+		dev_put(dev);
+
+		len = strlen(devname) + 1;
+		if (copy_to_sockptr(optval, devname, len))
+			return -EFAULT;
+		if (copy_to_sockptr(optlen, &len, sizeof(int)))
+			return -EFAULT;
+		return 0;
+	}
+	case SO_BINDTOIFINDEX:
+		if (len > sizeof(int))
+			len = sizeof(int);
+
+		if (copy_to_sockptr(optlen, &len, sizeof(int)))
+			return -EFAULT;
+		if (copy_to_sockptr(optval, &val, len))
+			return -EFAULT;
+		return 0;
+	}
+
+	return -EOPNOTSUPP;
+}
+
 int mptcp_getsockopt(struct sock *sk, int level, int optname,
 		     char __user *optval, int __user *option)
 {
@@ -1629,6 +1687,11 @@ int mptcp_getsockopt(struct sock *sk, int level, int optname,
 	release_sock(sk);
 	if (ssk)
 		return tcp_getsockopt(ssk, level, optname, optval, option);
+
+	if (level == SOL_SOCKET)
+		return mptcp_getsockopt_sol_socket(msk, optname,
+						   USER_SOCKPTR(optval),
+						   USER_SOCKPTR(option));
 
 	if (level == SOL_IP)
 		return mptcp_getsockopt_v4(msk, optname, optval, option);

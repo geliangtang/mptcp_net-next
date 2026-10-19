@@ -36,6 +36,8 @@ static void mptcp_test_reuseaddr(struct kunit *test, struct socket *sock)
 static void mptcp_test_bindtodevice(struct kunit *test, struct socket *sock)
 {
 	struct net_device *lo = dev_get_by_name(&init_net, "lo");
+	char bound_ifname[IFNAMSIZ] = { 0 };
+	int len = sizeof(bound_ifname);
 	char ifname[IFNAMSIZ];
 	int ifindex, err;
 
@@ -49,12 +51,21 @@ static void mptcp_test_bindtodevice(struct kunit *test, struct socket *sock)
 				     strlen(ifname) + 1);
 	KUNIT_EXPECT_EQ(test, err, 0);
 	KUNIT_EXPECT_EQ(test, sock->sk->sk_bound_dev_if, ifindex);
+
+	err = do_sock_getsockopt(sock, false, SOL_SOCKET, SO_BINDTODEVICE,
+				 KERNEL_SOCKPTR(bound_ifname),
+				 KERNEL_SOCKPTR(&len));
+	KUNIT_EXPECT_EQ(test, err, 0);
+	KUNIT_EXPECT_EQ(test, len, strlen(ifname) + 1);
+	KUNIT_EXPECT_STREQ(test, bound_ifname, ifname);
 }
 
 static void mptcp_test_bindtoifindex(struct kunit *test, struct socket *sock)
 {
 	struct net_device *lo = dev_get_by_name(&init_net, "lo");
+	int bound_ifindex = 0;
 	int ifindex, err;
+	int len;
 
 	KUNIT_ASSERT_NOT_ERR_OR_NULL(test, lo);
 	ifindex = lo->ifindex;
@@ -64,6 +75,13 @@ static void mptcp_test_bindtoifindex(struct kunit *test, struct socket *sock)
 				     KERNEL_SOCKPTR(&ifindex), sizeof(ifindex));
 	KUNIT_EXPECT_EQ(test, err, 0);
 	KUNIT_EXPECT_EQ(test, sock->sk->sk_bound_dev_if, ifindex);
+
+	len = sizeof(bound_ifindex);
+	err = do_sock_getsockopt(sock, false, SOL_SOCKET, SO_BINDTOIFINDEX,
+				 KERNEL_SOCKPTR(&bound_ifindex),
+				 KERNEL_SOCKPTR(&len));
+	KUNIT_EXPECT_EQ(test, err, 0);
+	KUNIT_EXPECT_EQ(test, bound_ifindex, ifindex);
 }
 
 static void mptcp_sockopt_test(struct kunit *test, sa_family_t family)
