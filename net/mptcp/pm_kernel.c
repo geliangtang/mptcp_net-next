@@ -868,6 +868,9 @@ static int mptcp_pm_nl_create_listen_socket(struct sock *sk,
 	if (!newsk)
 		return -EINVAL;
 
+	/* Release the previous owner reference before setting a new one */
+	sk_owner_put(newsk);
+
 	/* The subflow socket lock is acquired in a nested to the msk one
 	 * in several places, even by the TCP stack, and this msk is a kernel
 	 * socket: lockdep complains. Instead of propagating the _nested
