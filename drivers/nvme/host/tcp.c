@@ -1957,7 +1957,10 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl, int qid,
 			goto err_init_connect;
 	}
 
+	/* Prevent softirq from acquiring slock during reclassification */
+	local_bh_disable();
 	nvme_tcp_reclassify_socket(queue->sock);
+	local_bh_enable();
 
 	ret = nvme_tcp_init_connection(queue);
 	if (ret)
