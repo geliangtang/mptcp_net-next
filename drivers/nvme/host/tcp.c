@@ -189,25 +189,26 @@ static void nvme_tcp_reclassify_socket(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
 
-	if (WARN_ON_ONCE(!sock_allow_reclassification(sk)))
-		return;
+	lock_sock(sk);
 
 	switch (sk->sk_family) {
 	case AF_INET:
-		sock_lock_init_class_and_name(sk, "slock-AF_INET-NVME",
-					      &nvme_tcp_slock_key[0],
-					      "sk_lock-AF_INET-NVME",
-					      &nvme_tcp_sk_key[0]);
+		__sock_lock_init_class_and_name(sk, "slock-AF_INET-NVME",
+						&nvme_tcp_slock_key[0],
+						"sk_lock-AF_INET-NVME",
+						&nvme_tcp_sk_key[0]);
 		break;
 	case AF_INET6:
-		sock_lock_init_class_and_name(sk, "slock-AF_INET6-NVME",
-					      &nvme_tcp_slock_key[1],
-					      "sk_lock-AF_INET6-NVME",
-					      &nvme_tcp_sk_key[1]);
+		__sock_lock_init_class_and_name(sk, "slock-AF_INET6-NVME",
+						&nvme_tcp_slock_key[1],
+						"sk_lock-AF_INET6-NVME",
+						&nvme_tcp_sk_key[1]);
 		break;
 	default:
 		WARN_ON_ONCE(1);
 	}
+
+	release_sock(sk);
 }
 #else
 static void nvme_tcp_reclassify_socket(struct socket *sock) { }

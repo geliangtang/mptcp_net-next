@@ -1249,29 +1249,30 @@ static void nbd_reclassify_socket(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
 
-	if (!sock_allow_reclassification(sk))
-		return;
+	lock_sock(sk);
 
 	switch (sk->sk_family) {
 	case AF_INET:
-		sock_lock_init_class_and_name(sk, "slock-AF_INET-NBD",
-					      &nbd_slock_key[0],
-					      "sk_lock-AF_INET-NBD",
-					      &nbd_key[0]);
+		__sock_lock_init_class_and_name(sk, "slock-AF_INET-NBD",
+						&nbd_slock_key[0],
+						"sk_lock-AF_INET-NBD",
+						&nbd_key[0]);
 		break;
 	case AF_INET6:
-		sock_lock_init_class_and_name(sk, "slock-AF_INET6-NBD",
-					      &nbd_slock_key[1],
-					      "sk_lock-AF_INET6-NBD",
-					      &nbd_key[1]);
+		__sock_lock_init_class_and_name(sk, "slock-AF_INET6-NBD",
+						&nbd_slock_key[1],
+						"sk_lock-AF_INET6-NBD",
+						&nbd_key[1]);
 		break;
 	case AF_UNIX:
-		sock_lock_init_class_and_name(sk, "slock-AF_UNIX-NBD",
-					      &nbd_slock_key[2],
-					      "sk_lock-AF_UNIX-NBD",
-					      &nbd_key[2]);
+		__sock_lock_init_class_and_name(sk, "slock-AF_UNIX-NBD",
+						&nbd_slock_key[2],
+						"sk_lock-AF_UNIX-NBD",
+						&nbd_key[2]);
 		break;
 	}
+
+	release_sock(sk);
 }
 #else
 static inline void nbd_reclassify_socket(struct socket *sock) {}
