@@ -106,25 +106,17 @@ mptcp_lib_pr_info() {
 	mptcp_lib_print_info "INFO: ${*}"
 }
 
-# $1: ns ; $@: nstat arguments
-# If cache exists, return it; otherwise run nstat with the given arguments.
-mptcp_lib_nstat_cmd() {
+mptcp_lib_pr_nstat() {
 	local ns="${1}"
 	local cache="/tmp/${ns}.out"
 	local hist="/tmp/${ns}.nstat"
 
-	if [ -s "${cache}" ]; then
-		cat "${cache}"
+	if [ -f "${cache}" ]; then
+		awk '$2 != 0 { print "  "$0 }' "${cache}"
 	else
-		NSTAT_HISTORY="${hist}" ip netns exec "${ns}" nstat -sz "${@}"
+		NSTAT_HISTORY="${hist}" ip netns exec "${ns}" nstat -s |
+			grep Tcp
 	fi
-}
-
-mptcp_lib_pr_nstat() {
-	local ns="${1}"
-
-	mptcp_lib_nstat_cmd "${ns}" |
-		awk '/Tcp/ { print "  "$0 }'
 }
 
 # $1-2: listener/connector ns ; $3 port
@@ -429,10 +421,17 @@ mptcp_lib_nstat_get() {
 mptcp_lib_get_counter() {
 	local ns="${1}"
 	local counter="${2}"
+	local cache="/tmp/${ns}.out"
+	local hist="/tmp/${ns}.nstat"
 	local count
 
-	count=$(mptcp_lib_nstat_cmd "${ns}" "${counter}" |
-		awk -v c="${counter}" '$1 == c {print $2; exit}')
+	if [[ -s "${cache}" && "${counter}" == *"Tcp"* ]]; then
+		count=$(awk "/^${counter} / {print \$2; exit}" "${cache}")
+	else
+		count=$(NSTAT_HISTORY="${hist}" ip netns exec "${ns}" \
+			nstat -sz "${counter}" |
+				awk 'NR==1 {next} {print $2}')
+	fi
 	if [ -z "${count}" ]; then
 		mptcp_lib_fail_if_expected_feature "${counter} counter"
 		return 1
@@ -546,36 +545,6 @@ mptcp_lib_check_tools() {
 			if ! command -v nbd-client &> /dev/null || \
 			   ! command -v nbd-server &> /dev/null; then
 				mptcp_lib_pr_skip "nbd tools not found"
-			fi
-			;;
-		"tcpdump")
-			if ! tcpdump --version &> /dev/null; then
-				mptcp_lib_pr_skip "tcpdump tool not found"
-				exit ${KSFT_SKIP}
-			fi
-			;;
-		"nvme")
-			if ! nvme --version &> /dev/null; then
-				mptcp_lib_pr_skip "nvme tool not found"
-				exit ${KSFT_SKIP}
-			fi
-			;;
-		"fio")
-			if ! fio -h &> /dev/null; then
-				mptcp_lib_pr_skip "fio tool not found"
-				exit ${KSFT_SKIP}
-			fi
-			;;
-		"keyctl")
-			if ! keyctl --version &> /dev/null; then
-				mptcp_lib_pr_skip "keyctl tool not found"
-				exit ${KSFT_SKIP}
-			fi
-			;;
-		"tlshd")
-			if ! tlshd --version &> /dev/null; then
-				mptcp_lib_pr_skip "tlshd tool not found"
->>>>>>> 2945904b0f43 (nvme test)
 				exit ${KSFT_SKIP}
 			fi
 			;;
