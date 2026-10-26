@@ -29,7 +29,7 @@
 #include "protocol.h"
 #include "mib.h"
 
-static unsigned int mptcp_inq_hint(const struct sock *sk);
+static unsigned int mptcp_inq_hint(struct sock *sk);
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/mptcp.h>
@@ -2276,6 +2276,7 @@ static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 	struct mptcp_subflow_context *subflow;
 	struct sock *sk = (struct sock *)msk;
 	u32 time, rtt_us;
+	unsigned int inq;
 	u64 mstamp;
 
 	msk_owned_by_me(msk);
@@ -2296,11 +2297,12 @@ static void mptcp_rcv_space_adjust(struct mptcp_sock *msk, int copied)
 		return;
 
 	copied = msk->rcvq_space.copied;
-	copied -= mptcp_inq_hint(sk);
+	inq = mptcp_inq_hint(sk);
+	copied -= inq;
 	if (copied <= msk->rcvq_space.space)
 		goto new_measure;
 
-	trace_mptcp_rcvbuf_grow(sk, time);
+	trace_mptcp_rcvbuf_grow(sk, time, inq);
 	if (mptcp_rcvbuf_grow(sk, copied)) {
 		/* Make subflows follow along.  If we do not do this, we
 		 * get drops at subflow level if skbs can't be moved to
@@ -2390,15 +2392,18 @@ static bool mptcp_move_skbs(struct sock *sk)
 	return enqueued;
 }
 
-static unsigned int mptcp_inq_hint(const struct sock *sk)
+static unsigned int mptcp_inq_hint(struct sock *sk)
 {
 	const struct mptcp_sock *msk = mptcp_sk(sk);
 	const struct sk_buff *skb;
+	u64 hint_val;
 
 	skb = skb_peek(&sk->sk_receive_queue);
 	if (skb) {
-		u64 hint_val = READ_ONCE(msk->ack_seq) - MPTCP_SKB_CB(skb)->map_seq;
-
+		/* Avoid races vs ack_seq updates. */
+		mptcp_data_lock(sk);
+		hint_val = msk->ack_seq - MPTCP_SKB_CB(skb)->map_seq;
+		mptcp_data_unlock(sk);
 		if (hint_val >= INT_MAX)
 			return INT_MAX;
 

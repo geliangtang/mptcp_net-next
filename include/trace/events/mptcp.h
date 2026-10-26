@@ -186,9 +186,9 @@ TRACE_EVENT(subflow_check_data_avail,
 
 TRACE_EVENT(mptcp_rcvbuf_grow,
 
-	TP_PROTO(struct sock *sk, int time),
+	TP_PROTO(struct sock *sk, int time, unsigned int inq),
 
-	TP_ARGS(sk, time),
+	TP_ARGS(sk, time, inq),
 
 	TP_STRUCT__entry(
 		__field(int, time)
@@ -219,7 +219,7 @@ TRACE_EVENT(mptcp_rcvbuf_grow,
 		__entry->time = time;
 		__entry->rtt_us = mptcp_rtt_us_est(msk) >> 3;
 		__entry->copied = msk->rcvq_space.copied;
-		__entry->inq = mptcp_inq_hint(sk);
+		__entry->inq = inq;
 		__entry->space = msk->rcvq_space.space;
 		ofo_empty = RB_EMPTY_ROOT(&msk->out_of_order_queue);
 		__entry->ooo_space = ofo_empty ? 0 :
