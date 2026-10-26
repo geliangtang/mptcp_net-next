@@ -4839,8 +4839,6 @@ static ssize_t mptcp_splice_read(struct socket *sock, loff_t *ppos,
 		} else if (!ret) {
 			if (spliced)
 				break;
-			if (sock_flag(sk, SOCK_DONE))
-				break;
 			ret = sock_error(sk);
 			if (ret)
 				break;
