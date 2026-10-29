@@ -186,9 +186,9 @@ TRACE_EVENT(subflow_check_data_avail,
 
 TRACE_EVENT(mptcp_rcvbuf_grow,
 
-	TP_PROTO(struct sock *sk, int time),
+	TP_PROTO(struct sock *sk, int time, unsigned int inq),
 
-	TP_ARGS(sk, time),
+	TP_ARGS(sk, time, inq),
 
 	TP_STRUCT__entry(
 		__field(int, time)
@@ -212,6 +212,7 @@ TRACE_EVENT(mptcp_rcvbuf_grow,
 
 	TP_fast_assign(
 		struct mptcp_sock *msk = mptcp_sk(sk);
+		u64 ack_seq = READ_ONCE(msk->ack_seq);
 		struct inet_sock *inet = inet_sk(sk);
 		bool ofo_empty;
 		__be32 *p32;
@@ -219,16 +220,16 @@ TRACE_EVENT(mptcp_rcvbuf_grow,
 		__entry->time = time;
 		__entry->rtt_us = mptcp_rtt_us_est(msk) >> 3;
 		__entry->copied = msk->rcvq_space.copied;
-		__entry->inq = mptcp_inq_hint(sk);
+		__entry->inq = inq;
 		__entry->space = msk->rcvq_space.space;
 		ofo_empty = RB_EMPTY_ROOT(&msk->out_of_order_queue);
 		__entry->ooo_space = ofo_empty ? 0 :
 				     MPTCP_SKB_CB(msk->ooo_last_skb)->end_seq -
-				     msk->ack_seq;
+				     (u32)ack_seq;
 
 		__entry->rcvbuf = sk->sk_rcvbuf;
 		__entry->rcv_wnd = atomic64_read(&msk->rcv_wnd_sent) -
-				   msk->ack_seq;
+				   ack_seq;
 		__entry->scaling_ratio = READ_ONCE(msk->scaling_ratio);
 		__entry->sport = ntohs(inet->inet_sport);
 		__entry->dport = ntohs(inet->inet_dport);
