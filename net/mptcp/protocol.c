@@ -2272,8 +2272,13 @@ static int mptcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t len)
 		else if (ret)
 			goto do_error;
 
-		if (msg->msg_flags & MSG_FASTOPEN)
-			goto out;
+		if (msg->msg_flags & MSG_FASTOPEN) {
+			pr_info("%s: MSG_FASTOPEN sk_prot->sendmsg=%ps mptcp_sendmsg=%ps eq=%d\n",
+				__func__, sk->sk_prot->sendmsg, mptcp_sendmsg,
+				sk->sk_prot->sendmsg == mptcp_sendmsg);
+			if (sk->sk_prot->sendmsg == mptcp_sendmsg)
+				goto out;
+		}
 	}
 
 	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
