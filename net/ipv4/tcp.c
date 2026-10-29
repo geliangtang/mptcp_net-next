@@ -1190,7 +1190,8 @@ int tcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t size)
 		else if (err)
 			goto out_err;
 
-		if (flags & MSG_FASTOPEN)
+		if ((msg->msg_flags & MSG_FASTOPEN) &&
+		    sk->sk_prot->sendmsg == tcp_sendmsg)
 			goto out;
 	}
 
