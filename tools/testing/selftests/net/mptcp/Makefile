@@ -17,6 +17,7 @@ TEST_PROGS := \
 	mptcp_sockopt.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
+	test_tfo_inq.sh \
 	userspace_pm.sh \
 # end of TEST_PROGS
 
@@ -26,6 +27,7 @@ TEST_GEN_FILES := \
 	mptcp_inq \
 	mptcp_sockopt \
 	pm_nl_ctl \
+	test_tfo_inq \
 # end of TEST_GEN_FILES
 
 TEST_FILES := \
