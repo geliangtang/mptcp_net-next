@@ -5326,14 +5326,14 @@ struct sk_buff *mptcp_drain_pre_tls_data(struct sock *sk)
 	struct sk_buff *skb, *copy;
 	u32 offset, drain_len;
 
-	if (!msk->tfo_skb_len)
+	if (!msk->rcvd_dummy_seq && !test_bit(MPTCP_SYNC_SEQ, &msk->cb_flags))
 		return NULL;
 
 	skb = mptcp_recv_skb(sk, &offset);
 	if (!skb)
 		return NULL;
 
-	drain_len = min_t(u32, skb->len - offset, msk->tfo_skb_len);
+	drain_len = MPTCP_SKB_CB(skb)->end_seq - MPTCP_SKB_CB(skb)->map_seq - offset;
 	if (!drain_len)
 		return NULL;
 
@@ -5348,7 +5348,7 @@ struct sk_buff *mptcp_drain_pre_tls_data(struct sock *sk)
 
 	msk->rcvd_dummy_seq = false;
 	if (test_and_clear_bit(MPTCP_SYNC_SEQ, &msk->cb_flags))
-		msk->copied_seq += mptcp_iasn(msk);
+		msk->copied_seq += msk->tfo_iasn;
 
 	MPTCP_SKB_CB(skb)->map_seq64 = msk->copied_seq;
 	MPTCP_SKB_CB(skb)->map_seq = (u32)msk->copied_seq;
