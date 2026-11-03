@@ -48,7 +48,7 @@ static void run_hdr_opt(void)
 	if (!ASSERT_OK_FD(fd, "connect_to_fd"))
 		goto done;
 
-	if (!ASSERT_OK(send_recv_data(lfd, fd, 64), "send_recv_data"))
+	if (!ASSERT_OK(send_recv_data(lfd, fd, 64, NULL), "send_recv_data"))
 		goto done;
 
 	/* Reserve + write hooks ran while sending. */
