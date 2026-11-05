@@ -455,7 +455,7 @@ static bool mptcp_init_skb(struct sock *ssk, struct sk_buff *skb, int offset)
 	if (unlikely(offset > 0 &&
 		     before(TCP_SKB_CB(skb)->seq - subflow->ssn_offset,
 			    subflow->map_subflow_seq))) {
-		pr_debug("spans mappings seq=%u map_subflow_seq=%u offset=%d ssn_offset=%u\n",
+		pr_info("spans mappings seq=%u map_subflow_seq=%u offset=%d ssn_offset=%u\n",
 			 TCP_SKB_CB(skb)->seq, subflow->map_subflow_seq,
 			 offset, subflow->ssn_offset);
 
