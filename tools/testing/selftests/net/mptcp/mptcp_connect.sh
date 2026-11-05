@@ -783,6 +783,47 @@ run_tests_mptfo()
 	mptcp_lib_pr_info "with MPTFO end"
 }
 
+run_tests_mapping_boundary()
+{
+	TEST_GROUP="mapping boundary"
+
+	mptcp_lib_pr_info "testing mapping boundary scenarios"
+
+	# Save original settings
+	local old_filesize=$filesize
+	local old_tc_loss=$tc_loss
+	local old_tc_reorder=$tc_reorder
+
+	# Force multiple subflows by announcing additional addresses
+	ip netns exec "$ns1" sysctl -q net.mptcp.add_addr_timeout=1
+	ip netns exec "$ns2" sysctl -q net.mptcp.add_addr_timeout=1
+
+	# Maximize reordering to increase chance of mapping boundaries
+	# High reorder rate with small delay creates out-of-order delivery
+	tc -net "$ns3" qdisc change dev ns3eth4 root netem delay 5ms reorder 99% 99%
+
+	# Test with various small file sizes to trigger different TCP segmentation patterns
+	# Small sizes increase the chance of an skb spanning multiple DSS mappings
+	for size in 4096 8192 12288 16384; do
+		filesize=$size
+		mptcp_lib_pr_info "testing with filesize=$size"
+
+		# Run multiple iterations to increase probability of triggering
+		for i in 1 2 3; do
+			run_tests_lo "$ns1" "$ns2" 10.0.1.1 0 ""
+			run_tests_lo "$ns1" "$ns2" dead:beef:1::1 0 ""
+		done
+	done
+
+	# Restore original settings
+	tc -net "$ns3" qdisc change dev ns3eth4 root netem delay ${reorder_delay}ms $tc_reorder
+	ip netns exec "$ns1" sysctl -q net.mptcp.add_addr_timeout=0
+	ip netns exec "$ns2" sysctl -q net.mptcp.add_addr_timeout=0
+	filesize=$old_filesize
+
+	mptcp_lib_pr_info "mapping boundary test end"
+}
+
 run_tests_disconnect()
 {
 	local old_cin=$cin
@@ -905,6 +946,10 @@ fi
 mptcp_lib_pr_info "Using ${tc_info}on ns3eth4"
 
 tc -net "$ns3" qdisc add dev ns3eth4 root netem delay ${reorder_delay}ms $tc_reorder
+
+# Mapping boundary tests - run early to catch any issues
+run_tests_mapping_boundary
+log_if_error "Tests for mapping boundary have failed"
 
 TEST_GROUP="loopback v4"
 run_tests_lo "$ns1" "$ns1" 10.0.1.1 1
