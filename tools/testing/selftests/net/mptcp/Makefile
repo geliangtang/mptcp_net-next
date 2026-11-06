@@ -14,6 +14,7 @@ TEST_PROGS := \
 	mptcp_connect_sendfile.sh \
 	mptcp_connect_splice.sh \
 	mptcp_connect_zerocopy.sh \
+	mptcp_dss_span.sh \
 	mptcp_join.sh \
 	mptcp_nbd.sh \
 	mptcp_nvme.sh \
@@ -23,6 +24,7 @@ TEST_PROGS := \
 	mptcp_zerocopy.sh \
 	pm_netlink.sh \
 	simult_flows.sh \
+	test_overlap.sh \
 	test_tfo_inq.sh \
 	tlshd_v4map.sh \
 	userspace_pm.sh \
@@ -31,6 +33,7 @@ TEST_PROGS := \
 TEST_GEN_FILES := \
 	mptcp_connect \
 	mptcp_diag \
+	mptcp_dss_span_test \
 	mptcp_join_race \
 	mptcp_sockopt \
 	mptcp_zerocopy \
@@ -46,7 +49,10 @@ TEST_GEN_FILES := \
 # end of TEST_GEN_FILES
 
 TEST_FILES := \
+	common \
+	dss_noncontig_ooo_pull.pkt \
 	mptcp_lib.sh \
+	packetdrill \
 	settings \
 # end of TEST_FILES
 
