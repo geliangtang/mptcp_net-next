@@ -1509,6 +1509,14 @@ reset:
 	skb = skb_peek(&ssk->sk_receive_queue);
 	subflow->map_valid = 1;
 	subflow->map_data_len = skb->len;
+
+#if 0
+	/* Fault injection: artificially create overlap condition for testing */
+	if (tcp_sk(ssk)->copied_seq > 1000)
+		TCP_SKB_CB(skb)->seq = tcp_sk(ssk)->copied_seq - 500;
+#endif
+
+	//subflow->map_subflow_seq = tcp_sk(ssk)->copied_seq - subflow->ssn_offset;
 	subflow->map_subflow_seq = TCP_SKB_CB(skb)->seq - subflow->ssn_offset;
 	subflow->map_seq = __mptcp_expand_seq(subflow->map_seq,
 					      subflow->iasn +
