@@ -334,8 +334,6 @@ static void mptcp_data_queue_ofo(struct mptcp_sock *msk, struct sk_buff *skb)
 	seq = MPTCP_SKB_CB(skb)->map_seq;
 	end_seq = MPTCP_SKB_CB(skb)->map_seq64 + skb->len;
 	max_seq = atomic64_read(&msk->rcv_wnd_sent);
-	if (after64(READ_ONCE(msk->ack_seq), max_seq))
-		max_seq = READ_ONCE(msk->ack_seq);
 
 	pr_debug("msk=%p seq=%x limit=%llx empty=%d\n", msk, seq, max_seq,
 		 RB_EMPTY_ROOT(&msk->out_of_order_queue));
@@ -407,11 +405,6 @@ static void mptcp_data_queue_ofo(struct mptcp_sock *msk, struct sk_buff *skb)
 				 *  |     skb1    |
 				 * continue traversing
 				 */
-			} else if (MPTCP_SKB_CB(skb)->flags &
-				   MPTCP_SKB_CB_F_OFFSET) {
-				/* skb covers skb1 but has an unvalidated
-				 * prefix; keep skb1, continue traversing.
-				 */
 			} else {
 				/* skb's seq == skb1's seq and skb covers skb1.
 				 * Replace skb1 with skb.
@@ -457,30 +450,24 @@ static bool mptcp_init_skb(struct sock *ssk, struct sk_buff *skb, int offset)
 	struct mptcp_subflow_context *subflow = mptcp_subflow_ctx(ssk);
 	bool has_rxtstamp = TCP_SKB_CB(skb)->has_rxtstamp;
 
-	/* Detect mapping boundary: skb spans multiple mappings */
-	if (unlikely(offset > 0 &&
-		     before(TCP_SKB_CB(skb)->seq - subflow->ssn_offset,
-			    subflow->map_subflow_seq))) {
-		if (offset >= skb->len) {
+	if (unlikely(offset &&
+		     (before(TCP_SKB_CB(skb)->seq - subflow->ssn_offset,
+			     subflow->map_subflow_seq) ||
+		      offset > subflow->map_csum_len))) {
+		unsigned int old = skb->truesize, new;
+
+		if (!pskb_pull(skb, offset)) {
 			sk_eat_skb(ssk, skb);
 			return false;
 		}
 
-		if (offset > skb_headlen(skb)) {
-			skb_orphan(skb);
-			if (!pskb_pull(skb, offset)) {
-				sk_eat_skb(ssk, skb);
-				return false;
-			}
-			skb->truesize = SKB_TRUESIZE(skb_end_offset(skb)) +
-					skb->data_len;
-			skb_set_owner_r(skb, ssk);
-		} else {
-			if (!skb_pull(skb, offset)) {
-				sk_eat_skb(ssk, skb);
-				return false;
-			}
+		new = SKB_TRUESIZE(skb_end_offset(skb)) + skb->data_len;
+		if (new != old) {
+			skb->truesize = new;
+			if (new > old)
+				sk_mem_charge(ssk, new - old);
 		}
+
 		offset = 0;
 	}
 

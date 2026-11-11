@@ -130,7 +130,7 @@
 #define MPTCP_SYNC_SNDBUF	7
 #define MPTCP_SYNC_SEQ		8
 
-#define MPTCP_SKB_CB_F_OFFSET	0x01
+#define MPTCP_SKB_CB_F_OFFSET	0x0100
 
 struct mptcp_skb_cb {
 	u32 map_seq;
