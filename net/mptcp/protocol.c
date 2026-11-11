@@ -332,7 +332,7 @@ static void mptcp_data_queue_ofo(struct mptcp_sock *msk, struct sk_buff *skb)
 	u32 seq;
 
 	seq = MPTCP_SKB_CB(skb)->map_seq;
-	end_seq = MPTCP_SKB_CB(skb)->map_seq64 + skb->len;
+	end_seq = MPTCP_SKB_CB(skb)->end_seq;
 	max_seq = atomic64_read(&msk->rcv_wnd_sent);
 
 	pr_debug("msk=%p seq=%x limit=%llx empty=%d\n", msk, seq, max_seq,
@@ -445,31 +445,10 @@ end:
 	skb_set_owner_r(skb, sk);
 }
 
-static bool mptcp_init_skb(struct sock *ssk, struct sk_buff *skb, int offset)
+static void mptcp_init_skb(struct sock *ssk, struct sk_buff *skb, int offset)
 {
 	struct mptcp_subflow_context *subflow = mptcp_subflow_ctx(ssk);
 	bool has_rxtstamp = TCP_SKB_CB(skb)->has_rxtstamp;
-
-	if (unlikely(offset &&
-		     (before(TCP_SKB_CB(skb)->seq - subflow->ssn_offset,
-			     subflow->map_subflow_seq) ||
-		      offset > subflow->map_csum_len))) {
-		unsigned int old = skb->truesize, new;
-
-		if (!pskb_pull(skb, offset)) {
-			sk_eat_skb(ssk, skb);
-			return false;
-		}
-
-		new = SKB_TRUESIZE(skb_end_offset(skb)) + skb->data_len;
-		if (new != old) {
-			skb->truesize = new;
-			if (new > old)
-				sk_mem_charge(ssk, new - old);
-		}
-
-		offset = 0;
-	}
 
 	/* the skb map_seq accounts for the skb offset:
 	 * mptcp_subflow_get_mapped_dsn() is based on the current tp->copied_seq
@@ -486,8 +465,6 @@ static bool mptcp_init_skb(struct sock *ssk, struct sk_buff *skb, int offset)
 
 	skb_ext_reset(skb);
 	skb_dst_drop(skb);
-
-	return true;
 }
 
 void __mptcp_sync_rcv_sequence(struct sock *sk)
@@ -916,12 +893,7 @@ static bool __mptcp_move_skbs_from_subflow(struct mptcp_sock *msk,
 		if (offset < skb->len) {
 			size_t len = skb->len - offset;
 
-			if (!mptcp_init_skb(ssk, skb, offset)) {
-				MPTCP_INC_STATS(sock_net(sk),
-						MPTCP_MIB_RCVPRUNED);
-				seq += len;
-				goto out;
-			}
+			mptcp_init_skb(ssk, skb, offset);
 
 			if (own_msk) {
 				mptcp_subflow_lend_fwdmem(subflow, skb);
@@ -944,7 +916,6 @@ static bool __mptcp_move_skbs_from_subflow(struct mptcp_sock *msk,
 			}
 		}
 
-out:
 		WRITE_ONCE(tp->copied_seq, seq);
 		more_data_avail = mptcp_subflow_data_available(ssk);
 
