@@ -500,7 +500,7 @@ static bool __mptcp_move_skb(struct sock *sk, struct sk_buff *skb)
 	    MPTCP_SKB_CB(skb)->map_seq64 == 0) {
 		copy_len = skb->len;
 		MPTCP_SKB_CB(skb)->map_seq64 = msk->ack_seq;
-		MPTCP_SKB_CB(skb)->map_seq = (u32)msk->ack_seq;
+		MPTCP_SKB_CB(skb)->map_seq = (u32)MPTCP_SKB_CB(skb)->map_seq64;
 		MPTCP_SKB_CB(skb)->end_seq = MPTCP_SKB_CB(skb)->map_seq +
 					     copy_len;
 		goto insert;
