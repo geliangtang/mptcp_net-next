@@ -481,6 +481,23 @@ void __mptcp_sync_rcv_sequence(struct sock *sk)
 	MPTCP_SKB_CB(skb)->end_seq = MPTCP_SKB_CB(skb)->map_seq + skb->len;
 }
 
+static bool mptcp_should_drop_after_fin(struct sock *sk, struct sk_buff *skb)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+
+	if (READ_ONCE(msk->rcv_data_fin)) {
+		u64 rcv_data_fin_seq;
+
+		smp_rmb(); /* ensure we see the updated rcv_data_fin_seq */
+		rcv_data_fin_seq = READ_ONCE(msk->rcv_data_fin_seq);
+		/* Drop if any part of the skb is at or beyond DATA_FIN */
+		if (!before64(mptcp_dsn(skb), rcv_data_fin_seq) ||
+		    !before64(mptcp_end_dsn(skb), rcv_data_fin_seq + 1))
+			return true;
+	}
+	return sk->sk_shutdown & RCV_SHUTDOWN;
+}
+
 static bool __mptcp_move_skb(struct sock *sk, struct sk_buff *skb)
 {
 	u32 copy_len = MPTCP_SKB_CB(skb)->end_seq - MPTCP_SKB_CB(skb)->map_seq;
@@ -489,6 +506,11 @@ static bool __mptcp_move_skb(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *tail;
 
 	mptcp_borrow_fwdmem(sk, skb);
+
+	if (unlikely(mptcp_should_drop_after_fin(sk, skb))) {
+		mptcp_drop(sk, skb);
+		return false;
+	}
 
 	/* Be sure to sync the eventual fastopen dummy mapping before any other
 	 * skb lands into the msk.
