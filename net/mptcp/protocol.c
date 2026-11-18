@@ -1815,6 +1815,9 @@ static int __subflow_push_pending(struct sock *sk, struct sock *ssk,
 	struct mptcp_data_frag *dfrag;
 	int len, copied = 0, err = 0;
 
+	if (msk->app_limited)
+		tcp_rate_check_app_limited(ssk);
+
 	while ((dfrag = mptcp_send_head(sk))) {
 		info->sent = dfrag->already_sent;
 		info->limit = dfrag->data_len;
@@ -2173,6 +2176,20 @@ static ssize_t mptcp_sendmsg_zerocopy_iter(struct sock *sk, struct msghdr *msg,
 	return pg_len;
 }
 
+static void mptcp_rate_check_app_limited(struct sock *sk)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	unsigned long flags, cb_flags;
+
+	flags = READ_ONCE(msk->flags);
+	cb_flags = READ_ONCE(msk->cb_flags);
+
+	msk->app_limited = msk->write_seq == msk->snd_nxt &&
+			   !mptcp_send_head(sk) &&
+			   !test_bit(MPTCP_WORK_RTX, &flags) &&
+			   !test_bit(MPTCP_RETRANSMIT, &cb_flags);
+}
+
 static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
@@ -2217,6 +2234,9 @@ static int mptcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	}
 
 	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+
+	/* is sending application-limited? */
+	mptcp_rate_check_app_limited(sk);
 
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
 		ret = sk_stream_wait_connect(sk, &timeo);
