@@ -2701,8 +2701,7 @@ static unsigned int mptcp_inq_hint(struct sock *sk)
 	if (hint_val >= INT_MAX)
 		return INT_MAX;
 
-	if (((sk->sk_state == TCP_CLOSE || (sk->sk_shutdown & RCV_SHUTDOWN)) &&
-	     !READ_ONCE(msk->rcv_fastclose)) ||
+	if (sock_flag(sk, SOCK_DONE) ||
 	    (READ_ONCE(msk->rcv_data_fin) && mptcp_data_fin(msk, NULL)))
 		hint_val += 1;
 
