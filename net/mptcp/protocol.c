@@ -2136,6 +2136,7 @@ static ssize_t mptcp_sendmsg_zerocopy_iter(struct sock *sk, struct msghdr *msg,
 
 	/* one ref for the dfrag; released in dfrag_clear */
 	net_zcopy_get(ubuf);
+	uarg_to_msgzc(ubuf)->len++;
 
 	WRITE_ONCE(msk->write_seq, msk->write_seq + pg_len);
 	sk_wmem_queued_add(sk, pg_len + dfrag->overhead);

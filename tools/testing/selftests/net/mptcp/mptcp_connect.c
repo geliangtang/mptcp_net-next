@@ -1182,15 +1182,15 @@ static int copyfd_io_zc(int infd, int peerfd, int outfd, unsigned int size,
 	int on = 1;
 	int err;
 
-	if (!cfg_sndbuf && size > 0) {
+	if (!size)
+		return 0;
+
+	if (!cfg_sndbuf) {
 		sndbuf = size * 2;
 		if (sndbuf < size)
 			sndbuf = UINT_MAX;
 		set_sndbuf(peerfd, sndbuf);
 	}
-
-	if (size == 0)
-		return 0;
 
 	len = sizeof(on);
 	if (setsockopt(peerfd, SOL_SOCKET, SO_ZEROCOPY, &on, len)) {
