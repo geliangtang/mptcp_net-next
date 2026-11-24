@@ -1121,9 +1121,9 @@ static int drain_errqueue_zc(int peerfd)
 	return count;
 }
 
-static int wait_for_completions_zc(int peerfd)
+static int wait_for_completions_zc(int peerfd, int outfd)
 {
-	struct pollfd pfd = { .fd = peerfd, .events = POLLERR };
+	struct pollfd pfd = { .fd = peerfd, .events = POLLERR | POLLIN };
 	struct timespec start, now;
 	int timeout_ms = 5000;
 	int total = 0;
@@ -1140,6 +1140,16 @@ static int wait_for_completions_zc(int peerfd)
 		if (ret < 0)
 			return -1;
 		total += ret;
+
+		if (outfd >= 0) {
+			char rbuf[16384];
+			ssize_t r;
+
+			while ((r = read(peerfd, rbuf, sizeof(rbuf))) > 0) {
+				if (write(outfd, rbuf, r) != r)
+					break;
+			}
+		}
 
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		elapsed_ms = (now.tv_sec - start.tv_sec) * 1000L +
@@ -1160,7 +1170,7 @@ static int wait_for_completions_zc(int peerfd)
 	return total > 0 ? 0 : -1;
 }
 
-static int do_sendmsg_zc(int infd, int peerfd, size_t size,
+static int do_sendmsg_zc(int infd, int peerfd, int outfd, size_t size,
 			 struct wstate *winfo)
 {
 	size_t sent = 0, total_read = 0;
@@ -1219,7 +1229,10 @@ static int do_sendmsg_zc(int infd, int peerfd, size_t size,
 		fprintf(stderr, "sendmsg short: %zu/%zu bytes queued\n",
 			sent, size);
 
-	if (sent > 0 && wait_for_completions_zc(peerfd) < 0) {
+	if (!listen_mode && sent > 0)
+		shut_wr(peerfd);
+
+	if (sent > 0 && wait_for_completions_zc(peerfd, outfd) < 0) {
 		fprintf(stderr, "zerocopy completion timeout or error\n");
 		err = 1;
 	}
@@ -1265,13 +1278,11 @@ static int copyfd_io_zc(int infd, int peerfd, int outfd, unsigned int size,
 		if (err)
 			return err;
 
-		err = do_sendmsg_zc(infd, peerfd, size, winfo);
+		err = do_sendmsg_zc(infd, peerfd, -1, size, winfo);
 	} else {
-		err = do_sendmsg_zc(infd, peerfd, size, winfo);
+		err = do_sendmsg_zc(infd, peerfd, outfd, size, winfo);
 		if (err)
 			return err;
-
-		shut_wr(peerfd);
 
 		err = do_recvfile(peerfd, outfd);
 		*in_closed_after_out = true;

@@ -1284,6 +1284,34 @@ static void dfrag_clear(struct sock *sk, struct mptcp_data_frag *dfrag)
 	put_page(dfrag->page);
 }
 
+/* Release subflow skb zerocopy refs for TCP-acked skbs.
+ * Called from worker context to avoid locking issues with softirq.
+ * If subflow skbs still remain, reschedule the worker.
+ */
+static void mptcp_zcopy_clear_subflow_skbs(struct sock *sk)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct mptcp_subflow_context *subflow;
+	bool need_resched = false;
+	struct sk_buff *skb;
+
+	mptcp_for_each_subflow(msk, subflow) {
+		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
+
+		lock_sock(ssk);
+		skb_queue_walk(&ssk->sk_write_queue, skb) {
+			if (before(TCP_SKB_CB(skb)->end_seq, tcp_sk(ssk)->snd_una))
+				skb_zcopy_clear(skb, true);
+			else if (skb_zcopy(skb))
+				need_resched = true;
+		}
+		release_sock(ssk);
+	}
+
+	if (need_resched)
+		mptcp_schedule_work(sk);
+}
+
 /* called under both the msk socket lock and the data lock */
 static void __mptcp_clean_una(struct sock *sk)
 {
@@ -1306,6 +1334,9 @@ static void __mptcp_clean_una(struct sock *sk)
 
 		dfrag_clear(sk, dfrag);
 	}
+
+	if (list_empty(&msk->rtx_queue) && sock_flag(sk, SOCK_ZEROCOPY))
+		mptcp_schedule_work(sk);
 
 	dfrag = mptcp_rtx_head(sk);
 	if (dfrag && after64(snd_una, dfrag->data_seq)) {
@@ -3573,6 +3604,9 @@ static void mptcp_worker(struct work_struct *work)
 
 	if (test_and_clear_bit(MPTCP_WORK_RTX, &msk->flags))
 		__mptcp_retrans(sk);
+
+	if (list_empty(&msk->rtx_queue) && sock_flag(sk, SOCK_ZEROCOPY))
+		mptcp_zcopy_clear_subflow_skbs(sk);
 
 	if (test_and_clear_bit(MPTCP_WORK_READ_COMPLETE, &msk->flags))
 		mptcp_read_complete(sk);
