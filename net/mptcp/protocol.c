@@ -1205,6 +1205,8 @@ static void mptcp_reset_rtx_timer(struct sock *sk)
 
 bool mptcp_schedule_work(struct sock *sk)
 {
+	int node, cpu;
+
 	if (inet_sk_state_load(sk) == TCP_CLOSE)
 		return false;
 
@@ -1213,6 +1215,14 @@ bool mptcp_schedule_work(struct sock *sk)
 	 * a sock_hold()/sock_put() if schedule_work() returns false.
 	 */
 	sock_hold(sk);
+
+	node = mptcp_sk_numa_node(sk);
+	if (node != NUMA_NO_NODE) {
+		cpu = cpumask_first_and(cpumask_of_node(node), cpu_online_mask);
+		if (cpu < nr_cpu_ids &&
+		    queue_work_on(cpu, system_percpu_wq, &mptcp_sk(sk)->work))
+			return true;
+	}
 
 	if (schedule_work(&mptcp_sk(sk)->work))
 		return true;
@@ -1434,11 +1444,11 @@ static bool __mptcp_add_ext(struct sk_buff *skb, gfp_t gfp)
 	return true;
 }
 
-static struct sk_buff *__mptcp_do_alloc_tx_skb(struct sock *sk, gfp_t gfp)
+static struct sk_buff *__mptcp_do_alloc_tx_skb(struct sock *sk, gfp_t gfp, int node)
 {
 	struct sk_buff *skb;
 
-	skb = alloc_skb_fclone(MAX_TCP_HEADER, gfp);
+	skb = __alloc_skb(MAX_TCP_HEADER, gfp, SKB_ALLOC_FCLONE, node);
 	if (likely(skb)) {
 		if (likely(__mptcp_add_ext(skb, gfp))) {
 			skb_reserve(skb, MAX_TCP_HEADER);
@@ -1453,11 +1463,11 @@ static struct sk_buff *__mptcp_do_alloc_tx_skb(struct sock *sk, gfp_t gfp)
 	return NULL;
 }
 
-static struct sk_buff *__mptcp_alloc_tx_skb(struct sock *sk, struct sock *ssk, gfp_t gfp)
+static struct sk_buff *__mptcp_alloc_tx_skb(struct sock *sk, struct sock *ssk, gfp_t gfp, int node)
 {
 	struct sk_buff *skb;
 
-	skb = __mptcp_do_alloc_tx_skb(sk, gfp);
+	skb = __mptcp_do_alloc_tx_skb(sk, gfp, node);
 	if (!skb)
 		return NULL;
 
@@ -1477,8 +1487,15 @@ static struct sk_buff *__mptcp_alloc_tx_skb(struct sock *sk, struct sock *ssk, g
 static struct sk_buff *mptcp_alloc_tx_skb(struct sock *sk, struct sock *ssk, bool data_lock_held)
 {
 	gfp_t gfp = data_lock_held ? GFP_ATOMIC : sk->sk_allocation;
+	int node = NUMA_NO_NODE;
 
-	return __mptcp_alloc_tx_skb(sk, ssk, gfp);
+	if (!data_lock_held) {
+		node = mptcp_sk_numa_node(sk);
+		if (node != NUMA_NO_NODE)
+			gfp |= __GFP_THISNODE;
+	}
+
+	return __mptcp_alloc_tx_skb(sk, ssk, gfp, node);
 }
 
 /* note: this always recompute the csum on the whole skb, even
@@ -1735,6 +1752,7 @@ struct sock *mptcp_subflow_get_send(struct mptcp_sock *msk)
 	struct sock *sk = (struct sock *)msk;
 	u32 pace, burst, wmem;
 	int i, nr_active = 0;
+	int msk_node;
 	struct sock *ssk;
 	u64 linger_time;
 	long tout = 0;
@@ -1744,6 +1762,8 @@ struct sock *mptcp_subflow_get_send(struct mptcp_sock *msk)
 		send_info[i].ssk = NULL;
 		send_info[i].linger_time = -1;
 	}
+
+	msk_node = mptcp_sk_numa_node(sk);
 
 	mptcp_for_each_subflow(msk, subflow) {
 		bool backup = subflow->backup || subflow->request_bkup;
@@ -1765,6 +1785,12 @@ struct sock *mptcp_subflow_get_send(struct mptcp_sock *msk)
 		}
 
 		linger_time = div_u64((u64)READ_ONCE(ssk->sk_wmem_queued) << 32, pace);
+
+		/* prefer NUMA-local subflows by reducing linger_time */
+		if (msk_node != NUMA_NO_NODE &&
+		    cpu_to_node(READ_ONCE(ssk->sk_incoming_cpu)) == msk_node)
+			linger_time -= linger_time >> 3;
+
 		if (linger_time < send_info[backup].linger_time) {
 			send_info[backup].ssk = ssk;
 			send_info[backup].linger_time = linger_time;
@@ -2878,6 +2904,9 @@ struct sock *mptcp_subflow_get_retrans(struct mptcp_sock *msk)
 	struct sock *backup = NULL, *pick = NULL;
 	struct mptcp_subflow_context *subflow;
 	int min_stale_count = INT_MAX;
+	int msk_node;
+
+	msk_node = mptcp_sk_numa_node((struct sock *)msk);
 
 	mptcp_for_each_subflow(msk, subflow) {
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
@@ -2892,12 +2921,19 @@ struct sock *mptcp_subflow_get_retrans(struct mptcp_sock *msk)
 		}
 
 		if (subflow->backup || subflow->request_bkup) {
-			if (!backup)
+			if (!backup ||
+			    (msk_node != NUMA_NO_NODE &&
+			     cpu_to_node(READ_ONCE(ssk->sk_incoming_cpu)) == msk_node &&
+			     cpu_to_node(READ_ONCE(backup->sk_incoming_cpu)) != msk_node))
 				backup = ssk;
 			continue;
 		}
 
 		if (!pick)
+			pick = ssk;
+		else if (msk_node != NUMA_NO_NODE &&
+			 cpu_to_node(READ_ONCE(ssk->sk_incoming_cpu)) == msk_node &&
+			 cpu_to_node(READ_ONCE(pick->sk_incoming_cpu)) != msk_node)
 			pick = ssk;
 	}
 

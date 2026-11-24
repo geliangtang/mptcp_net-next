@@ -1889,6 +1889,11 @@ int mptcp_subflow_create_socket(struct sock *sk, unsigned short family,
 
 	lock_sock_nested(sf->sk, SINGLE_DEPTH_NESTING);
 
+	/* inherit NUMA locality from parent MPTCP socket */
+	sf->sk->sk_incoming_cpu = READ_ONCE(sk->sk_incoming_cpu);
+	if (mptcp_sk_numa_node(sk) != NUMA_NO_NODE)
+		sf->sk->sk_allocation |= __GFP_THISNODE;
+
 	err = security_mptcp_add_subflow(sk, sf->sk);
 	if (err)
 		goto err_free;

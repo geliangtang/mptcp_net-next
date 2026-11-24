@@ -8,6 +8,7 @@
 #define __MPTCP_PROTOCOL_H
 
 #include <linux/random.h>
+#include <linux/topology.h>
 #include <net/tcp.h>
 #include <net/inet_connection_sock.h>
 #include <uapi/linux/mptcp.h>
@@ -1471,5 +1472,14 @@ mptcp_bpf_update_proto(struct sock *sk, struct sk_psock *psock, bool restore)
 
 static inline void mptcp_bpf_clone(const struct sock *sk, struct sock *newsk) {}
 #endif
+
+static inline int mptcp_sk_numa_node(const struct sock *sk)
+{
+	int cpu = READ_ONCE(sk->sk_incoming_cpu);
+
+	if (cpu < 0 || cpu >= nr_cpu_ids)
+		return NUMA_NO_NODE;
+	return cpu_to_node(cpu);
+}
 
 #endif /* __MPTCP_PROTOCOL_H */
