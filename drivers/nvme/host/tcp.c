@@ -345,12 +345,6 @@ static inline size_t nvme_tcp_req_cur_offset(struct nvme_tcp_request *req)
 	return req->iter.bvec->bv_offset + req->iter.iov_offset;
 }
 
-static inline size_t nvme_tcp_req_cur_length(struct nvme_tcp_request *req)
-{
-	return min_t(size_t, iov_iter_single_seg_count(&req->iter),
-			req->pdu_len - req->pdu_sent);
-}
-
 static inline size_t nvme_tcp_pdu_data_left(struct nvme_tcp_request *req)
 {
 	return rq_data_dir(blk_mq_rq_from_pdu(req)) == WRITE ?
@@ -488,16 +482,18 @@ nvme_tcp_fetch_request(struct nvme_tcp_queue *queue)
 static inline void nvme_tcp_ddgst_update(u32 *crcp,
 		struct page *page, size_t off, size_t len)
 {
-	page += off / PAGE_SIZE;
-	off %= PAGE_SIZE;
 	while (len) {
-		const void *vaddr = kmap_local_page(page);
-		size_t n = min(len, (size_t)PAGE_SIZE - off);
+		struct folio *folio = page_folio(page);
+		size_t folio_off = PAGE_SIZE * folio_page_idx(folio, page) + off;
+		size_t n = min(len, folio_size(folio) - folio_off);
+		const void *vaddr;
 
-		*crcp = crc32c(*crcp, vaddr + off, n);
+		vaddr = kmap_local_folio(folio, folio_off);
+		*crcp = crc32c(*crcp, vaddr, n);
 		kunmap_local(vaddr);
-		page++;
+
 		off = 0;
+		page += folio_nr_pages(folio) - folio_page_idx(folio, page);
 		len -= n;
 	}
 }
@@ -1214,60 +1210,51 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 	struct nvme_tcp_queue *queue = req->queue;
 	int req_data_len = req->data_len;
 	u32 h2cdata_left = req->h2cdata_left;
+	size_t len = min_t(size_t, iov_iter_count(&req->iter),
+			   req->pdu_len - req->pdu_sent);
+	bool last = nvme_tcp_pdu_last_send(req, len);
+	struct page *page = nvme_tcp_req_cur_page(req);
+	size_t offset = nvme_tcp_req_cur_offset(req);
+	struct iov_iter iter;
+	struct msghdr msg = {
+		.msg_flags = MSG_DONTWAIT | MSG_SPLICE_PAGES,
+	};
+	int req_data_sent = req->data_sent;
+	int ret;
 
-	while (true) {
-		struct bio_vec bvec;
-		struct msghdr msg = {
-			.msg_flags = MSG_DONTWAIT | MSG_SPLICE_PAGES,
-		};
-		struct page *page = nvme_tcp_req_cur_page(req);
-		size_t offset = nvme_tcp_req_cur_offset(req);
-		size_t len = nvme_tcp_req_cur_length(req);
-		bool last = nvme_tcp_pdu_last_send(req, len);
-		int req_data_sent = req->data_sent;
-		int ret;
+	if (last && !queue->data_digest && !nvme_tcp_queue_more(queue))
+		msg.msg_flags |= MSG_EOR;
+	else
+		msg.msg_flags |= MSG_MORE;
 
-		if (last && !queue->data_digest && !nvme_tcp_queue_more(queue))
-			msg.msg_flags |= MSG_EOR;
-		else
-			msg.msg_flags |= MSG_MORE;
+	if (!sendpages_ok(page, len, offset))
+		msg.msg_flags &= ~MSG_SPLICE_PAGES;
 
-		if (!sendpages_ok(page, len, offset))
-			msg.msg_flags &= ~MSG_SPLICE_PAGES;
+	iter = req->iter;
+	iov_iter_truncate(&iter, len);
+	msg.msg_iter = iter;
+	ret = sock_sendmsg(queue->sock, &msg);
+	if (ret <= 0)
+		return ret;
 
-		bvec_set_page(&bvec, page, len, offset);
-		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, len);
-		ret = sock_sendmsg(queue->sock, &msg);
-		if (ret <= 0)
-			return ret;
+	if (queue->data_digest)
+		nvme_tcp_ddgst_update(&queue->snd_crc, page, offset, ret);
 
-		if (queue->data_digest)
-			nvme_tcp_ddgst_update(&queue->snd_crc, page,
-					offset, ret);
+	if (req_data_sent + ret < req_data_len)
+		nvme_tcp_advance_req(req, ret);
 
-		/*
-		 * update the request iterator except for the last payload send
-		 * in the request where we don't want to modify it as we may
-		 * compete with the RX path completing the request.
-		 */
-		if (req_data_sent + ret < req_data_len)
-			nvme_tcp_advance_req(req, ret);
-
-		/* fully successful last send in current PDU */
-		if (last && ret == len) {
-			if (queue->data_digest) {
-				req->ddgst =
-					nvme_tcp_ddgst_final(queue->snd_crc);
-				req->state = NVME_TCP_SEND_DDGST;
-				req->offset = 0;
-			} else {
-				if (h2cdata_left)
-					nvme_tcp_setup_h2c_data_pdu(req);
-				else
-					nvme_tcp_done_send_req(queue);
-			}
-			return 1;
+	if (last && ret == len) {
+		if (queue->data_digest) {
+			req->ddgst = nvme_tcp_ddgst_final(queue->snd_crc);
+			req->state = NVME_TCP_SEND_DDGST;
+			req->offset = 0;
+		} else {
+			if (h2cdata_left)
+				nvme_tcp_setup_h2c_data_pdu(req);
+			else
+				nvme_tcp_done_send_req(queue);
 		}
+		return 1;
 	}
 	return -EAGAIN;
 }

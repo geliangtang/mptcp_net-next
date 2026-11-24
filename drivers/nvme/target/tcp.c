@@ -695,35 +695,58 @@ static int nvmet_try_send_data_pdu(struct nvmet_tcp_cmd *cmd)
 static int nvmet_try_send_data(struct nvmet_tcp_cmd *cmd, bool last_in_batch)
 {
 	struct nvmet_tcp_queue *queue = cmd->queue;
+	struct bio_vec bvecs[16];
+	struct scatterlist *sg;
+	struct msghdr msg;
+	u32 total_len, sg_off, left;
+	int nr_bvecs;
 	int ret;
 
 	while (cmd->cur_sg) {
-		struct msghdr msg = {
+		total_len = 0;
+		nr_bvecs = 0;
+		sg_off = cmd->offset;
+
+		for (sg = cmd->cur_sg; sg && nr_bvecs < 16;
+		     sg = sg_next(sg), sg_off = 0) {
+			left = sg->length - sg_off;
+			bvec_set_page(&bvecs[nr_bvecs], sg_page(sg),
+				      left, sg_off);
+			total_len += left;
+			nr_bvecs++;
+		}
+
+		msg = (struct msghdr){
 			.msg_flags = MSG_DONTWAIT | MSG_SPLICE_PAGES,
 		};
-		struct page *page = sg_page(cmd->cur_sg);
-		struct bio_vec bvec;
-		u32 left = cmd->cur_sg->length - cmd->offset;
-
-		if ((!last_in_batch && cmd->queue->send_list_len) ||
-		    cmd->wbytes_done + left < cmd->req.transfer_len ||
+		if ((!last_in_batch && queue->send_list_len) ||
+		    cmd->wbytes_done + total_len < cmd->req.transfer_len ||
 		    queue->data_digest || !queue->nvme_sq.sqhd_disabled)
 			msg.msg_flags |= MSG_MORE;
 
-		bvec_set_page(&bvec, page, left, cmd->offset);
-		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, left);
-		ret = sock_sendmsg(cmd->queue->sock, &msg);
+		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, bvecs,
+			      nr_bvecs, total_len);
+		ret = sock_sendmsg(queue->sock, &msg);
 		if (ret <= 0)
 			return ret;
 
-		cmd->offset += ret;
 		cmd->wbytes_done += ret;
 
-		/* Done with sg?*/
-		if (cmd->offset == cmd->cur_sg->length) {
-			cmd->cur_sg = sg_next(cmd->cur_sg);
-			cmd->offset = 0;
+		sg = cmd->cur_sg;
+		sg_off = cmd->offset;
+		while (sg && ret > 0) {
+			left = sg->length - sg_off;
+			if (ret >= left) {
+				ret -= left;
+				sg_off = 0;
+				sg = sg_next(sg);
+			} else {
+				sg_off += ret;
+				ret = 0;
+			}
 		}
+		cmd->cur_sg = sg;
+		cmd->offset = sg_off;
 	}
 
 	if (queue->data_digest) {
@@ -742,7 +765,6 @@ static int nvmet_try_send_data(struct nvmet_tcp_cmd *cmd, bool last_in_batch)
 		nvmet_tcp_free_cmd_buffers(cmd);
 
 	return 1;
-
 }
 
 static int nvmet_try_send_response(struct nvmet_tcp_cmd *cmd,
