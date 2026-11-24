@@ -1079,8 +1079,10 @@ log_if_error "Tests of the full disconnection have failed"
 run_tests_dsn64
 log_if_error "Tests with dsn64 have failed"
 
-run_tests_tls
-log_if_error "Tests with TLS have failed"
+if [ "$testmode" != "zerocopy" ]; then
+	run_tests_tls
+	log_if_error "Tests with TLS have failed"
+fi
 
 display_time
 mptcp_lib_result_print_all_tap
